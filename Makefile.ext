@@ -1,0 +1,11 @@
+.PHONY: install-go-make uninstall-go-make
+install-go-make: uninstall-go-make
+	mkdir -p $(GOBIN)/go-make.config;
+	cp -rf . $(GOBIN)/go-make.config;
+
+uninstall-go-make: uninstall-go-make.config
+uninstall-go-make.config:
+	rm -rf $(GOBIN)/go-make.config;
+
+clean:
+	rm -rf __debug_bin*;
