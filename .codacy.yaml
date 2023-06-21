@@ -1,0 +1,8 @@
+engines:
+  duplication:
+    minTokenMatch: 50
+    exclude_paths:
+      - "**/*_test.go"
+  revive:
+    exclude_paths:
+      - "**/mock_*_test.go"
