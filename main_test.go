@@ -23,6 +23,8 @@ import (
 //revive:enable:line-length-limit
 
 const (
+	// DirExist contains an arbitrary execution directory (use '.').
+	DirExec = "."
 	// GoMakeDirNew contains an arbitrary non-existing directory.
 	GoMakeDirNew = "new-dir"
 	// GoMakeDirExist contains an arbitrary existing directory (use build).
@@ -31,38 +33,59 @@ const (
 	GoMakeGit = "git@github.com:tkrop/go-make"
 	// GoMakeHTTP contains an arbitrary source repository for go-make.
 	GoMakeHTTP = "https://github.com/tkrop/go-make.git"
-	// OtherRevision contains an arbitrary revision different from default.
-	OtherRevision = "x1b66f320c950b25fa63b81fd4e660c5d1f9d758"
+	// RevisionHead contains an arbitrary head revision.
+	RevisionHead = "1b66f320c950b25fa63b81fd4e660c5d1f9d758e"
+	// HeadRevision contains an arbitrary default revision.
+	RevisionDefault = "c0a7f81b82937ffe379ac39ece2925fa4d19fd40"
+	// RevisionOther contains an arbitrary different revision.
+	RevisionOther = "fbb61d4981d22b94412b906ea4d7ae3302d860d0"
 )
 
 var (
-	// DefaultInfo captured from once existing state.
-	DefaultInfo = main.NewInfo("github.com/tkrop/go-make",
-		"v0.0.0-20231110152254-1b66f320c950",
-		"1b66f320c950b25fa63b81fd4e660c5d1f9d758e",
+	// InfoDirty without version and revision hash.
+	InfoDirty = main.NewDefaultInfo()
+
+	// InfoTag with version and revision hash from git.
+	InfoTag = main.NewInfo("github.com/tkrop/go-make",
+		"v1.1.1",
+		"v1.1.1",
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00",
-		"false")
+		false)
 
-	// ShortInfo with hash to short captured from once existing state.
-	ShortInfo = main.NewInfo("github.com/tkrop/go-make",
+	// InfoHash with revision hash from git.
+	InfoHash = main.NewInfo("github.com/tkrop/go-make",
 		"v0.0.0-20231110152254-1b66f320c950",
-		"1b66f320c950b25fa63b81fd4e660c5d1f9d758",
+		RevisionDefault,
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00",
-		"false")
+		false)
 
-	// HeadInfo without hash captured from once existing state.
-	HeadInfo = main.NewInfo("github.com/tkrop/go-make",
+	// InfoShort with revision hash from git to short.
+	InfoShort = main.NewInfo("github.com/tkrop/go-make",
+		"v0.0.0-20231110152254-1b66f320c950",
+		RevisionDefault[:20],
+		"2023-11-14T13:02:46+01:00",
+		"2023-11-10T16:22:54+01:00",
+		false)
+
+	// InfoHead without revision hash from git.
+	InfoHead = main.NewInfo("github.com/tkrop/go-make",
 		"v0.0.0-20231110152254-1b66f320c950",
 		"",
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00",
-		"false")
+		false)
 
-	// NewInfo captured created after installing.
-	NewInfo = main.NewDefaultInfo()
+	ArgsVersion      = []string{"--version"}
+	ArgsBash         = []string{"--completion=bash"}
+	ArgsTarget       = []string{"target"}
+	ArgsDebugTarget  = []string{"--debug", "target"}
+	ArgsTraceVersion = []string{"--trace", "--version"}
+	ArgsTraceBash    = []string{"--trace", "--completion=bash"}
+	ArgsTraceTarget  = []string{"--trace", "target"}
 
+	// Any error that can happen.
 	errAny = errors.New("any error")
 )
 
@@ -76,14 +99,10 @@ func GoMakeSetup(
 		SetArg("builder", &strings.Builder{}).
 		Expect(param.mockSetup)
 
-	if param.info == nil {
-		param.info = DefaultInfo
-	}
-
 	gm := main.NewGoMake(
 		mocks.GetArg("stdout").(io.Writer),
 		mocks.GetArg("stderr").(io.Writer),
-		param.info, false,
+		param.info,
 	)
 
 	if param.goMakeDir == "" {
@@ -94,7 +113,7 @@ func GoMakeSetup(
 	gm.Logger = mock.Get(mocks, NewMockLogger)
 	gm.Makefile = main.Makefile
 	gm.CmdDir = param.goMakeDir
-	gm.WorkDir = "."
+	gm.WorkDir = DirExec
 
 	return gm, mocks
 }
@@ -103,20 +122,13 @@ func ToAny(args ...any) []any {
 	return args
 }
 
-func Trace(trace bool) mock.SetupFunc {
-	return func(mocks *mock.Mocks) any {
-		return mock.Get(mocks, NewMockCmdExecutor).EXPECT().
-			Trace().DoAndReturn(mocks.Do(main.CmdExecutor.Trace, trace))
-	}
-}
-
 func Exec( //revive:disable:argument-limit
-	stdout, stderr string, dir, name string,
+	stdout, stderr string, dir string,
 	args []string, err error, sout, serr string,
 ) mock.SetupFunc {
 	return func(mocks *mock.Mocks) any {
 		return mock.Get(mocks, NewMockCmdExecutor).EXPECT().
-			Exec(mocks.GetArg(stdout), mocks.GetArg(stderr), dir, name, ToAny(args)...).
+			Exec(mocks.GetArg(stdout), mocks.GetArg(stderr), dir, ToAny(args)...).
 			DoAndReturn(mocks.Call(main.CmdExecutor.Exec,
 				func(args ...any) []any {
 					if _, err := args[0].(io.Writer).Write([]byte(sout)); err != nil {
@@ -135,6 +147,14 @@ func LogCall(writer string, args []string) mock.SetupFunc {
 		return mock.Get(mocks, NewMockLogger).EXPECT().
 			Call(mocks.GetArg(writer), ToAny(args)...).
 			DoAndReturn(mocks.Do(main.Logger.Call))
+	}
+}
+
+func LogExec(writer string, dir string, args []string) mock.SetupFunc {
+	return func(mocks *mock.Mocks) any {
+		return mock.Get(mocks, NewMockLogger).EXPECT().
+			Exec(mocks.GetArg(writer), dir, ToAny(args)...).
+			DoAndReturn(mocks.Do(main.Logger.Exec))
 	}
 }
 
@@ -171,408 +191,546 @@ type MainParams struct {
 }
 
 var testMainParams = map[string]MainParams{
-	// successful options without trace.
-	"check go-make version": {
-		mockSetup: mock.Chain(Trace(false),
-			LogInfo("stdout", DefaultInfo, false),
-		),
-		args: []string{"--version"},
-	},
-	"check new go-make version": {
-		mockSetup: mock.Chain(Trace(false),
-			LogInfo("stdout", NewInfo, false),
-		),
-		info: NewInfo,
-		args: []string{"--version"},
-	},
-
+	// dirty option targets without trace.
 	"check go-make completion bash": {
-		mockSetup: mock.Chain(Trace(false),
+		mockSetup: mock.Chain(
 			LogMessage("stdout", main.BashCompletion),
 		),
-		args: []string{"--completion=bash"},
+		args: ArgsBash,
 	},
-
-	// successful options without trace.
-	"check go-make version with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "--version"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogInfo("stdout", DefaultInfo, false),
+	"check go-make version": {
+		mockSetup: mock.Chain(
+			LogInfo("stdout", InfoDirty, false),
 		),
-		args: []string{"--trace", "--version"},
+		info: InfoDirty,
+		args: ArgsVersion,
+	},
+	"dirty go-make to run target": {
+		mockSetup: mock.Chain(
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...), nil, "", ""),
+		),
+		info: InfoDirty,
+		args: ArgsTarget,
 	},
 
-	"check go-make completion bash with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "--completion=bash"}),
-			LogInfo("stderr", DefaultInfo, false),
+	"dirty go-make failed": {
+		mockSetup: mock.Chain(
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoDirty, false),
+			LogError("stderr", "execute make", main.NewErrCallFailed(
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...), errAny)),
+		),
+		info: InfoDirty,
+		args: ArgsTarget,
+		expectError: main.NewErrCallFailed(
+			main.CmdMakeTargets(main.Makefile, ArgsTarget...), errAny),
+	},
+
+	"clone go-make clone failed": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), errAny, "", ""),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoDirty, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny)),
+		),
+		info:      InfoDirty,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirNew,
+		expectError: main.NewErrCallFailed(
+			main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny),
+	},
+
+	// dirty option targets with trace.
+	"check go-make completion bash traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceBash),
+			LogInfo("stderr", InfoDirty, false),
 			LogMessage("stderr", main.BashCompletion),
 		),
-		args: []string{"--trace", "--completion=bash"},
+		info: InfoDirty,
+		args: ArgsTraceBash,
 	},
-
-	// successful targets without trace.
-	"check go-make to run target": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, DefaultInfo.Revision, ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, nil, "", ""),
+	"check go-make version traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceVersion),
+			LogInfo("stderr", InfoDirty, false),
+			LogInfo("stderr", InfoDirty, false),
 		),
-		args: []string{"target"},
+		info: InfoDirty,
+		args: ArgsTraceVersion,
 	},
-
-	"fetch and reset go-make to run target": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, nil, "", ""),
+	"dirty go-make to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoDirty, false),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...), nil, "", ""),
 		),
-		args: []string{"target"},
+		info: InfoDirty,
+		args: ArgsTraceTarget,
 	},
-
-	"fetch and reset head go-make to run target": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", "HEAD"}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, nil, "", ""),
+	"dirty go-make failed traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoDirty, false),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...), errAny, "", ""),
+			LogError("stderr", "execute make", main.NewErrCallFailed(
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...), errAny)),
 		),
-		info: HeadInfo,
-		args: []string{"target"},
+		info: InfoDirty,
+		args: ArgsTraceTarget,
+		expectError: main.NewErrCallFailed(
+			main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...), errAny),
+	},
+	"clone go-make failed traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoDirty, false),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), errAny, "", ""),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny, "", ""),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny)),
+		),
+		info:      InfoDirty,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirNew,
+		expectError: main.NewErrCallFailed(
+			main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny),
 	},
 
-	"clone and reset go-make to run target": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", ".", "git",
-				[]string{"clone", "--depth=1", GoMakeGit, GoMakeDirNew},
+	// dirty option targets with debug.
+	"dirty go-make to run target debugged": {
+		mockSetup: mock.Chain(
+			LogExec("stdout", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...)),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...), nil, "", ""),
+		),
+		info: InfoDirty,
+		args: ArgsDebugTarget,
+	},
+
+	"dirty go-make failed debugged": {
+		mockSetup: mock.Chain(
+			LogExec("stdout", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...)),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...), errAny, "", ""),
+			LogCall("stderr", ArgsDebugTarget),
+			LogInfo("stderr", InfoDirty, false),
+			LogError("stderr", "execute make", main.NewErrCallFailed(
+				main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...), errAny)),
+		),
+		info: InfoDirty,
+		args: ArgsDebugTarget,
+		expectError: main.NewErrCallFailed(
+			main.CmdMakeTargets(main.Makefile, ArgsDebugTarget...), errAny),
+	},
+
+	"clone go-make clone failed debugged": {
+		mockSetup: mock.Chain(
+			LogExec("stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew)),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), errAny, "", ""),
+			LogExec("stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew)),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny, "", ""),
+			LogCall("stderr", ArgsDebugTarget),
+			LogInfo("stderr", InfoDirty, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny)),
+		),
+		info:      InfoDirty,
+		args:      ArgsDebugTarget,
+		goMakeDir: GoMakeDirNew,
+		expectError: main.NewErrCallFailed(
+			main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), errAny),
+	},
+
+	// clone targets without trace.
+	"clone go-make reset failed": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionOther, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(InfoHash.Revision), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoHash, false),
+			LogError("stderr", "update config",
+				main.NewErrNotFound(GoMakeDirNew, InfoHash.Revision,
+					main.NewErrCallFailed(main.CmdGitHashReset(InfoHash.Revision),
+						errAny))),
+		),
+		info:      InfoHash,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirNew,
+		expectError: main.NewErrNotFound(GoMakeDirNew, InfoHash.Revision,
+			main.NewErrCallFailed(main.CmdGitHashReset(InfoHash.Revision), errAny)),
+	},
+
+	"clone go-make head to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashHead(), nil, RevisionHead, ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
 				nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, nil, "", ""),
 		),
+		info:      InfoHead,
+		args:      ArgsTarget,
 		goMakeDir: GoMakeDirNew,
-		args:      []string{"target"},
 	},
 
-	"clone fallback and reset go-make to run target": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeGit, GoMakeDirNew,
-			}, errAny, "", ""),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeHTTP, GoMakeDirNew,
-			}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, nil, "", ""),
-		),
-		goMakeDir: GoMakeDirNew,
-		args:      []string{"target"},
-	},
-
-	// successful targets with trace.
-	"check go-make to run target with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, DefaultInfo.Revision, ""),
-			Exec("stdout", "stderr", ".", "make", []string{
-				"--file", main.Makefile, "--trace", "target",
-			}, nil, "", ""),
-		),
-		args: []string{"--trace", "target"},
-	},
-
-	"fetch and reset go-make to run target with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, nil, "", ""),
-		),
-		args: []string{"--trace", "target"},
-	},
-
-	"clone and reset go-make to run target with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("stderr", "stderr", ".", "git",
-				[]string{"clone", "--depth=1", GoMakeGit, GoMakeDirNew},
+	"clone go-make hash to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionOther, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
 				nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, nil, "", ""),
 		),
+		info:      InfoHash,
+		args:      ArgsTarget,
 		goMakeDir: GoMakeDirNew,
-		args:      []string{"--trace", "target"},
 	},
 
-	"clone fallback and reset go-make to run target with trace": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeGit, GoMakeDirNew,
-			}, errAny, "", ""),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeHTTP, GoMakeDirNew,
-			}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, nil, "", ""),
-		),
-		goMakeDir: GoMakeDirNew,
-		args:      []string{"--trace", "target"},
-	},
-
-	// failed targets without trace.
-	"check go-make to run target failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, DefaultInfo.Revision, ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "target"}, errAny)),
-		),
-		args: []string{"target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "target",
-		}, errAny),
-	},
-
-	"fetch and reset go-make to run target failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "target"}, errAny)),
-		),
-		args: []string{"target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "target",
-		}, errAny),
-	},
-
-	"clone and reset go-make to run target failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", ".", "git",
-				[]string{"clone", "--depth=1", GoMakeGit, GoMakeDirNew},
+	"clone go-make tag to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionOther, ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(RevisionOther), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
 				nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "target"}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "target"}, errAny)),
 		),
+		info:      InfoTag,
+		args:      ArgsTarget,
 		goMakeDir: GoMakeDirNew,
-		args:      []string{"target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "target",
-		}, errAny),
 	},
 
-	// failed targets with trace.
-	"check go-make to run target with trace failed": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, DefaultInfo.Revision, ""),
-			Exec("stdout", "stderr", ".", "make", []string{
-				"--file", main.Makefile, "--trace", "target",
-			}, errAny, "", ""),
-			Trace(true),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, errAny)),
-		),
-		args: []string{"--trace", "target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "--trace", "target",
-		}, errAny),
-	},
-
-	"fetch and reset go-make to run target with trace failed": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, errAny, "", ""),
-			Trace(true),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, errAny)),
-		),
-		args: []string{"--trace", "target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "--trace", "target",
-		}, errAny),
-	},
-
-	"clone and reset go-make to run target with trace failed": {
-		mockSetup: mock.Chain(Trace(true),
-			LogCall("stderr", []string{"--trace", "target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			Exec("stderr", "stderr", ".", "git",
-				[]string{"clone", "--depth=1", GoMakeGit, GoMakeDirNew},
+	"clone go-make fallback to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), errAny, "", ""),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionOther, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
 				nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, nil, "", ""),
-			Exec("stdout", "stderr", ".", "make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, errAny, "", ""),
-			Trace(true),
-			LogError("stderr", "execute make", main.ErrCallFailed("make",
-				[]string{"--file", main.Makefile, "--trace", "target"}, errAny)),
 		),
+		info:      InfoHash,
+		args:      ArgsTarget,
 		goMakeDir: GoMakeDirNew,
-		args:      []string{"--trace", "target"},
-		expectError: main.ErrCallFailed("make", []string{
-			"--file", main.Makefile, "--trace", "target",
-		}, errAny),
 	},
 
-	// failed setup without trace.
-	"check go-make failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "update config", main.ErrCallFailed("git",
-				[]string{"rev-parse", "HEAD"}, errAny)),
+	// clone targets with trace.
+	"clone go-make head to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoHead, false),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashHead(), nil, RevisionHead, ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
 		),
-		args: []string{"target"},
-		expectError: main.ErrCallFailed("git",
-			[]string{"rev-parse", "HEAD"}, errAny),
+		info:      InfoHead,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirNew,
 	},
 
-	"fetch go-make failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "update config", main.ErrCallFailed("git",
-				[]string{"fetch", GoMakeGit}, errAny)),
+	"clone go-make hash to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoHash, false),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionOther, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
 		),
-		args:        []string{"target"},
-		expectError: main.ErrCallFailed("git", []string{"fetch", GoMakeGit}, errAny),
+		info:      InfoHash,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirNew,
 	},
 
-	"fetch and reset go-make failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("builder", "stderr", GoMakeDirExist, "git",
-				[]string{"rev-parse", "HEAD"}, nil, OtherRevision, ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"fetch", GoMakeGit}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirExist, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "update config", main.ErrCallFailed("git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, errAny)),
+	"clone go-make tag to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoTag, false),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionOther, ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(RevisionOther), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
 		),
+		info:      InfoTag,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirNew,
+	},
+
+	"clone go-make fallback to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoHash, false),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeGit, GoMakeDirNew), errAny, "", ""),
+			Exec("stderr", "stderr", DirExec,
+				main.CmdGitClone(GoMakeHTTP, GoMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirNew,
+				main.CmdGitHashNow(), nil, RevisionOther, ""),
+			Exec("stderr", "stderr", GoMakeDirNew,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
+		),
+		info:      InfoHash,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirNew,
+	},
+
+	// check targets without trace.
+	"check go-make head hash failed": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashHead(), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoHead, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitHashHead(), errAny)),
+		),
+		info:        InfoHead,
+		args:        ArgsTarget,
+		goMakeDir:   GoMakeDirExist,
+		expectError: main.NewErrCallFailed(main.CmdGitHashHead(), errAny),
+	},
+
+	"check go-make head now failed": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashHead(), nil, RevisionHead, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoHead, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitHashNow(), errAny)),
+		),
+		info:        InfoHead,
+		args:        ArgsTarget,
+		goMakeDir:   GoMakeDirExist,
+		expectError: main.NewErrCallFailed(main.CmdGitHashNow(), errAny),
+	},
+
+	"check go-make tag log failed": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), errAny, RevisionDefault, ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoTag, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitHashTag(InfoTag.Revision), errAny)),
+		),
+		info:      InfoTag,
+		args:      ArgsTarget,
 		goMakeDir: GoMakeDirExist,
-		args:      []string{"target"},
-		expectError: main.ErrCallFailed("git",
-			[]string{"reset", "--hard", DefaultInfo.Revision}, errAny),
+		expectError: main.NewErrCallFailed(
+			main.CmdGitHashTag(InfoTag.Revision), errAny),
 	},
 
-	"clone fallback go-make failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeGit, GoMakeDirNew,
-			}, errAny, "", ""),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeHTTP, GoMakeDirNew,
-			}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "update config", main.ErrCallFailed("git",
-				[]string{"clone", "--depth=1", GoMakeHTTP, GoMakeDirNew}, errAny)),
+	"check go-make tag fetch failed": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionDefault, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(RevisionDefault),
+				main.NewErrNotFound(GoMakeDirExist, RevisionDefault, errAny), "", ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitFetch(InfoTag.Repo), errAny, "", ""),
+			LogCall("stderr", ArgsTarget),
+			LogInfo("stderr", InfoTag, false),
+			LogError("stderr", "update config", main.NewErrCallFailed(
+				main.CmdGitFetch(InfoTag.Repo), errAny)),
 		),
-		goMakeDir: GoMakeDirNew,
-		args:      []string{"target"},
-		expectError: main.ErrCallFailed("git",
-			[]string{"clone", "--depth=1", GoMakeHTTP, GoMakeDirNew}, errAny),
+		info:        InfoTag,
+		args:        ArgsTarget,
+		goMakeDir:   GoMakeDirExist,
+		expectError: main.NewErrCallFailed(main.CmdGitFetch(InfoTag.Repo), errAny),
 	},
 
-	"clone fallback and reset go-make failed": {
-		mockSetup: mock.Chain(Trace(false),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeGit, GoMakeDirNew,
-			}, errAny, "", ""),
-			Exec("stderr", "stderr", ".", "git", []string{
-				"clone", "--depth=1",
-				GoMakeHTTP, GoMakeDirNew,
-			}, nil, "", ""),
-			Exec("stderr", "stderr", GoMakeDirNew, "git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, errAny, "", ""),
-			Trace(false),
-			LogCall("stderr", []string{"target"}),
-			LogInfo("stderr", DefaultInfo, false),
-			LogError("stderr", "update config", main.ErrCallFailed("git",
-				[]string{"reset", "--hard", DefaultInfo.Revision}, errAny)),
+	"check go-make head to run target": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashHead(), nil, RevisionHead, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
+				nil, "", ""),
 		),
-		goMakeDir: GoMakeDirNew,
-		args:      []string{"target"},
-		expectError: main.ErrCallFailed("git",
-			[]string{"reset", "--hard", DefaultInfo.Revision}, errAny),
+		info:      InfoHead,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	"check go-make hash to run target": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
+				nil, "", ""),
+		),
+		info:      InfoHash,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	"check go-make tag to run target": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionDefault, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(RevisionDefault), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
+				nil, "", ""),
+		),
+		info:      InfoTag,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	"check go-make tag fetch to run target": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionDefault, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(RevisionDefault),
+				main.NewErrNotFound(GoMakeDirExist, RevisionDefault, errAny), "", ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitFetch(InfoTag.Repo), nil, "", ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionDefault, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(RevisionDefault), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTarget...),
+				nil, "", ""),
+		),
+		info:      InfoTag,
+		args:      ArgsTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	// check targets with trace.
+	"check go-make head to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoHead, false),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashHead(), nil, RevisionHead, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
+		),
+		info:      InfoHead,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	"check go-make hash to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoHash, false),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(InfoHash.Revision), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
+		),
+		info:      InfoHash,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirExist,
+	},
+
+	"check go-make tag to run target traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", ArgsTraceTarget),
+			LogInfo("stderr", InfoTag, false),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashTag(InfoTag.Revision), nil, RevisionDefault, ""),
+			Exec("builder", "stderr", GoMakeDirExist,
+				main.CmdGitHashNow(), nil, RevisionHead, ""),
+			Exec("stderr", "stderr", GoMakeDirExist,
+				main.CmdGitHashReset(RevisionDefault), nil, "", ""),
+			Exec("stdout", "stderr", DirExec,
+				main.CmdMakeTargets(main.Makefile, ArgsTraceTarget...),
+				nil, "", ""),
+		),
+		info:      InfoTag,
+		args:      ArgsTraceTarget,
+		goMakeDir: GoMakeDirExist,
 	},
 }
 
@@ -630,7 +788,7 @@ func TestMainTargets(t *testing.T) {
 	t.Cleanup(func() {
 		os.RemoveAll(cmdDir)
 	})
-	err = exec.Command("cp", "--recursive", ".", cmdDir).Run()
+	err = exec.Command("cp", "--recursive", DirExec, cmdDir).Run()
 	assert.NoError(t, err)
 
 	test.Map(t, testMainTargetParams).

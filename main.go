@@ -1,8 +1,8 @@
 package main //revive:disable:max-public-structs // keep it simple
 
 import (
-	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,11 +11,8 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -97,13 +94,13 @@ type Info struct {
 // NewDefaultInfo returns the build information of a command or module with
 // default values.
 func NewDefaultInfo() *Info {
-	return NewInfo(Path, Version, Revision, Build, Commit, Dirty)
+	return NewInfo(Path, Version, Revision, Build, Commit, true)
 }
 
 // NewInfo returns the build information of a command or module using given
 // custom version and custom build time using RFC3339 format. The provided
 // version must follow semantic versioning as supported by go.
-func NewInfo(path, version, revision, build, commit, dirty string) *Info {
+func NewInfo(path, version, revision, build, commit string, dirty bool) *Info {
 	info := &Info{
 		Go:       runtime.Version()[2:],
 		Compiler: runtime.Compiler,
@@ -114,7 +111,7 @@ func NewInfo(path, version, revision, build, commit, dirty string) *Info {
 	info.Revision = revision
 	info.Build, _ = time.Parse(time.RFC3339, build)
 	info.Commit, _ = time.Parse(time.RFC3339, commit)
-	info.Dirty, _ = strconv.ParseBool(dirty)
+	info.Dirty = dirty
 	if buildinfo, ok := debug.ReadBuildInfo(); ok {
 		if path != "" {
 			info.Path = path
@@ -182,56 +179,6 @@ func NewMakeFilter(writer io.Writer) *MakeFilter {
 	}
 }
 
-// Write writes the given data to the underlying writer.
-func (f *MakeFilter) Write(data []byte) (int, error) {
-	return f.writer.Write(f.filter.ReplaceAll(data, []byte{})) //nolint:wrapcheck // not used
-}
-
-// CmdExecutor provides a common interface for executing commands.
-type CmdExecutor interface {
-	// Exec executes the command with given name and arguments in given
-	// directory redirecting stdout and stderr to given writers.
-	Exec(stdout, stderr io.Writer, dir, name string, args ...string) error
-	// Trace returns flags whether the command executor traces the command
-	// execution.
-	Trace() bool
-}
-
-// DefaultCmdExecutor provides a default command executor using `os/exec`
-// supporting optional tracing.
-type DefaultCmdExecutor struct {
-	trace bool
-}
-
-// NewCmdExecutor creates a new default command executor with given trace flag.
-func NewCmdExecutor(trace bool) CmdExecutor {
-	return &DefaultCmdExecutor{trace: trace}
-}
-
-// Exec executes the command with given name and arguments in given directory
-// redirecting stdout and stderr to given writers.
-func (e *DefaultCmdExecutor) Exec(
-	stdout, stderr io.Writer, dir, name string, args ...string,
-) error {
-	if e.trace {
-		fmt.Fprintf(stdout, "%s %s [%s]\n",
-			name, strings.Join(args, " "), dir)
-	}
-
-	cmd := exec.Command(name, args...)
-	cmd.Dir, cmd.Env = dir, os.Environ()
-	cmd.Env = append(cmd.Env, "MAKE=go-make")
-	cmd.Stdout, cmd.Stderr = stdout, stderr
-
-	return cmd.Run() //nolint:wrapcheck // checked on next layer
-}
-
-// Trace returns flags whether the command executor traces the command
-// execution.
-func (e *DefaultCmdExecutor) Trace() bool {
-	return e.trace
-}
-
 // Printer provides a common interface for printing.
 type Printer interface {
 	Fprintf(io.Writer, string, ...any)
@@ -243,10 +190,47 @@ func (*DefaultPrinter) Fprintf(writer io.Writer, format string, args ...any) {
 	fmt.Fprintf(writer, format, args...)
 }
 
+// Write writes the given data to the underlying writer.
+func (f *MakeFilter) Write(data []byte) (int, error) {
+	return f.writer.Write(f.filter.ReplaceAll(data, []byte{})) //nolint:wrapcheck // not used
+}
+
+// CmdExecutor provides a common interface for executing commands.
+type CmdExecutor interface {
+	// Exec executes the command with given name and arguments in given
+	// directory redirecting stdout and stderr to given writers.
+	Exec(stdout, stderr io.Writer, dir string, args ...string) error
+}
+
+// DefaultCmdExecutor provides a default command executor using `os/exec`
+// supporting optional tracing.
+type DefaultCmdExecutor struct{}
+
+// NewCmdExecutor creates a new default command executor.
+func NewCmdExecutor() CmdExecutor {
+	return &DefaultCmdExecutor{}
+}
+
+// Exec executes the command with given name and arguments in given directory
+// redirecting stdout and stderr to given writers.
+func (*DefaultCmdExecutor) Exec(
+	stdout, stderr io.Writer, dir string, args ...string,
+) error {
+	//#nosec G204 -- caller ensures safe commands
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir, cmd.Env = dir, os.Environ()
+	cmd.Env = append(cmd.Env, "MAKE=go-make")
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+
+	return cmd.Run() //nolint:wrapcheck // checked on next layer
+}
+
 // Logger provides a common interface for logging.
 type Logger interface {
 	// Logs the build information of the command or module to the given writer.
 	Info(writer io.Writer, info *Info, raw bool)
+	// Exec logs the internal command execution for debugging to the given writer.
+	Exec(writer io.Writer, dir string, args ...string)
 	// Logs the call of the command to the given writer.
 	Call(writer io.Writer, args ...string)
 	// Logs the given error message and error to the given writer.
@@ -257,7 +241,7 @@ type Logger interface {
 
 // DefaultLogger provides a default logger using `fmt` and `json` package.
 type DefaultLogger struct {
-	// fmt provides the print formater.
+	// fmt provides the print formatter.
 	fmt Printer
 }
 
@@ -276,6 +260,11 @@ func (log *DefaultLogger) Info(writer io.Writer, info *Info, raw bool) {
 	} else {
 		log.fmt.Fprintf(writer, "%s\n", out)
 	}
+}
+
+// Exec logs the internal command execution for debugging to the given writer.
+func (log *DefaultLogger) Exec(writer io.Writer, dir string, args ...string) {
+	log.fmt.Fprintf(writer, "exec: %s [%s]\n", strings.Join(args, " "), dir)
 }
 
 // Call logs the call of the command to the given writer.
@@ -297,6 +286,59 @@ func (*DefaultLogger) Message(writer io.Writer, message string) {
 	fmt.Fprintf(writer, "%s\n", message)
 }
 
+var (
+	// Base command array for `git clone` arguments.
+	cmdGitClone = []string{"git", "clone", "--depth=1"}
+	// Base command array for `git fetch` arguments.
+	cmdGitFetch = []string{"git", "fetch"}
+	// Base command array for `git reset --hard` arguments.
+	cmdGitHashReset = []string{"git", "reset", "--hard"}
+	// Base command array for `git rev-list --max-count=1` arguments.
+	cmdGitHashTag = []string{"git", "rev-list", "--max-count=1"}
+	// Base command array for `git rev-parse HEAD` arguments.
+	cmdGitHashHead = []string{"git", "rev-parse", "HEAD"}
+	// Base command array for `git log --max-count=1 --format="%H"` arguments.
+	cmdGitHashNow = []string{"git", "log", "--max-count=1", "--format=\"%H\""}
+)
+
+// CmdGitClone creates the argument array of a `git clone` command of the given
+// repository into the target directory.
+func CmdGitClone(repo, dir string) []string {
+	return append(cmdGitClone, repo, dir)
+}
+
+// CmdGitFetch creates the argument array of a `git fetch` command using the
+// given source repository.
+func CmdGitFetch(repo string) []string {
+	return append(cmdGitFetch, repo)
+}
+
+// CmdGitHashReset creates the argument array of a `git reset --hard` command
+// using the given revision hash.
+func CmdGitHashReset(hash string) []string {
+	return append(cmdGitHashReset, hash)
+}
+
+// CmdGitHashTag creates the argument array of a `git rev-list --max-count=1`
+// command using the given target tag.
+func CmdGitHashTag(tag string) []string {
+	return append(cmdGitHashTag, "tags/"+tag)
+}
+
+func CmdGitHashHead() []string {
+	return cmdGitHashHead
+}
+
+func CmdGitHashNow() []string {
+	return cmdGitHashNow
+}
+
+// CmdMakeTargets creates the argument array of a `make --file <Makefile>
+// <targets...>` command using the given makefile name amd argument list.
+func CmdMakeTargets(file string, args ...string) []string {
+	return append([]string{"make", "--file", file}, args...)
+}
+
 // GoMake provides the default `go-make` application context.
 type GoMake struct {
 	// Info provides the build information of go-make.
@@ -315,12 +357,16 @@ type GoMake struct {
 	Stdout io.Writer
 	// Stderr provides the standard error writer.
 	Stderr io.Writer
+	// Trace provides the flags to trace commands.
+	Trace bool
+	// Debug provides the flags to debug commands
+	Debug bool
 }
 
 // NewGoMake returns a new default `go-make` application context with given
 // standard output writer, standard error writer, and trace flag.
 func NewGoMake(
-	stdout, stderr io.Writer, info *Info, trace bool,
+	stdout, stderr io.Writer, info *Info,
 ) *GoMake {
 	cmd, _ := os.Executable()
 	cmdDir := cmd + ".config"
@@ -332,130 +378,165 @@ func NewGoMake(
 		CmdDir:   cmdDir,
 		WorkDir:  workdir,
 		Makefile: makefile,
-		Executor: NewCmdExecutor(trace),
+		Executor: NewCmdExecutor(),
 		Logger:   NewLogger(),
 		Stdout:   stdout,
 		Stderr:   stderr,
 	}
 }
 
-// Updates the go-make command.
-func (gm *GoMake) updateGoMake() error {
+// Updates the go-make command repository.
+func (gm *GoMake) updateGoMakeRepo() error {
+	// Update by cloning the current revision.
 	if _, err := os.Stat(gm.CmdDir); os.IsNotExist(err) {
-		if err := gm.cloneRepo(); err != nil {
-			return err
-		} else if err := gm.setRevision(); err != nil {
-			return err
-		}
-		return nil
+		return gm.cloneGoMakeRepo()
 	} else if err != nil {
-		return ErrConfigFailure(gm.CmdDir, err)
+		return NewErrNotFound(gm.CmdDir, gm.Info.Revision, err)
 	}
 
-	if gm.Info.Revision != "" {
-		if revision, err := gm.getRevision(); err != nil {
+	// Do never update on dirty revisions.
+	if gm.Info.Dirty {
+		return nil
+	}
+
+	// Update revision checking for new commits.
+	if err := gm.updateRevision(); errors.Is(err, ErrNotFound) {
+		// Update revision again after fetching latest commits.
+		if err := gm.exec(gm.Stderr, gm.Stderr, gm.CmdDir,
+			CmdGitFetch(gm.Info.Repo)...); err != nil {
 			return err
-		} else if strings.HasPrefix(revision, gm.Info.Revision) {
-			return nil
 		}
+		return gm.updateRevision()
+	} else if err != nil {
+		return err
 	}
 
-	return gm.updateRevision()
-}
-
-// Clones the go-make command repository.
-func (gm *GoMake) cloneRepo() error {
-	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
-		"git", "clone", "--depth=1", gm.Info.Repo, gm.CmdDir); err != nil {
-		repo := "https://" + gm.Info.Path + ".git"
-		return gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
-			"git", "clone", "--depth=1", repo, gm.CmdDir)
-	}
 	return nil
 }
 
-// Updates the go-make command repository.
-func (gm *GoMake) updateRepo() error {
-	return gm.exec(gm.Stderr, gm.Stderr, gm.CmdDir,
-		"git", "fetch", gm.Info.Repo)
+// cloneGoMakeRepo clones the go-make command repository.
+func (gm *GoMake) cloneGoMakeRepo() error {
+	if err := gm.cloneGoMakeExec(gm.Info.Repo); err != nil {
+		repo := "https://" + gm.Info.Path + ".git"
+		if err := gm.cloneGoMakeExec(repo); err != nil {
+			return err
+		}
+	}
+	return gm.updateRevision()
 }
 
-// Updates the go-make command repository revision.
+// cloneGoMakeExec executes the cloning of the go-make command repository.
+func (gm *GoMake) cloneGoMakeExec(repo string) error {
+	return gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+		CmdGitClone(repo, gm.CmdDir)...)
+}
+
+// updateRevision updates the current revision of the go-make command
+// repository as required by the go-make command. If the update fails the
+// an error is returned.
 func (gm *GoMake) updateRevision() error {
-	if gm.Info.Dirty {
-		return nil
-	} else if err := gm.updateRepo(); err != nil {
+	if revision, err := gm.findRevision(); err != nil {
 		return err
+	} else if ok, err := gm.isOnRevision(revision); err != nil {
+		return err
+	} else if !ok {
+		if err := gm.exec(gm.Stderr, gm.Stderr, gm.CmdDir,
+			CmdGitHashReset(revision)...); err != nil {
+			return NewErrNotFound(gm.CmdDir, revision, err)
+		}
 	}
-	return gm.setRevision()
+
+	return nil
 }
 
-// Returns the current revision of the go-make command repository.
-func (gm *GoMake) getRevision() (string, error) {
+// findRevision returns the current revision required by the go-make command
+// as git commit hash. If the revision is a git tag, it is resolved to the
+// respective git commit hash of the tag. If the resolution of the git hash
+// fails the error is returned.
+func (gm *GoMake) findRevision() (string, error) {
+	if gm.Info.Revision == "" {
+		builder := strings.Builder{}
+		if err := gm.exec(&builder, gm.Stderr, gm.CmdDir,
+			CmdGitHashHead()...); err != nil {
+			return "", err
+		}
+		return builder.String(), nil
+	} else if gm.Info.Version == gm.Info.Revision {
+		builder := strings.Builder{}
+		if err := gm.exec(&builder, gm.Stderr, gm.CmdDir,
+			CmdGitHashTag(gm.Info.Revision)...); err != nil {
+			return "", err
+		}
+		return builder.String(), nil
+	}
+	return gm.Info.Revision, nil
+}
+
+// isOnRevision returns whether the go-make config repository head commit hash
+// is matching the revision required by the go-make command. If the resolution
+// of the current hash fails the error is returned.
+func (gm *GoMake) isOnRevision(hash string) (bool, error) {
 	builder := strings.Builder{}
-	if err := gm.exec(&builder, gm.Stderr, gm.CmdDir,
-		"git", "rev-parse", "HEAD"); err != nil {
-		return "", err
+	err := gm.exec(&builder, gm.Stderr, gm.CmdDir, CmdGitHashNow()...)
+	if err != nil {
+		return false, err
 	}
-	return builder.String()[0:GitFullHashLen], nil
+	return strings.HasPrefix(builder.String(), hash), nil
 }
 
-// Sets the current revision of the go-make command repository.
-func (gm *GoMake) setRevision() error {
-	revision := gm.Info.Revision
-	if revision == "" {
-		revision = "HEAD"
-	}
-
-	return gm.exec(gm.Stderr, gm.Stderr, gm.CmdDir,
-		"git", "reset", "--hard", revision)
-}
-
-// Executes the provided make targets.
-func (gm *GoMake) makeTarget(args ...string) error {
-	args = append([]string{"--file", gm.Makefile}, args...)
-	return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir, "make", args...)
+// makeTargets executes the provided make targets.
+func (gm *GoMake) makeTargets(args ...string) error {
+	return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir,
+		CmdMakeTargets(gm.Makefile, args...)...)
 }
 
 // Executes the command with given name and arguments in given directory
 // calling the command executor taking care to wrap the resulting error.
 func (gm *GoMake) exec(
-	stdout, stderr io.Writer, dir, name string, args ...string,
+	stdout, stderr io.Writer, dir string, args ...string,
 ) error {
-	err := gm.Executor.Exec(stdout, stderr, dir, name, args...)
-	if err != nil {
-		return ErrCallFailed(name, args, err)
+	if gm.Debug {
+		gm.Logger.Exec(stdout, dir, args...)
+	}
+
+	if err := gm.Executor.Exec(stdout, stderr, dir, args...); err != nil {
+		return NewErrCallFailed(args, err)
 	}
 	return nil
 }
 
 // RunCmd runs the go-make command with given arguments.
 func (gm *GoMake) RunCmd(args ...string) error {
-	if gm.Executor.Trace() {
-		gm.Logger.Call(gm.Stderr, args...)
-		gm.Logger.Info(gm.Stderr, gm.Info, false)
+	for _, arg := range args {
+		switch arg {
+		case "--debug":
+			gm.Debug = true
+
+		case "--trace":
+			gm.Logger.Call(gm.Stderr, args...)
+			gm.Logger.Info(gm.Stderr, gm.Info, false)
+			gm.Trace = true
+
+		case "--version":
+			gm.Logger.Info(gm.Stdout, gm.Info, false)
+			return nil
+
+		case "--completion=bash":
+			gm.Logger.Message(gm.Stdout, BashCompletion)
+			return nil
+		}
 	}
 
-	switch {
-	case slices.Contains(args, "--version"):
-		gm.Logger.Info(gm.Stdout, gm.Info, false)
-		return nil
-
-	case slices.Contains(args, "--completion=bash"):
-		gm.Logger.Message(gm.Stdout, BashCompletion)
-		return nil
-	}
-
-	if err := gm.updateGoMake(); err != nil {
-		if !gm.Executor.Trace() {
+	if err := gm.updateGoMakeRepo(); err != nil {
+		if !gm.Trace {
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
 		}
 		gm.Logger.Error(gm.Stderr, "update config", err)
 		return err
 	}
-	if err := gm.makeTarget(args...); err != nil {
-		if !gm.Executor.Trace() {
+	if err := gm.makeTargets(args...); err != nil {
+		if !gm.Trace {
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
 		}
@@ -465,15 +546,19 @@ func (gm *GoMake) RunCmd(args ...string) error {
 	return nil
 }
 
-// ErrCallFailed wraps the error of a failed command call.
-func ErrCallFailed(name string, args []string, err error) error {
-	return fmt.Errorf("call failed [name=%s, args=%v]: %w",
-		name, args, err)
+// ErrNotFound represent a revision not found error.
+var ErrNotFound = errors.New("revision not found")
+
+// NewErrNotFound wraps the error of failed command unable to find a revision.
+func NewErrNotFound(dir, revision string, err error) error {
+	return fmt.Errorf("%w [dir=%s, revision=%s]: %w",
+		ErrNotFound, dir, revision, err)
 }
 
-// ErrConfigFailure wraps the error of a failed config update.
-func ErrConfigFailure(dir string, err error) error {
-	return fmt.Errorf("config failure [dir=%s]: %w", dir, err)
+// NewErrCallFailed wraps the error of a failed command call.
+func NewErrCallFailed(args []string, err error) error {
+	return fmt.Errorf("call failed [name=%s, args=%v]: %w",
+		args[0], args[1:], err)
 }
 
 // Run runs the go-make command with given build information, standard output
@@ -483,8 +568,7 @@ func Run(info *Info, stdout, stderr io.Writer, args ...string) error {
 		// TODO we would like to filter some make file startup specific
 		// output that creates hard to validate output.
 		// NewMakeFilter(stdout), NewMakeFilter(stderr),
-		stdout, stderr,
-		info, slices.Contains(args, "--trace"),
+		stdout, stderr, info,
 	).RunCmd(args[1:]...)
 }
 
