@@ -254,14 +254,14 @@ func (gm *GoMake) findRevision() (string, error) {
 			CmdGitHashHead()...); err != nil {
 			return "", err
 		}
-		return builder.String(), nil
+		return strings.TrimSpace(builder.String()), nil
 	} else if gm.Info.Version == gm.Info.Revision {
 		builder := strings.Builder{}
 		if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
 			CmdGitHashTag(gm.Info.Revision)...); err != nil {
 			return "", err
 		}
-		return builder.String(), nil
+		return strings.TrimSpace(builder.String()), nil
 	}
 	return gm.Info.Revision, nil
 }
@@ -275,7 +275,7 @@ func (gm *GoMake) isOnRevision(hash string) (bool, error) {
 		CmdGitHashNow()...); err != nil {
 		return false, err
 	}
-	return strings.HasPrefix(builder.String(), hash), nil
+	return hash == strings.TrimSpace(builder.String()), nil
 }
 
 // makeTargets executes the provided make targets.

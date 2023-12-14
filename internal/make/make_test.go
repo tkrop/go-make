@@ -45,6 +45,8 @@ const (
 	goMakeHTTP = "https://github.com/tkrop/go-make.git"
 	// revisionHead contains an arbitrary head revision.
 	revisionHead = "1b66f320c950b25fa63b81fd4e660c5d1f9d758e"
+	// revisionHeadExt contains an arbitrary untrimmed revision.
+	revisionHeadExt = "1b66f320c950b25fa63b81fd4e660c5d1f9d758e\n"
 	// HeadRevision contains an arbitrary default revision.
 	revisionDefault = "c0a7f81b82937ffe379ac39ece2925fa4d19fd40"
 	// revisionOther contains an arbitrary different revision.
@@ -359,6 +361,39 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdGitClone(goMakeGit, goMakeDirNew), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirNew,
 				make.CmdGitHashHead(), nil, revisionHead, ""),
+			Exec("builder", "stderr", goMakeDirNew,
+				make.CmdGitHashNow(), nil, revisionHead, ""),
+			Exec("stdout", "stderr", dirExec,
+				make.CmdMakeTargets(make.Makefile, argsTarget...),
+				nil, "", ""),
+		),
+		info:      infoHead,
+		args:      argsTarget,
+		goMakeDir: goMakeDirNew,
+	},
+	"clone go-make head ext-1 to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", dirExec,
+				make.CmdGitClone(goMakeGit, goMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", goMakeDirNew,
+				make.CmdGitHashHead(), nil, revisionHead, ""),
+			Exec("builder", "stderr", goMakeDirNew,
+				make.CmdGitHashNow(), nil, revisionHeadExt, ""),
+			Exec("stdout", "stderr", dirExec,
+				make.CmdMakeTargets(make.Makefile, argsTarget...),
+				nil, "", ""),
+		),
+		info:      infoHead,
+		args:      argsTarget,
+		goMakeDir: goMakeDirNew,
+	},
+
+	"clone go-make head ext-2 to run target": {
+		mockSetup: mock.Chain(
+			Exec("stderr", "stderr", dirExec,
+				make.CmdGitClone(goMakeGit, goMakeDirNew), nil, "", ""),
+			Exec("builder", "stderr", goMakeDirNew,
+				make.CmdGitHashHead(), nil, revisionHeadExt, ""),
 			Exec("builder", "stderr", goMakeDirNew,
 				make.CmdGitHashNow(), nil, revisionHead, ""),
 			Exec("stdout", "stderr", dirExec,
@@ -808,6 +843,8 @@ var (
 	// build path dependent parts.
 	regexMatchSourceDir = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)(['\\[])([^'\\]]*/)(go-make/[^'\\]]*)(['\\]])")
+	regexMatchMakeLog = regexp.MustCompile( //nolint:gosimple // Just wrong!
+		"(?m)make\\[[0-9]*\\]: (Entering|Leaving) directory [^\\n]*\\n")
 
 	replacerFixture = strings.NewReplacer(
 		"{{GOVERSION}}", runtime.Version()[2:],
@@ -816,6 +853,7 @@ var (
 )
 
 func FilterMakeOutput(str string) string {
+	str = regexMatchMakeLog.ReplaceAllString(str, "")
 	str = regexMatchTestDir.ReplaceAllString(str, "")
 	str = regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
 	return str
