@@ -385,7 +385,7 @@ targets:
 	  if [ "$(RUNARGS)" != "raw" ]; then awk -v RS= -F: ' \
 	    /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
 	      if ($$1 !~ "^[#.]") { print $$1 } \
-	    }' | sort | egrep -v -e '^[^[:alnum:]]'; \
+	    }' | sort -d | egrep -v -e '^[^[:alnum:]]'; \
 	  else cat -; fi || true;
 
 #@ pushes the current branch to the same branch of the origin.

@@ -1,11 +1,11 @@
-make[1]: Entering directory '/home/tkrop/workspace/open/go-make/internal/make'
-/Makefile.base:383: target 'targets' does not exist
+make[1]: Entering directory 'go-make/internal/make'
+Makefile.base:383: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
-  --question --makefile=/Makefile.base 2>/dev/null | \
+  --question --makefile=Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
     /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { \
       if ($1 !~ "^[#.]") { print $1 } \
-    }' | sort | egrep -v -e '^[^[:alnum:]]'; \
+    }' | sort -d | egrep -v -e '^[^[:alnum:]]'; \
   else cat -; fi || true;
 all
 all-clean
@@ -170,4 +170,4 @@ update/revive.toml?
 update-tools
 update-vegeta
 update-zally
-make[1]: Leaving directory '/home/tkrop/workspace/open/go-make/internal/make'
+make[1]: Leaving directory 'go-make/internal/make'

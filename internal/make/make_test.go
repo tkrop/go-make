@@ -771,10 +771,6 @@ func TestMakeMock(t *testing.T) {
 		})
 }
 
-// updateRegex is the regular expression that is used to remove the path
-// dependent parts from the test output.
-var updateRegex = regexp.MustCompile("(?m)/?/tmp/go-build.*/make.test.config//?")
-
 //go:embed fixtures/*
 var fixtures embed.FS
 
@@ -800,6 +796,22 @@ func SetupMakeConfig(t test.Test, src string) {
 	} else {
 		require.NoError(t, err, "executable failed", dir)
 	}
+}
+
+var (
+	// regexMatchTestDir is the regular expression that is used to remove the
+	// test execution path dependent parts.
+	regexMatchTestDir = regexp.MustCompile(
+		"(?m)/?/tmp/go-build.*/make.test.config/")
+	// regexMatchBuildDir is the regular expression that is used to remove the
+	// build path dependent parts.
+	regexMatchSourceDir = regexp.MustCompile( //nolint:gosimple // Just wrong!
+		"(?m)(['\\[])([^'\\]]*/)(go-make/[^'\\]]*)(['\\]])")
+)
+
+func FilterMakeOutput(str string) string {
+	str = regexMatchTestDir.ReplaceAllString(str, "")
+	return regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
 }
 
 type MakeExecParams struct {
@@ -864,8 +876,8 @@ func TestMakeExec(t *testing.T) {
 			// Then
 			assert.Equal(t, param.expectExit, exit)
 			assert.Equal(t, param.expectStdout,
-				updateRegex.ReplaceAllString(stdout.String(), "/"))
+				FilterMakeOutput(stdout.String()))
 			assert.Equal(t, param.expectStderr,
-				updateRegex.ReplaceAllString(stderr.String(), ""))
+				FilterMakeOutput(stderr.String()))
 		})
 }

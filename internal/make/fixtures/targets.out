@@ -1,4 +1,4 @@
-make[1]: Entering directory '/home/tkrop/workspace/open/go-make/internal/make'
+make[1]: Entering directory 'go-make/internal/make'
 all
 all-clean
 build
@@ -162,4 +162,4 @@ update/revive.toml?
 update-tools
 update-vegeta
 update-zally
-make[1]: Leaving directory '/home/tkrop/workspace/open/go-make/internal/make'
+make[1]: Leaving directory 'go-make/internal/make'
