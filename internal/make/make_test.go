@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -807,11 +808,21 @@ var (
 	// build path dependent parts.
 	regexMatchSourceDir = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)(['\\[])([^'\\]]*/)(go-make/[^'\\]]*)(['\\]])")
+
+	replacerFixture = strings.NewReplacer(
+		"{{GOVERSION}}", runtime.Version()[2:],
+		"{{PLATFORM}}", runtime.GOOS+"/"+runtime.GOARCH,
+		"{{COMPILER}}", runtime.Compiler)
 )
 
 func FilterMakeOutput(str string) string {
 	str = regexMatchTestDir.ReplaceAllString(str, "")
-	return regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
+	str = regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
+	return str
+}
+
+func SetupMakeFixture(str string) string {
+	return replacerFixture.Replace(str)
 }
 
 type MakeExecParams struct {
@@ -860,6 +871,9 @@ var testMakeExecParams = map[string]MakeExecParams{
 	},
 }
 
+// TODO: this test is sensitive to the execution parameters and fails if the
+// make target is started with option `--trace`. We need to figure out how this
+// influences the execution of the test and the output.
 func TestMakeExec(t *testing.T) {
 	SetupMakeConfig(t, "../..")
 
@@ -875,9 +889,9 @@ func TestMakeExec(t *testing.T) {
 
 			// Then
 			assert.Equal(t, param.expectExit, exit)
-			assert.Equal(t, param.expectStdout,
+			assert.Equal(t, SetupMakeFixture(param.expectStdout),
 				FilterMakeOutput(stdout.String()))
-			assert.Equal(t, param.expectStderr,
+			assert.Equal(t, SetupMakeFixture(param.expectStderr),
 				FilterMakeOutput(stderr.String()))
 		})
 }

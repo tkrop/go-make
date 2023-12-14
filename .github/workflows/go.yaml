@@ -15,7 +15,8 @@ jobs:
     - name: Build and tests
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-      run: make --file=Makefile.base --trace all
+        LANG: en_US.UTF-8
+      run: make --file=Makefile.base all
 
     - name: Send coverage report
       uses: shogo82148/actions-goveralls@v1

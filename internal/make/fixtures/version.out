@@ -1,1 +1,1 @@
-{"path":"github.com/tkrop/go-make","repo":"git@github.com:tkrop/go-make","build":"0001-01-01T00:00:00Z","commit":"0001-01-01T00:00:00Z","dirty":true,"go":"1.21.4","platform":"linux/amd64","compiler":"gc"}
+{"path":"github.com/tkrop/go-make","repo":"git@github.com:tkrop/go-make","build":"0001-01-01T00:00:00Z","commit":"0001-01-01T00:00:00Z","dirty":true,"go":"{{GOVERSION}}","platform":"{{PLATFORM}}","compiler":"{{COMPILER}}"}
