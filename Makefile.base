@@ -101,6 +101,7 @@ go-pkg = $(shell awk -v mode="$(1)" -v filter="$(3)" -v not="$(4)" ' \
 	}' <<<"$(2)")
 
 
+BROWSER ?= xdg-open
 VERSION ?= snapshot
 ifeq ($(wildcard VERSION),VERSION)
   BUILD_VERSION := v$(shell cat VERSION)
@@ -205,8 +206,9 @@ run-vars-image = $(call run-vars-docker)
 run-aws-setup = true
 
 ifneq ("$(wildcard Makefile.defs)","")
-  $(info info: please define custom functions in Makefile.defs)
   include Makefile.defs
+else
+  $(warning info: please define custom functions in Makefile.defs)
 endif
 
 
@@ -514,10 +516,12 @@ $(TARGETS_UNINSTALL): uninstall-%:; rm -f $(GOBIN)/$*;
 #@ initialize the project to prepare it for building.
 init: $(TARGETS_INIT)
 #@ initialize the go module and package dependencies.
-init-go: go.mod go.sum
+init-go: go.sum
+go.sum: go.mod
+	go mod tidy -go=$(GOVERSION);
 	go mod download;
-go.mod go.sum:
-	go mod init "$(REPOSITORY)"
+go.mod:
+	go mod init "$(REPOSITORY)";
 #@ initialize the pre-commit hook.
 init-hooks: .git/hooks/pre-commit
 .git/hooks/pre-commit:
