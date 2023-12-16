@@ -404,13 +404,15 @@ fix-update:
 #@ <version|major|minor|patch[+-]?> # update version and prepare release of the software.
 bump:
 	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
+	if [ ! -e VERSION ]; then echo "" >VERSION; fi; \
 	if [[ "$${ARGS}" =~ ^(major|minor|patch|[.+-]*)[+-]?$$ ]]; then \
 	  VERSION="$$(awk -v arg=$${ARGS} '{ \
 	    op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
 		if ((pos = op[substr(arg,1,5)]) == 0) { pos = length(arg) }; \
 	    patsplit($$0, v, "[0-9]*", seps); len = length(seps); \
-	    if (arg !~ "-$$") {v[pos]++ } else { v[pos]-- }; \
-	    for (i = 1; i < len; i++) { printf("%d%s", v[i], seps[i]) } \
+		while (len <= 3) { seps[len-1] = "."; len++ }; \
+	    if (arg !~ "-$$") { v[pos]++ } else { v[pos]-- }; \
+	    for (i = 1; i < len; i++) { printf("%01d%s", v[i], seps[i]) } \
 	  }' VERSION)"; \
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
