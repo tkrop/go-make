@@ -19,9 +19,9 @@ endif
 # request targets, while the single target can be used to define the
 # precondition of custom target.
 .PHONY: $(TARGETS) $(addprefix target/,$(TARGETS))
-$(TARGETS):
-	@PARAMS=$(MAKECMDGOALS) $(MAKECMDGOALS :=); \
-	$(GOBIN)/go-make $(MAKEFLAGS) $${PARAMS};
+$(eval $(lastwords $(MAKECMDGOALS)):;@:)
+$(firstword $(MAKECMDGOALS)):
+	$(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
 $(addprefix target/,$(TARGETS)): target/%:
 	$(GOBIN)/go-make $(MAKEFLAGS) $*;
 
