@@ -17,6 +17,5 @@ TARGETS := $(shell command -v go-make >/dev/null || \
 
 # Delegate all targets to go-make in one call.
 # TODO: consider solution that does not delegate local goals.
-$(eval $(lastwords $(MAKECMDGOALS)):;@:)
-all $(firstword $(MAKECMDGOALS))::
+$(firstword $(MAKECMDGOALS) all)::
 	$(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);

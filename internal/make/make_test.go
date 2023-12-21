@@ -838,7 +838,7 @@ var (
 	// regexMatchTestDir is the regular expression that is used to remove the
 	// test execution path dependent parts.
 	regexMatchTestDir = regexp.MustCompile(
-		"(?m)/?/tmp/go-build.*/make.test.config/")
+		"(?m)/tmp/go-build.*/make.test.config/")
 	// regexMatchBuildDir is the regular expression that is used to remove the
 	// build path dependent parts.
 	//lint:ignore S1007 // Escaping makes it less readable.

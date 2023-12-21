@@ -23,10 +23,16 @@ jobs:
       with:
         path-to-profile: ./build/test-all.cover
 
-    - name: Release and publish
+    - name: Release new version
       env:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
         make --file=Makefile.base --trace release && \
-        make --file=Makefile.base --trace publish
+
+    - name: Publish new version
+      env:
+        GH_TOKEN: ${{ github.token }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |-
+        make --file=Makefile.base --trace publish || true

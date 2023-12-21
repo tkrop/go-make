@@ -23,7 +23,7 @@ CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
 # Function to search default config files
-search-default = $(firstword $(wildcard $(1)) $(wildcard $(DIR_CONFIG)/$(1)))
+search-default = $(firstword $(wildcard $(1)) $(wildcard $(DIR_CONFIG)$(1)))
 
 FILE_MAKE ?= $(call search-default,Makefile)
 FILE_VARS ?= $(call search-default,Makefile.vars)
@@ -373,10 +373,13 @@ targets::
 push::
 	@git push --set-upstream origin \
 	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
-#@ pushes the latest changes adding it to the previous commit of the origin.
+#@ pushes the latest changes to the previous commit of the origin.
 fix::
 	@git commit --amend --no-edit && git push --force;
-#@ pushes the latest changes adding it to the previous commit updating the message of the origin.
+#@ pushes the latest changes to the previous commit of the origin without verifying them.
+fix-no-verify::
+	@git commit --amend --no-edit --no-verify && git push --force;
+#@ pushes the latest changes to the previous commit of the origin updating the message.
 fix-update::
 	@git commit --amend && git push --force;
 
@@ -1253,14 +1256,19 @@ update/go.mod?: $(GOBIN)/gomajor
 #@ update this build environment to latest version.
 update-make:: $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%: update-base
-	@DIR="$$(pwd)"; cd $(BASEDIR); \
-	if [ ! -e "$${DIR}/$*" ]; then touch "$${DIR}/$*"; fi; \
-	DIFF="$$(diff <(git show HEAD:$* 2>/dev/null) $${DIR}/$*)"; \
-	if [ -n "$${DIFF}" ]; then \
-	  if [ -n "$$(cd $${DIR}; git diff $*)" ]; then \
-	    echo "info: $* is blocked (has been changed)"; \
-	  else echo "info: $* is updated"; \
-	    git show HEAD:$* > $${DIR}/$* 2>/dev/null; \
+	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
+	if [ ! -e "$${DIR}/$${FILE}" ]; then \
+	  echo "info: $${DIR}/$${FILE} (not configured - update skipped)"; \
+	else cd "$(BASEDIR)"; \
+	  DIFF="$$(diff <(git show HEAD:$${FILE} 2>/dev/null) $${DIR}/$${FILE})"; \
+	  if [ -n "$${DIFF}" ]; then \
+	    if [ -n "$$(cd $${DIR}; git diff $${FILE})" ]; then \
+	      echo "info: $${DIR}/$${FILE} (was updated - update blocked)"; \
+	    else echo "info: $${DIR}/$${FILE} (has changed - update executed)"; \
+	      git show HEAD:$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
+	    fi; \
+	  else \
+	    echo "info: $${DIR}/$${FILE} (not changed - update skipped)" >/dev/null; \
 	  fi; \
 	fi; \
 
