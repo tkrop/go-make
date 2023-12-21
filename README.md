@@ -148,7 +148,7 @@ also [Makefile](Makefile)):
 
 ```Makefile
 GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@v0.0.10
+GOMAKE ?= github.com/tkrop/go-make@latest
 TARGETS := $(shell command -v go-make >/dev/null || \
    go install $(GOMAKE) && go-make targets)
 
@@ -156,8 +156,8 @@ TARGETS := $(shell command -v go-make >/dev/null || \
 .PHONY: $(TARGETS)
 
 # Delegate all targets to go-make in one call.
-$(eval $(lastwords $(MAKECMDGOALS)):;@:)
-$(firstword $(MAKECMDGOALS))::
+# TODO: consider solution that does not delegate local goals.
+$(firstword $(MAKECMDGOALS) all)::
    $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
 ```
 
