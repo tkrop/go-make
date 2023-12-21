@@ -1,11 +1,16 @@
 # `go-make` Manual
 
+[go-make][go-make] is a thin wrapper versioned wrapper around a very generic
+[Makefile](Makefile.base).
+
+[go-make]: https://github.com/tkrop/go-make
+
 
 ## Setup and customization
 
-The [Makefile](Makefile) is using sensitive defaults that are supposed to work
-out-of-the-box for most targets. Please see documentation of the target groups
-for more information on setup and customization:
+The [Makefile](Makefile.base) is using sensitive defaults that are supposed to
+work out-of-the-box for most targets. Please see documentation of the target
+groups for more information on setup and customization:
 
 * [Standard targets](#standard-targets)
 * [Test targets](#test-targets)
@@ -26,7 +31,7 @@ families run `make help`.
 
 To customize the behavior of the Makefile there exist multiple extension points
 that can be used to setup additional variables, definitions, and targets that
-modify the behavior of the [Makefile](Makefile).
+modify the behavior of the [Makefile](Makefile.base).
 
 * [Makefile.vars](Makefile.vars) allows to modify the behavior of standard
   targets by customizing and defining additional variables (see section
@@ -34,8 +39,18 @@ modify the behavior of the [Makefile](Makefile).
 * [Makefile.defs](Makefile.defs) allows to customize the runtime environment
   for executing of commands (see Section [Running commands](#running-commands)
   for more details).
-* [Makefile.targets](Makefile.targets) is an optional extension point that
-  allows to define arbitrary custom targets.
+* [Makefile.ext](Makefile.ext) is an optional extension point that allows to
+  define arbitrary custom targets.
+
+**Note:** To efficiently support custom targets the [Makefile](Makefile.base)
+is extensively making use of [Double Colon Rules][make-dcr] (`::`) for the main
+[phony targets][make-phony]. This makes it easy to define additional rules
+setting up new [prerequisite][make-prerequisite] and [receipts][make-receipts].
+
+[make-dcr]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
+[make-phony]: https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
+[make-prerequisite]: https://www.gnu.org/software/make/manual/html_node/Prerequisite-Types.html
+[make-receipts]: https://www.gnu.org/software/make/manual/html_node/Recipes.html
 
 
 ### Modifying variables
@@ -45,6 +60,8 @@ them might need to be adjusted. The following list provides an overview of the
 most prominent ones
 
 ```Makefile
+# Setup specific go-make version.
+GOMAKE := github.com/tkrop/go-make@latest
 # Setup code quality level (default: base).
 CODE_QUALITY := plus
 # Setup codacy integration (default: enabled [enabled, disabled]).
@@ -74,8 +91,40 @@ LINTERS_CUSTOM := nonamedreturns gochecknoinits tagliatelle
 LINTERS_DISABLED :=
 ```
 
-You can easily lookup a list using `grep -r " ?= " Makefile`, however, most
-will not be officially supported unless mentioned in the above list.
+If you need add or downgrade tools, the following variables are your customize
+entry points for customization:
+
+```Makefile
+TOOLS_NPM := \
+  markdownlint-cli
+TOOLS_GO := \
+  github.com/golangci/golangci-lint/cmd/golangci-lint \
+  github.com/zalando/zally/cli/zally \
+  golang.org/x/vuln/cmd/govulncheck \
+  github.com/uudashr/gocognit/cmd/gocognit \
+  github.com/fzipp/gocyclo/cmd/gocyclo \
+  github.com/mgechev/revive@v1.2.3 \
+  github.com/securego/gosec/v2/cmd/gosec \
+  github.com/tsenart/deadcode \
+  github.com/tsenart/vegeta \
+  honnef.co/go/tools/cmd/staticcheck \
+  github.com/zricethezav/gitleaks/v8 \
+  github.com/icholy/gomajor \
+  github.com/golang/mock/mockgen \
+  github.com/tkrop/go-testing/cmd/mock \
+  github.com/tkrop/go-make
+TOOLS_SH := \
+  github.com/anchore/syft \
+  github.com/anchore/grype
+```
+
+While the above list is surely non-exhaustive, all other variables are not part
+of the official interface and may be changed. Still, you can lookup these up
+using the following command:
+
+```bash
+grep -r " ?= " ${GOBIN}/go-make.config/Makefile.base`, however, most
+```
 
 
 ### Running commands
@@ -112,17 +161,19 @@ RUN_DEPS := run-aws
 AWS_SERVICES := s3 sns
 ```
 
-**Note:** Currently, the [Makefile](Makefile) does not support all command-line
-arguments since make swallows arguments starting with `-`. To compensate this
-shortcoming the commands need to support setup via command specific environment
-variables following the principles of the [Twelf Factor App][12factor].
+**Note:** Currently, the [Makefile](Makefile.base) does not support all
+command-line arguments since make swallows arguments starting with `-`. To
+compensate this shortcoming the commands need to support setup via command
+specific environment variables following the principles of the
+[Twelf Factor App][12factor].
 
 [12factor]: https://12factor.net/
 
 
 ## Standard targets
 
-The [Makefile](Makefile) supports the following often used standard targets.
+The [Makefile](Makefile.base) supports the following often used standard
+targets.
 
 ```bash
 make all       # short cut target to init, test, and build binaries locally
@@ -153,7 +204,7 @@ releasing, and executing of components.
 latest version of the required tools, if some are missing. To enforce the setup
 of a new tool, you need to run `make init` explicitly.
 
-The following targets are helpful to investigate the [Makefile](Makefile):
+The following targets are helpful to investigate the [Makefile](Makefile.base):
 
 ```bash
 make help    # prints a short help about major target (families)
@@ -191,7 +242,7 @@ variable in `Makefile.vars`. Usually this is not necessary.
 
 ### Linter targets
 
-The [Makefile](Makefile) supports different targets that help with linting
+The [Makefile](Makefile.base) supports different targets that help with linting
 according to different quality levels, i.e. `min`,`base` (default), `plus`,
 `max`, (and `all`) as well as automatically fixing the issues.
 
@@ -267,8 +318,8 @@ The platform and architecture of the created executables can be customized via
 ### Image targets
 
 Based on the convention that all binaries are installed in a single container
-image, the [Makefile](Makefile) supports to create and push the container image
-as required for a pipeline.
+image, the [Makefile](Makefile.base) supports to create and push the container
+image as required for a pipeline.
 
 ```bash
 make image        # short cut for 'image-build'
@@ -285,8 +336,9 @@ ensure that images are only pushed for `main`-branch and local builds.
 
 ### Run targets
 
-The [Makefile](Makefile) supports targets to startup a common DB and a common
-AWS container image as well as to run the commands provided by the repository.
+The [Makefile](Makefile.base) supports targets to startup a common DB and a
+common AWS container image as well as to run the commands provided by the
+repository.
 
 ```bash
 make run-db       # runs a postgres container image to provide a DBMS
@@ -310,8 +362,9 @@ and only switch application ports and setups manually when necessary.
 
 ### Update targets
 
-The [Makefile](Makefile) supports targets for common update tasks for package
-versions, for build, test, and linter tools, and for configuration files.
+The [Makefile](Makefile.base) supports targets for common update tasks for
+package versions, for build, test, and linter tools, and for configuration
+files.
 
 ```bash
 make update        # short cut for 'update-{go,deps,make}'
@@ -329,8 +382,8 @@ command line option can be used to also apply major version upgrades.
 
 ### Cleanup targets
 
-The [Makefile](Makefile) is designed to clean up everything it has created by
-executing the following targets.
+The [Makefile](Makefile.base) is designed to clean up everything it has created
+by executing the following targets.
 
 ```bash
 make clean         # short cut for clean-init, clean-build
@@ -377,8 +430,8 @@ make uninstall-*    # uninstalls the matched software command or service
 
 ### Release targets
 
-Finally, the [Makefile](Makefile) supports targets for releasing the provided
-packages as library.
+Finally, the [Makefile](Makefile.base) supports targets for releasing the
+provided packages as library.
 
 ```bash
 make bump <version>  # bumps version to prepare a new release
@@ -388,9 +441,9 @@ make release         # creates the release tags in the repository
 
 ### Init targets
 
-The [Makefile](Makefile) supports initialization targets that are added as
-perquisites for targets that require them. So there is usually no need to call
-them manually.
+The [Makefile](Makefile.base) supports initialization targets that are added
+as prerequisites for targets that require them. So there is usually no need to
+call them manually.
 
 
 ```bash
@@ -404,10 +457,10 @@ make init-sources   # initializes sources by generating mocks, etc
 
 ## Compatibility
 
-This [Makefile](Makefile) is making extensive use of GNU tools but is supposed
-to be compatible to all recent Linux and MacOS versions. Since MacOS is usually
-a couple of years behind in applying the GNU standard tools, we document the
-restrictions this creates here.
+This [Makefile](Makefile.base) is making extensive use of GNU tools but is
+supposed to be compatible to all recent Linux and MacOS versions. Since MacOS
+is usually a couple of years behind in applying the GNU standard tools, we
+document the restrictions this creates here.
 
 
 ### `sed` in place substitution

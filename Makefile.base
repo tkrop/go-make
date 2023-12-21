@@ -235,7 +235,7 @@ MOCK_SOURCES := $(shell grep "//go:generate[[:space:]]*mockgen.*-source=" $(SOUR
 MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
 	do echo "$${TARGET%%=*}"; done | sort -u)
 
-# Prepare phony make targets lists.
+# Prepare make targets lists with phony execution.
 TARGETS_PUBLISH := $(addprefix publish-, all $(COMMANDS))
 TARGETS_TEST_INIT := test-clean init-sources init-hooks
 TARGETS_INIT_MAKE := $(addprefix update/,$(INIT_MAKE))
@@ -273,29 +273,8 @@ TARGETS_UPDATE_ALL? := udate-go? update-deps? update-make?
 TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 	$(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_MAKE?))
 
-# Setup phony make targets to always be executed.
-.PHONY: all all-clean help list commit push fix bump release publish
-.PHONY: init init-all init-go init-hooks init-sources
-.PHONY: init-make init-make! $(TARGETS_INIT_MAKE)
-.PHONY: init-codacy $(TARGETS_INIT_CODACY)
-.PHONY: test test-all test-unit test-bench test-clean test-cover
-.PHONY: test-upload test-go
-.PHONY: lint lint-min lint-base lint-plus lint-max lint-all lint-config
-.PHONY: lint-leaks lint-leaks? lint-vuln lint-gocognit lint-gocyclo
-.PHONY: lint-markdown lint-apis lint-codacy lint-revive
-.PHONY: $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
-.PHONY: build build-native build-linux build-image $(TARGETS_BUILD)
-.PHONY: image image-build $(TARGETS_IMAGE_BUILD)
-.PHONY: image-push $(TARGETS_IMAGE_PUSH)
-.PHONY: install install-all $(TARGETS_INSTALL_ALL)
-.PHONY: uninstall uninstall-all $(TARGETS_UNINSTALL_ALL)
-.PHONY: run-native run-image run-clean $(TARGETS_RUN) run-db run-aws
-.PHONY: $(TARGETS_RUN_GO) $(TARGETS_RUN_IMAGE) $(TARGETS_RUN_CLEAN)
-.PHONY: clean clean-all $(TARGETS_CLEAN)
-.PHONY: $(TARGETS_CLEAN_ALL) $(TARGETS_CLEAN_RUN)
-.PHONY: update update? update-all update-all?
-.PHONY: $(TARGETS_UPDATE_ALL) $(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_GO)
-.PHONY: $(TARGETS_UPDATE_MAKE) $(TARGETS_UPDATE_MAKE?) update-base
+# Setup explicit phony make targets to always be executed (others are using ::).
+.PHONY: $(TARGETS_INIT_MAKE)
 
 # Setup docker or podman command.
 IMAGE_CMD ?= $(shell command -v docker || command -v podman)
@@ -333,11 +312,11 @@ endif
 ## Standard: default targets to test, lint, and build.
 
 #@ executes the default targets.
-all: $(TARGETS_ALL)
+all:: $(TARGETS_ALL)
 #@ executes the default targets after cleaning up.
-all-clean: clean clean-run all
+all-clean:: clean clean-run all
 #@ executes the pre-commit check targets.
-commit: $(TARGETS_COMMIT)
+commit:: $(TARGETS_COMMIT)
 $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
@@ -345,7 +324,7 @@ $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED):
 ## Support: targets to support processes and users.
 
 #@ prints this help.
-help:
+help::
 	@cat $(MAKEFILE_LIST) | awk ' \
 	  BEGIN { \
 	    printf("\n\033[1mUsage:\033[0m $(MAKE) \033[36m<target>\033[0m\n") \
@@ -377,11 +356,11 @@ help:
 	  }';
 
 #@ show the effective makefile.
-show:
+show::
 	@make --no-builtin-rules --no-builtin-variables --print-data-base \
 	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null || true;
 #@ <raw> # list all available targets.
-targets:
+targets::
 	@make --no-builtin-rules --no-builtin-variables --print-data-base \
 	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null | \
 	  if [ "$(RUNARGS)" != "raw" ]; then awk -v RS= -F: ' \
@@ -391,18 +370,18 @@ targets:
 	  else cat -; fi || true;
 
 #@ pushes the current branch to the same branch of the origin.
-push:
+push::
 	@git push --set-upstream origin \
 	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
 #@ pushes the latest changes adding it to the previous commit of the origin.
-fix:
+fix::
 	@git commit --amend --no-edit && git push --force;
 #@ pushes the latest changes adding it to the previous commit updating the message of the origin.
-fix-update:
+fix-update::
 	@git commit --amend && git push --force;
 
 #@ <version|major|minor|patch[+-]?> # update version and prepare release of the software.
-bump:
+bump::
 	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
 	if [ ! -e VERSION ]; then echo "" >VERSION; fi; \
 	if [[ "$${ARGS}" =~ ^(major|minor|patch|[.+-]*)[+-]?$$ ]]; then \
@@ -421,7 +400,7 @@ bump:
 
 
 #@ <version> # release a fixed version of the software as library.
-release:
+release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
 	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  VERSION="$(RUNARGS)"; \
@@ -435,7 +414,7 @@ release:
 	  ) && echo "Added release tag v$${VERSION} to repository!"; \
 	fi; \
 
-publish: $(TARGETS_PUBLISH)
+publish:: $(TARGETS_PUBLISH)
 $(TARGETS_PUBLISH): publish-%:
 	@if [ "$*" != "all" ]; then \
 	  if [ -f "cmd/$*/main.go" ]; then CMD="/cmd/$*"; else exit 0; fi; \
@@ -459,17 +438,17 @@ $(TARGETS_PUBLISH): publish-%:
 
 
 #@ install all software created by the project.
-install: $(TARGETS_INSTALL)
+install:: $(TARGETS_INSTALL)
 #@ install all software created and used by the project.
-install-all: $(TARGETS_INSTALL_ALL)
+install-all:: $(TARGETS_INSTALL_ALL)
 #@ install-*: install the matched software command or service.
 
 # install go tools used by the project.
-$(TARGETS_INSTALL_GO): install-%: $(GOBIN)/%
+$(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
 	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
 # install go tools providing an install.sh script.
-$(TARGETS_INSTALL_SH): install-%: $(GOBIN)/%
+$(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
 	@if ! command -v $*; then \
 	  curl --silent --show-error --fail --location \
@@ -477,7 +456,7 @@ $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
 	    sh -s -- -b $(GOBIN); \
 	fi;
 # install npm tools used by the project.
-$(TARGETS_INSTALL_NPM): install-%: $(NVM_BIN)/%
+$(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
 $(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
 	@if command -v npm &> /dev/null && ! command -v $*; then \
 	  echo "npm install --global ^$*$$"; \
@@ -485,61 +464,61 @@ $(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
 	fi;
 
 #@ install software command or service created by the project.
-$(TARGETS_INSTALL): install-%: $(GOBIN)/%
+$(TARGETS_INSTALL):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
-	cp $< $(GOBIN)/$*;
+	cp -f $< $(GOBIN)/$*;
 
 #@ uninstall all software created by the project.
-uninstall: $(TARGETS_UNINSTALL)
+uninstall:: $(TARGETS_UNINSTALL)
 #@ uninstall all software created and used by the projct.
-uninstall-all: $(TARGETS_UNINSTALL_ALL)
+uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 #@ uninstall-*: uninstall the matched software command or service.
 
 # uninstall go tools used by the project.
-$(TARGETS_UNINSTALL_GO): uninstall-%:
+$(TARGETS_UNINSTALL_GO):: uninstall-%:
 	@#PACKAGE=$(call go-pkg,strip,$(TOOLS_GO),^$*$$); \
 	rm -rf $(wildcard $(GOBIN)/$* $(GOBIN)/$*.config);
 # uninstall npm based tools used by the project.
-$(TARGETS_UNINSTALL_NPM): uninstall-%:
+$(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@if command -v npm &> /dev/null; then \
 	  echo "npm uninstall --global $*"; \
 	  npm uninstall --global $(filter $*-cli,$(TOOLS_NPM)); \
 	fi;
 # uninstall codacy tools used by the project.
-$(TARGETS_UNINSTALL_CODACY): uninstall-codacy-%:
+$(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	rm -f "$(GOBIN)/codacy-$*-$${VERSION}";
 # uninstall software command or service created by the project.
-$(TARGETS_UNINSTALL): uninstall-%:; rm -f $(GOBIN)/$*;
+$(TARGETS_UNINSTALL):: uninstall-%:; rm -f $(GOBIN)/$*;
 
 
 ## Init: targets to initialize tools and (re-)sources.
 
 #@ initialize the project to prepare it for building.
-init: $(TARGETS_INIT)
+init:: $(TARGETS_INIT)
 #@ initialize the go module and package dependencies.
-init-go: go.sum
+init-go:: go.sum
 go.sum: go.mod
 	go mod tidy -go=$(GOVERSION);
 	go mod download;
 go.mod:
 	go mod init "$(REPOSITORY)";
 #@ initialize the pre-commit hook.
-init-hooks: .git/hooks/pre-commit
+init-hooks:: .git/hooks/pre-commit
 .git/hooks/pre-commit:
 	@if [ -n "$$(cat Makefile | grep "^GOMAKE ?=.*")" ]; then \
 	  echo -ne "#!/bin/sh\n$(MAKE) commit" >$@; chmod 755 $@; \
 	fi; \
 
 #@ initialize the generated sources.
-init-sources: $(MOCKS)
+init-sources:: $(MOCKS)
 $(MOCKS): go.sum $(MOCK_SOURCES) $(GOBIN)/mockgen $(GOBIN)/mock
 	go generate "$(shell echo $(MOCK_TARGETS) | \
 	  sed -E "s|.*$@=([^ ]*).*$$|\1|")";
 
 #@ initialize the codacy support - if enabled.
-init-codacy: $(TARGETS_INIT_CODACY)
-$(TARGETS_INIT_CODACY): init-%:
+init-codacy:: $(TARGETS_INIT_CODACY)
+$(TARGETS_INIT_CODACY):: init-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	FILE="$(GOBIN)/codacy-$*-$${VERSION}"; \
 	if [ ! -f $${FILE} ]; then \
@@ -552,9 +531,9 @@ $(TARGETS_INIT_CODACY): init-%:
 	fi; \
 
 #@ initialize project by copying config makefile from template.
-init-make: $(TARGETS_INIT_MAKE)
+init-make:: $(TARGETS_INIT_MAKE)
 #@ initialize project by copying Makefile.base from template.
-init-make!: update-base
+init-make!:: update-base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	git show HEAD:Makefile.base > $${DIR}/Makefile 2>/dev/null; \
 	( echo -e "<!-- do not change!!! -->\n\n# Makefile"; \
@@ -571,28 +550,28 @@ TEST_UNIT := $(DIR_BUILD)/test-unit.cover
 TEST_BENCH := $(DIR_BUILD)/test-bench.cover
 
 #@ execute default test set.
-test: $(TARGETS_TEST)
+test:: $(TARGETS_TEST)
 #@ <pkg>[/<test>] # execute all tests.
-test-all: $(TARGETS_TEST_INIT) $(TEST_ALL)
+test-all:: $(TARGETS_TEST_INIT) $(TEST_ALL)
 #@ <pkg>[/<test>] # execute only unit tests.
-test-unit: $(TARGETS_TEST_INIT) $(TEST_UNIT)
+test-unit:: $(TARGETS_TEST_INIT) $(TEST_UNIT)
 #@ <pkg>[/<test>] # execute benchmarks.
-test-bench: $(TARGETS_TEST_INIT) $(TEST_BENCH)
+test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
 
 # remove all coverage files of test and benchmarks.
-test-clean:
+test-clean::
 	@if [ -f "$(TEST_ALL)" ]; then rm -vf $(TEST_ALL); fi; \
 	if [ -f "$(TEST_UNIT)" ]; then rm -vf $(TEST_UNIT); fi; \
 	if [ -f "$(TEST_BENCH)" ]; then rm -vf $(TEST_BENCH); fi; \
 
 #@ start the test coverage report.
-test-cover:
+test-cover::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); \
 	go tool cover -html="$${FILE}"; \
 
 #@ upload the test coverage report to codacy.
-test-upload:
+test-upload::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); \
 	COMMIT="$$(git log --max-count=1 --pretty=format:"%H")"; \
@@ -628,7 +607,7 @@ test-go = \
 	done;
 
 #@ test whether project is using the latest go-version.
-test-go:
+test-go::
 	@ERROR="error: local go version is $(GOVERSION)"; \
 	if [ ! -f go.mod ];  then \
 	  VERSIONS=$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' '); \
@@ -681,7 +660,7 @@ $(TEST_BENCH): $(SOURCES) init-sources $(DIR_BUILD)
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
 
 #@ execute a kind of self-test running the main targets.
-test-self: clean-all all-clean update-all? update-all
+test-self:: clean-all all-clean update-all? update-all
 	echo "Self test finished successfully!!!";
 
 # Variables and definitions for linting of source code.
@@ -768,20 +747,20 @@ endif
 ## Lint: targets to lint source code.
 
 #@ <fix|linter> # execute all linters for the custom code quality level.
-lint: $(TARGETS_LINT)
+lint:: $(TARGETS_LINT)
 #@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
-lint-min: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MIN)
+lint-min:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MIN)
 #@ <fix|linter> # execute golangci linters for base code quality level (go-files).
-lint-base: init-sources $(GOBIN)/golangci-lint;	$(LINT_CMD) $(LINT_BASE)
+lint-base:: init-sources $(GOBIN)/golangci-lint;	$(LINT_CMD) $(LINT_BASE)
 #@ <fix|linter> # execute golangci linters for plus code quality level (go-files).
-lint-plus: init-sources $(GOBIN)/golangci-lint;	$(LINT_CMD) $(LINT_PLUS)
+lint-plus:: init-sources $(GOBIN)/golangci-lint;	$(LINT_CMD) $(LINT_PLUS)
 #@ <fix|linter> # execute golangci linters for maximal code quality level (go-files).
-lint-max: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MAX)
+lint-max:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MAX)
 #@ <fix|linter> # execute all golangci linters for insane code quality level (go-files).
-lint-all: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_ALL)
+lint-all:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_ALL)
 
 #@ create a golangci linter config using the custom code quality level.
-lint-config:
+lint-config::
 	@LINT_START=$$(awk '($$0 ~ "^linters:.*"){print NR-1}' $(FILE_GOLANGCI)); \
 	LINT_STOP=$$(awk '(start && $$0 ~ "^[^ ]+:$$"){print NR; start=0} \
 	  ($$0 ~ "^linters:.*"){start=1}' $(FILE_GOLANGCI)); \
@@ -845,8 +824,8 @@ lint-config:
 	  } { print $$0 }' \
 
 #@ execute all codacy linters activated by the custom setup (all files).
-lint-codacy: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
-$(TARGETS_LINT_CODACY_CLIENTS): lint-%: init-sources
+lint-codacy:: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
+$(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-sources
 	@LARGS=("--allow-network" "--skip-uncommitted-files-check"); \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
@@ -874,7 +853,7 @@ LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
 LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 
-$(TARGETS_LINT_CODACY_BINARIES): lint-%: init-sources init-% $(GOBIN)/%
+$(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% $(GOBIN)/%
 	@COMMIT=$$(git log --max-count=1 --pretty=format:"%H"); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
@@ -903,11 +882,11 @@ $(TARGETS_LINT_CODACY_BINARIES): lint-%: init-sources init-% $(GOBIN)/%
 	fi; \
 
 #@ execute revive linter (go-files).
-lint-revive: init-sources $(GOBIN)/revive
+lint-revive:: init-sources $(GOBIN)/revive
 	revive -formatter friendly -config=revive.toml $(SOURCES) || $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
-lint-markdown: init-sources $(NVM_BIN)/markdownlint
+lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 	@echo markdownlint --config .markdownlint.yaml .; \
 	if command -v markdownlint &> /dev/null; then \
 	  markdownlint --config .markdownlint.yaml .; \
@@ -918,7 +897,7 @@ lint-markdown: init-sources $(NVM_BIN)/markdownlint
 	fi; \
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
-lint-shell: init-sources
+lint-shell:: init-sources
 	@mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
 	if [ -n "$(RUNARGS)" ]; then ARGS=(${ARGS} $(RUNARGS)); fi; \
 	if  [ -n "$${FILES}" ]; then \
@@ -931,13 +910,13 @@ lint-shell: init-sources
 	fi; \
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
-lint-leaks: $(GOBIN)/gitleaks
+lint-leaks:: $(GOBIN)/gitleaks
 	gitleaks detect --no-banner --verbose --source .;
 #@ execute gitleaks to check un-committed code changes for leaking secrets (all files).
-lint-leaks?: $(GOBIN)/gitleaks
+lint-leaks?:: $(GOBIN)/gitleaks
 	gitleaks protect --no-banner --verbose --source .;
 #@ execute govulncheck to find vulnerabilities in dependencies (go-files).
-lint-vuln: $(GOBIN)/govulncheck
+lint-vuln:: $(GOBIN)/govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
 lint-gocyclo lint-gocognit: lint-%: $(GOBIN)/%
@@ -953,7 +932,7 @@ lint-gocyclo lint-gocognit: lint-%: $(GOBIN)/%
 	$* "$${ARGS[@]}";
 
 #@ execute zally api-linter to find API issues (yaml-files).
-lint-apis: $(GOBIN)/zally
+lint-apis:: $(GOBIN)/zally
 	@LINTER="https://infrastructure-api-linter.zalandoapis.com"; \
 	if ! curl --silent $${LINTER}; then \
 	  echo "warning: API linter not available;"; exit 0; \
@@ -999,10 +978,10 @@ ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 ## Build: targets to build native and linux platform executables.
 
 #@ build default executables (native).
-build: build-native
+build:: build-native
 #@ build native platform executables using system architecture.
-build-native: $(TARGETS_BUILD)
-$(TARGETS_BUILD): build-%: $(DIR_BUILD)/%
+build-native:: $(TARGETS_BUILD)
+$(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
 $(DIR_BUILD)/%: init-hooks $(SOURCES)
 	@mkdir -p "$(dir $@)";
 	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 \
@@ -1010,7 +989,7 @@ $(DIR_BUILD)/%: init-hooks $(SOURCES)
 	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go;
 
 #@ build linux platform executables using default (system) architecture.
-build-linux: $(TARGETS_BUILD_LINUX)
+build-linux:: $(TARGETS_BUILD_LINUX)
 $(DIR_BUILD)/linux/%: $(call main-pkg,%) init-hooks $(SOURCES)
 	@mkdir -p "$(dir $@)";
 	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=$(GOCGO) \
@@ -1018,15 +997,15 @@ $(DIR_BUILD)/linux/%: $(call main-pkg,%) init-hooks $(SOURCES)
 	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go;
 
 #@ build container image (alias for image-build).
-build-image: image-build
+build-image:: image-build
 
 
 ## Image: targets to build and push container images.
 
 #@ build and push container images - if setup.
-image: $(if $(filter $(IMAGE_PUSH),never),,image-push)
+image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 #@ build container images.
-image-build: $(TARGETS_IMAGE_BUILD)
+image-build:: $(TARGETS_IMAGE_BUILD)
 
 setup-image-file = \
   FILE="$*"; IMAGE=$(IMAGE); \
@@ -1037,7 +1016,7 @@ setup-image-file = \
     IMAGE="$${IMAGE/:/-$${INFIX}:}"; \
   fi;
 
-$(TARGETS_IMAGE_BUILD): image-build/%: build-linux
+$(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	@$(call setup-image-file $*) \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never build images, aborting [$${IMAGE}]."; exit 0; \
@@ -1054,8 +1033,8 @@ $(TARGETS_IMAGE_BUILD): image-build/%: build-linux
 	  --label=org.opencontainers.image.ref.name=$${IMAGE}; \
 
 #@ push contianer images - if setup and allowed.
-image-push: $(TARGETS_IMAGE_PUSH)
-$(TARGETS_IMAGE_PUSH): image-push/%: image-build/%
+image-push:: $(TARGETS_IMAGE_PUSH)
+$(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	@$(call setup-image-file $*) \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never push images, aborting [$${IMAGE}]."; exit 0; \
@@ -1071,7 +1050,7 @@ $(TARGETS_IMAGE_PUSH): image-push/%: image-build/%
 HOST := "127.0.0.1"
 
 #@ start a postgres database instance for testing.
-run-db: $(DIR_RUN)
+run-db:: $(DIR_RUN)
 	@if [[ ! " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
 	echo "info: ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)"; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
@@ -1097,7 +1076,7 @@ run-db: $(DIR_RUN)
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-db; \
 
 #@ start an AWS localstack instance for testing.
-run-aws: $(DIR_RUN)
+run-aws:: $(DIR_RUN)
 	@if [[ ! " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
 	echo "info: ensure $(AWS_IMAGE) is running on $(HOST):4566/4571" && \
 	if [ -n "$$($(IMAGE_CMD) ps | \
@@ -1119,21 +1098,21 @@ run-aws: $(DIR_RUN)
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log; \
 
 #@ run-*: start the matched command using the native binary.
-$(TARGETS_RUN): run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup); $(call run-vars) $(call run-vars-local) \
 	  $(DIR_BUILD)/$* $(RUNARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-go-*: start the matched command using go run.
-$(TARGETS_RUN_GO): run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup); $(call run-vars) $(call run-vars-local) \
 	  go run cmd/$*/main.go $(RUNARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-image-*: start the matched command via the container images.
-$(TARGETS_RUN_IMAGE): run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@trap "$(IMAGE_CMD) rm $(IMAGE_ARTIFACT)-$* >/dev/null" EXIT; \
 	trap "$(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* >/dev/null" INT TERM; \
 	if [ -n "$(filter %$*,$(TARGETS_IMAGE))" ]; then \
@@ -1147,9 +1126,9 @@ $(TARGETS_RUN_IMAGE): run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	exit $${PIPESTATUS[0]};
 
 #@ clean up all running container images.
-run-clean: $(TARGETS_RUN_CLEAN)
+run-clean:: $(TARGETS_RUN_CLEAN)
 #@ run-clean-*: kill and remove the container image of the matched command.
-$(TARGETS_RUN_CLEAN): run-clean-%:
+$(TARGETS_RUN_CLEAN):: run-clean-%:
 	@echo "check container $(IMAGE_ARTIFACT)-$*"; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(IMAGE_ARTIFACT)-$*")" ]; then \
 	  $(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* > /dev/null && \
@@ -1164,25 +1143,25 @@ $(TARGETS_RUN_CLEAN): run-clean-%:
 ## Cleanup: targets to clean up sources, tools, and containers.
 
 #@ clean up resources created during build processes.
-clean: $(TARGETS_CLEAN)
+clean:: $(TARGETS_CLEAN)
 #@ clean up all resources, i.e. also tools installed for the build.
-clean-all: $(TARGETS_CLEAN_ALL)
+clean-all:: $(TARGETS_CLEAN_ALL)
 #@ clean up all resources created by initialization.
-clean-init: clean-hooks
+clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
-clean-hooks:; rm -vrf .git/hooks/pre-commit;
+clean-hooks::; rm -vrf .git/hooks/pre-commit;
 #@ clean up all resources created by building and testing.
-clean-build:; rm -vrf $(DIR_BUILD) $(DIR_RUN);
+clean-build::; rm -vrf $(DIR_BUILD) $(DIR_RUN);
 	$(FIND) -name "mock_*_test.go" -exec rm -v {} \;;
 #@ clean up all package dependencies by removing packages.
-clean-deps:
+clean-deps::
 	for PACKAGE in $$(cat go.sum | cut -d ' ' -f 1 | sort -u); do \
 	  go get $${PACKAGE}@none; \
 	done;
 #@ clean up all running container images.
-clean-run: $(TARGETS_CLEAN_RUN)
+clean-run:: $(TARGETS_CLEAN_RUN)
 #@ clean-run-*: clean up matched running container image.
-$(TARGETS_CLEAN_RUN): clean-run-%: run-clean-%
+$(TARGETS_CLEAN_RUN):: clean-run-%: run-clean-%
 
 
 ## Update: targets to update tools, configs, and dependencies.
@@ -1192,16 +1171,16 @@ $(TARGETS_CLEAN_RUN): clean-run-%: run-clean-%
 
 
 #@ update default or customized update targets.
-update: $(TARGETS_UPDATE)
+update:: $(TARGETS_UPDATE)
 #@ check default or customized update targets for updates.
-update?: $(TARGETS_UPDATE?)
+update?:: $(TARGETS_UPDATE?)
 #@ update all components.
-update-all: $(TARGETS_UPDATE_ALL)
+update-all:: $(TARGETS_UPDATE_ALL)
 #@ check all components for udpdates.
-update-all?: $(TARGETS_UPDATE_ALL?)
+update-all?:: $(TARGETS_UPDATE_ALL?)
 
 #@ <version> # update go to latest or given version.
-update-go:
+update-go::
 	@if ! [[ "$(RUNARGS)" =~ "[0-9.]*" ]]; then \
 	  ARCH="linux-amd64"; BASE="https://go.dev/dl"; \
 	  VERSION="$$(curl --silent --header "Accept-Encoding: gzip" \
@@ -1218,7 +1197,7 @@ update-go:
 	fi; \
 
 #@ check whether a new go version exists.
-update-go?:
+update-go?::
 	@ARCH="linux-amd64"; BASE="https://go.dev/dl"; \
 	VERSION="$$(curl --silent --header "Accept-Encoding: gzip" \
 	  "$${BASE}/" | gunzip | grep -o "go[0-9.]*$${ARCH}.tar.gz" | \
@@ -1240,7 +1219,7 @@ update-list = \
 	) | sort -u | sed "s/\]//g; s/\[/=> /"
 
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
-update-deps: test-go update/go.mod
+update-deps:: test-go update/go.mod
 update/go.mod: $(GOBIN)/gomajor
 	@if [ -n "$(RUNARGS)" ]; then $(call update-args,$(RUNARGS)); \
 	  if [[ " $(RUNARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
@@ -1266,14 +1245,14 @@ update/go.mod: $(GOBIN)/gomajor
 	done; \
 
 #@ check for major and minor updates to latest versions.
-update-deps?: test-go update/go.mod?
+update-deps?:: test-go update/go.mod?
 update/go.mod?: $(GOBIN)/gomajor
 	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 
 #@ update this build environment to latest version.
-update-make: $(TARGETS_UPDATE_MAKE)
-$(TARGETS_UPDATE_MAKE): update/%: update-base
+update-make:: $(TARGETS_UPDATE_MAKE)
+$(TARGETS_UPDATE_MAKE):: update/%: update-base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	if [ ! -e "$${DIR}/$*" ]; then touch "$${DIR}/$*"; fi; \
 	DIFF="$$(diff <(git show HEAD:$* 2>/dev/null) $${DIR}/$*)"; \
@@ -1286,8 +1265,8 @@ $(TARGETS_UPDATE_MAKE): update/%: update-base
 	fi; \
 
 #@ check whether updates for build environment exist.
-update-make?: $(TARGETS_UPDATE_MAKE?)
-$(TARGETS_UPDATE_MAKE?): update/%?: update-base
+update-make?:: $(TARGETS_UPDATE_MAKE?)
+$(TARGETS_UPDATE_MAKE?):: update/%?: update-base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	if [ ! -e "$${DIR}/$*" ]; then \
 	  echo "info: $* is not tracked"; \
@@ -1301,7 +1280,7 @@ $(TARGETS_UPDATE_MAKE?): update/%?: update-base
 
 #@ create a clone of the base repository to update from.
 BASE := git@github.com:tkrop/go-make.git
-update-base:
+update-base::
 	@$(eval BASEDIR = $(shell mktemp -d)) ( \
 	  trap "rm -rf $${DIR}" INT TERM EXIT; \
 	  while pgrep $(MAKE) > /dev/null; do sleep 1; done; \
@@ -1311,12 +1290,12 @@ update-base:
 	  --branch main $(BASE) $(BASEDIR) 2> /dev/null; \
 
 #@ update all tools required by the project.
-update-tools: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
+update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 	go mod tidy -compat=${GOVERSION};
 #@ update-*: update the matched software command or service.
 
 # update go tools used by the project.
-$(TARGETS_UPDATE_GO): update-%:
+$(TARGETS_UPDATE_GO):: update-%:
 	go install $(call go-pkg,update,$(TOOLS_GO),^$*$$);
 
 ## Custom: custom extension targets.

@@ -841,11 +841,16 @@ var (
 		"(?m)/?/tmp/go-build.*/make.test.config/")
 	// regexMatchBuildDir is the regular expression that is used to remove the
 	// build path dependent parts.
+	//lint:ignore S1007 // Escaping makes it less readable.
 	regexMatchSourceDir = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)(['\\[])([^'\\]]*/)(go-make/[^'\\]]*)(['\\]])")
+	// regexMatchMakeLog is the regular expression that is used to remove the
+	// make specific output in the  log parts.
+	//lint:ignore S1007 // Escaping makes it less readable.
 	regexMatchMakeLog = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)make\\[[0-9]*\\]: (Entering|Leaving) directory [^\\n]*\\n")
-
+	// replaceFixture replaces the placeholders in the fixture with the values
+	// provided to the replacer.
 	replacerFixture = strings.NewReplacer(
 		"{{GOVERSION}}", runtime.Version()[2:],
 		"{{PLATFORM}}", runtime.GOOS+"/"+runtime.GOARCH,

@@ -49,7 +49,7 @@
 
 Goal of `go-make` is to provide a simple, versioned build environment for
 standard [`go`][go]-projects (see [Standard `go`-project](#standard-go-project)
-for details) providing default targets and tool configs for testing, linting,
+for details) providing default targets, tools, and configs for testing, linting,
 building, installing, updating, running, and releasing libraries, commands, and
 container images.
 
@@ -70,17 +70,16 @@ The thin wrapper provides the necessary version control for the `Makefile` and
 the default config of integrated tools. It installs these tools automatically
 when needed in the latest available version.
 
-**Note:** We except the risk that using the latest versions of tools, e.g. for
+**Note:** We accept the risk that using the latest versions of tools, e.g. for
 linting, may break the build for the sake of constantly updating dependencies by
-default. For tools where this is not desireable, the default import can be
+default. For tools where this is not desireable, the default import is/can be
 changed to contain a version (see [manual](MANUAL.md] for more information).
 
 **Warning:** `go-make` automatically installs a `pre-commit` hook overwriting
 and deleting any pre-existing hook. The hook calls `go-make commit` to enforce
-run unit testing and linting successfully before allowing to commit, i.e. the
-goals `test-go`, `test-unit`, `lint-base` (or what code quality level is
-defined as standard), and `lint-markdown`.
-
+successful unit testing and linting before allowing to commit, i.e. the goals
+`test-go`, `test-unit`, `lint-base` (or what code quality level is defined as
+standard), and `lint-markdown`.
 
 [gomock]: <https://github.com/uber/mock>
 [golangci]: <https://github.com/golangci/golangci-lint>
@@ -93,8 +92,8 @@ defined as standard), and `lint-markdown`.
 
 ## Installation
 
-To install `go-make` simply use the standard [`go` install][go-install]
-command (or any other means, e.g. [`curl`][curl] to obtain a released binary):
+To install `go-make` simply use [`go` install][go-install] command (or any
+other means, e.g. [`curl`][curl] to obtain a released binary):
 
 ```bash
 go install github.com/tkrop/go-make@latest
@@ -137,29 +136,36 @@ go-make test lint  # execute only test 'test' and 'lint' steps of a pipeline.
 go-make image      # execute minimal steps to create all container images.
 ```
 
+For further examples see [`go-make` manual](MANUAL.md).
+
+
+## Makefile integration
+
 If you like to integrate `go-make` into another `Makefile` you may find the
-following template helpful:
+following snippet helpful that automatically installs `go-make` creates a set
+of phony targets to allow auto-completion and delegates the execution (see
+also [Makefile](Makefile)):
 
 ```Makefile
 GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE := github.com/tkrop/go-make@latest
+GOMAKE ?= github.com/tkrop/go-make@v0.0.10
 TARGETS := $(shell command -v go-make >/dev/null || \
-    go install $(GOMAKE) && go-make targets)
+   go install $(GOMAKE) && go-make targets)
 
-# Include standard targets from go-make providing group targets as well as
-# single target targets. The group target is used to delegate the remaining
-# request targets, while the single target can be used to define the
-# precondition of custom target.
-.PHONY: $(TARGETS) $(addprefix target/,$(TARGETS))
-$(TARGETS):; $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
-$(addprefix target/,$(TARGETS)): target/%:
-    $(GOBIN)/go-make $(MAKEFLAGS) $*;
+# Declare all targets phony to make them available for auto-completion.
+.PHONY: $(TARGETS)
+
+# Delegate all targets to go-make in one call.
+$(eval $(lastwords $(MAKECMDGOALS)):;@:)
+$(firstword $(MAKECMDGOALS))::
+   $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
 ```
 
-For further examples see [`go-make` manual](MANUAL.md).
 
-**Note:** To setup command completion for `go-make`add the following command to
-your `.bashrc`.
+## Shell integration
+
+To setup command completion for `go-make`, add the following snippet to your
+`.bashrc`.
 
 ```bash
 source <(go-make --completion=bash)
@@ -225,7 +231,13 @@ versions for changes.
 
 ## Building
 
-The project is using itself for building as a proof of concept.
+The project is using itself for building as a proof of concept. So either run
+`make all` or `go-make all`. As fallback it is always possible to directly use
+the core [Makefile](Makefile.base) calling
+
+```bash
+make -f Makefile.base <target>...
+```
 
 
 ## Contributing

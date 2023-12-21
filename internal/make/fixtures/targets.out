@@ -23,7 +23,6 @@ image
 image-build
 image-push
 init
-init-all
 init-codacy
 init-go
 init-gosec
@@ -73,7 +72,6 @@ lint-revive
 lint-shell
 lint-staticcheck
 lint-vuln
-list
 mock_cmd_test.go
 mock_logger_test.go
 publish
@@ -85,8 +83,6 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
-run-image
-run-native
 show
 targets
 test
@@ -98,7 +94,6 @@ test-go
 test-self
 test-unit
 test-upload
-udate-go?
 uninstall
 uninstall-all
 uninstall-codacy-gosec

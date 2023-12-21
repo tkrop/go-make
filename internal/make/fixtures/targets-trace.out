@@ -1,4 +1,4 @@
-Makefile.base:385: target 'targets' does not exist
+Makefile.base:364: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
@@ -31,7 +31,6 @@ image
 image-build
 image-push
 init
-init-all
 init-codacy
 init-go
 init-gosec
@@ -81,7 +80,6 @@ lint-revive
 lint-shell
 lint-staticcheck
 lint-vuln
-list
 mock_cmd_test.go
 mock_logger_test.go
 publish
@@ -93,8 +91,6 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
-run-image
-run-native
 show
 targets
 test
@@ -106,7 +102,6 @@ test-go
 test-self
 test-unit
 test-upload
-udate-go?
 uninstall
 uninstall-all
 uninstall-codacy-gosec
