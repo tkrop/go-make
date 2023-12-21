@@ -28,7 +28,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
-        make --file=Makefile.base --trace release && \
+        make --file=Makefile.base --trace release
 
     - name: Publish new version
       env:
