@@ -2,7 +2,7 @@ module github.com/tkrop/go-make
 
 go 1.21
 
-toolchain go1.21.0
+toolchain go1.21.5
 
 require github.com/stretchr/testify v1.8.4
 
