@@ -1188,7 +1188,7 @@ update-go::
 	      head -n 1 | sed "s/go\(.*\)\.[0-9]*\.$${ARCH}\.tar\.gz/\1/")"; \
 	else VERSION="$(RUNARGS)"; fi; \
 	echo "info: update golang version to $${VERSION}"; \
-	go mod tidy -go=$${VERSION}; \
+	go get go@latest;  go mod tidy -go=$${VERSION}; \
 	if [ -f $(FILE_DELIVERY) ]; then \
 	  sed -E -i -e "s/$(FILE_DELIVERY_REGEX)/\1$${VERSION}/" $(FILE_DELIVERY); \
 	fi; \
