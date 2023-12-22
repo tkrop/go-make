@@ -23,9 +23,9 @@ clean-run
 clean-run-aws
 clean-run-db
 commit
-fix
+fix-comment
+fix-commit
 fix-no-verify
-fix-update
 go.sum
 help
 image

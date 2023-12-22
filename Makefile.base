@@ -374,13 +374,13 @@ push::
 	@git push --set-upstream origin \
 	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
 #@ pushes the latest changes to the previous commit of the origin.
-fix::
+fix-commit::
 	@git commit --amend --no-edit && git push --force;
 #@ pushes the latest changes to the previous commit of the origin without verifying them.
 fix-no-verify::
 	@git commit --amend --no-edit --no-verify && git push --force;
-#@ pushes the latest changes to the previous commit of the origin updating the message.
-fix-update::
+#@ pushes the latest changes to the previous commit of the origin updating the commit message.
+fix-comment::
 	@git commit --amend && git push --force;
 
 #@ <version|major|minor|patch[+-]?> # update version and prepare release of the software.
@@ -942,8 +942,9 @@ lint-apis:: $(GOBIN)/zally
 	fi; \
 	ARGS=("--linter-service" "$${LINTER}"); \
 	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
-	if [ -n "$(RUNARGS)" ]; then FILES="$(RUNARGS)"; \
-	else FILES="$$(find zalando-apis -name "*.yaml" 2>/dev/null)"; fi; \
+	if [ -z "$(filter %.yaml,$(RUNARGS))" ]; then \
+	   FILES="$$(find zalando-apis -name "*.yaml" 2>/dev/null)"; \
+	else FILES="$(filter %.yaml,$(RUNARGS))"; fi; \
 	for APISPEC in $${FILES}; do \
 	  echo "check API: zally \"$${APISPEC}\""; \
 	  zally "$${ARGS[@]}" lint "$${APISPEC}" || exit 1; \

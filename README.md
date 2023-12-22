@@ -155,8 +155,8 @@ TARGETS := $(shell command -v go-make >/dev/null || \
 # Declare all targets phony to make them available for auto-completion.
 .PHONY: $(TARGETS)
 
-# Delegate all targets to go-make in one call.
-# TODO: consider solution that does not delegate local goals.
+# Delegate all targets to go-make in a single call suppressing other targets.
+$(eval $(wordlist 1,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))::;@:)
 $(firstword $(MAKECMDGOALS) all)::
    $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
 ```
