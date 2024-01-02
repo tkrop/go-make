@@ -50,7 +50,7 @@ TEAM ?= $(shell cat .zappr.yaml | grep "X-Zalando-Team" | \
 TOOLS_NPM := $(TOOLS_NPM) \
 	markdownlint-cli
 TOOLS_GO := $(TOOLS_GO) \
-	github.com/golangci/golangci-lint/cmd/golangci-lint \
+	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
 	github.com/uudashr/gocognit/cmd/gocognit \
@@ -274,7 +274,7 @@ TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 	$(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_MAKE?))
 
 # Setup explicit phony make targets to always be executed (others are using ::).
-.PHONY: $(TARGETS_INIT_MAKE)
+.PHONY:: $(TARGETS_INIT_MAKE)
 
 # Setup docker or podman command.
 IMAGE_CMD ?= $(shell command -v docker || command -v podman)
@@ -301,7 +301,7 @@ ifneq ($(CMDMATCH),%)
   CMDARGS := $(wordlist $(shell expr $(POS) + 1),\
     $(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   # ...and turn them into do-nothing targets.
-  $(eval $(CMDARGS):;@:)
+  $(eval $(CMDARGS)::;@:)
   RUNARGS ?= $(CMDARGS)
   $(shell if [ -n "$(RUNARGS)" ]; then \
     echo "info: captured arguments [$(RUNARGS)]" >/dev/stderr; \
@@ -448,11 +448,11 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
+$(addprefix $(GOBIN)/,$(COMMANDS_GO)):: $(GOBIN)/%:
 	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
+$(addprefix $(GOBIN)/,$(COMMANDS_SH)):: $(GOBIN)/%:
 	@if ! command -v $*; then \
 	  curl --silent --show-error --fail --location \
 	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
@@ -460,7 +460,7 @@ $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
 	fi;
 # install npm tools used by the project.
 $(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
-$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
+$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)):: $(NVM_BIN)/%:
 	@if command -v npm &> /dev/null && ! command -v $*; then \
 	  echo "npm install --global ^$*$$"; \
 	  npm install --global $(filter $*-cli,$(TOOLS_NPM)); \
@@ -468,7 +468,7 @@ $(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
 
 #@ install software command or service created by the project.
 $(TARGETS_INSTALL):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
+$(addprefix $(GOBIN)/,$(COMMANDS)):: $(GOBIN)/%: $(DIR_BUILD)/%
 	cp -f $< $(GOBIN)/$*;
 
 #@ uninstall all software created by the project.
@@ -515,7 +515,7 @@ init-hooks:: .git/hooks/pre-commit
 
 #@ initialize the generated sources.
 init-sources:: $(MOCKS)
-$(MOCKS): go.sum $(MOCK_SOURCES) $(GOBIN)/mockgen $(GOBIN)/mock
+$(MOCKS):: go.sum $(MOCK_SOURCES) $(GOBIN)/mockgen $(GOBIN)/mock
 	go generate "$(shell echo $(MOCK_TARGETS) | \
 	  sed -E "s|.*$@=([^ ]*).*$$|\1|")";
 
@@ -652,13 +652,13 @@ TEST_FLAGS ?= -race -mod=readonly -count=1
 TEST_ARGS ?= $(shell $(testargs))
 
 # actuall targets for testing.
-$(TEST_ALL): $(SOURCES) init-sources $(TEST_DEPS) $(DIR_BUILD)
+$(TEST_ALL):: $(SOURCES) init-sources $(TEST_DEPS) $(DIR_BUILD)
 	go test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ $(TEST_ARGS);
-$(TEST_UNIT): $(SOURCES) init-sources $(DIR_BUILD)
+$(TEST_UNIT):: $(SOURCES) init-sources $(DIR_BUILD)
 	go test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short $(TEST_ARGS);
-$(TEST_BENCH): $(SOURCES) init-sources $(DIR_BUILD)
+$(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
 	go test $(TEST_FLAGS) -benchtime=8s \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
 
@@ -721,10 +721,10 @@ LINT_MAX := --enable-all --disable $(LINT_DISABLED)
 LINT_ALL := --enable $(LINT_EXPERT),$(LINT_DISABLED) --disable-all
 
 LINT_FLAGS ?= --allow-serial-runners --sort-results --color always
-LINT_CMD ?= golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
+LINT_CMD ?= $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
 LINT_CMD_CONFIG := make --no-print-directory lint-config
 ifeq ($(RUNARGS),linters)
-  LINT_CMD := golangci-lint linters $(LINT_CONFIG) $(LINT_FLAGS)
+  LINT_CMD := $(GOBIN)/golangci-lint linters $(LINT_CONFIG) $(LINT_FLAGS)
 else ifeq ($(RUNARGS),config)
   LINT_CMD := @
   LINT_MIN := LINT_ENABLED=$(LINT_MINIMUM) \
@@ -736,9 +736,9 @@ else ifeq ($(RUNARGS),config)
   LINT_MAX := LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
   LINT_ALL := LINT_ENABLED=$(LINT_EXPERT),$(LINT_DISABLED) $(LINT_CMD_CONFIG)
 else ifeq ($(RUNARGS),fix)
-  LINT_CMD := golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS) --fix
+  LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS) --fix
 else ifneq ($(RUNARGS),)
-  LINT_CMD := golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
+  LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
   LINT_MIN := --disable-all --enable $(RUNARGS)
   LINT_BASE := --disable-all --enable $(RUNARGS)
   LINT_PLUS := --disable-all --enable $(RUNARGS)
@@ -922,7 +922,7 @@ lint-leaks?:: $(GOBIN)/gitleaks
 lint-vuln:: $(GOBIN)/govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
-lint-gocyclo lint-gocognit: lint-%: $(GOBIN)/%
+lint-gocyclo lint-gocognit:: lint-%: $(GOBIN)/%
 	@RUNARGS=($(RUNARGS)); MODS="0"; \
 	while [ "$${#RUNARGS[@]}" != "0" ]; do \
 	  if [ "$${RUNARGS[0]}" == "top" ]; then ARGS+=(-$${RUNARGS[0]}); MODS="1"; \
@@ -986,7 +986,7 @@ build:: build-native
 #@ build native platform executables using system architecture.
 build-native:: $(TARGETS_BUILD)
 $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
-$(DIR_BUILD)/%: init-hooks $(SOURCES)
+$(DIR_BUILD)/%:: init-hooks $(SOURCES)
 	@mkdir -p "$(dir $@)";
 	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 \
 	  go build -ldflags="$(call ld-flags,$(call main-pkg,$*))" \
@@ -994,7 +994,7 @@ $(DIR_BUILD)/%: init-hooks $(SOURCES)
 
 #@ build linux platform executables using default (system) architecture.
 build-linux:: $(TARGETS_BUILD_LINUX)
-$(DIR_BUILD)/linux/%: $(call main-pkg,%) init-hooks $(SOURCES)
+$(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-hooks $(SOURCES)
 	@mkdir -p "$(dir $@)";
 	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=$(GOCGO) \
 	  go build -ldflags="$(call ld-flags,$(call main-pkg,$*))" \
@@ -1224,7 +1224,7 @@ update-list = \
 
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
-update/go.mod: $(GOBIN)/gomajor
+update/go.mod:: $(GOBIN)/gomajor
 	@if [ -n "$(RUNARGS)" ]; then $(call update-args,$(RUNARGS)); \
 	  if [[ " $(RUNARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
 	  readarray -t UPDATES < <($(call update-list,$${ARGS},$${PACKAGES})); \
@@ -1250,7 +1250,7 @@ update/go.mod: $(GOBIN)/gomajor
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
-update/go.mod?: $(GOBIN)/gomajor
+update/go.mod?:: $(GOBIN)/gomajor
 	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 
