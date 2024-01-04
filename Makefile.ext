@@ -5,9 +5,15 @@ bump::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com/tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" Makefile;
 
+commit::
+	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
+		if [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
+			echo "error: $${FILE} (not synchronized)" > "/dev/stderr"; exit -1; \
+		fi; \
+	done;
+
 install:: install-go-make.config;
 install-go-make.config:: uninstall-go-make.config
-	mkdir -p $(GOBIN)/go-make.config;
 	cp -rf . $(GOBIN)/go-make.config;
 
 uninstall:: uninstall-go-make.config

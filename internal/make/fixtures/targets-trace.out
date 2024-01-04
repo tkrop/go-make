@@ -1,4 +1,4 @@
-Makefile.base:364: target 'targets' does not exist
+Makefile.base:361: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
@@ -38,6 +38,8 @@ init-gosec
 init-hooks
 init-make
 init-make!
+init/Makefile
+init/Makefile.vars
 init-sources
 init-staticcheck
 install
@@ -92,6 +94,7 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
+setup/base
 show
 targets
 test
@@ -127,7 +130,6 @@ update
 update?
 update-all
 update-all?
-update-base
 update-deadcode
 update-deps
 update-deps?
@@ -157,7 +159,6 @@ update/.golangci.yaml
 update/.golangci.yaml?
 update/Makefile
 update/Makefile?
-update/Makefile.vars
 update/.markdownlint.yaml
 update/.markdownlint.yaml?
 update/revive.toml

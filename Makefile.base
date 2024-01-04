@@ -166,7 +166,7 @@ TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
 
-INIT_MAKE ?= $(FILE_MAKE) $(FILE_VARS)
+INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS))
 UPDATE_MAKE ?= $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
     $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE)
 
@@ -238,7 +238,7 @@ MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
 # Prepare make targets lists with phony execution.
 TARGETS_PUBLISH := $(addprefix publish-, all $(COMMANDS))
 TARGETS_TEST_INIT := test-clean init-sources init-hooks
-TARGETS_INIT_MAKE := $(addprefix update/,$(INIT_MAKE))
+TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
@@ -272,9 +272,6 @@ TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
 TARGETS_UPDATE_ALL? := udate-go? update-deps? update-make?
 TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 	$(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_MAKE?))
-
-# Setup explicit phony make targets to always be executed (others are using ::).
-.PHONY:: $(TARGETS_INIT_MAKE)
 
 # Setup docker or podman command.
 IMAGE_CMD ?= $(shell command -v docker || command -v podman)
@@ -368,6 +365,18 @@ targets::
 	      if ($$1 !~ "^[#.]") { print $$1 } \
 	    }' | sort -d | egrep -v -e '^[^[:alnum:]]'; \
 	  else cat -; fi || true;
+
+#@ create a clone of the base repository to update from.
+BASE := git@github.com:tkrop/go-make.git
+setup/base::
+	@$(eval BASEDIR = $(shell mktemp -d)) ( \
+	  trap "rm -rf $${DIR}" INT TERM EXIT; \
+	  while pgrep $(MAKE) > /dev/null; do sleep 1; done; \
+	  rm -rf $${DIR} \
+	) & \
+	git clone --no-checkout --depth 2 --single-branch \
+	  --branch main $(BASE) $(BASEDIR) 2> /dev/null; \
+
 
 #@ pushes the current branch to the same branch of the origin.
 push::
@@ -535,10 +544,14 @@ $(TARGETS_INIT_CODACY):: init-%:
 
 #@ initialize project by copying config makefile from template.
 init-make:: $(TARGETS_INIT_MAKE)
+$(TARGETS_INIT_MAKE):: init/%: setup/base
+	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
+	cd "$(BASEDIR)"; git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
+
 #@ initialize project by copying Makefile.base from template.
-init-make!:: update-base
+init-make!:: setup/base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
-	git show HEAD:Makefile.base > $${DIR}/Makefile 2>/dev/null; \
+	git show HEAD:config/Makefile.base > $${DIR}/Makefile 2>/dev/null; \
 	( echo -e "<!-- do not change!!! -->\n\n# Makefile"; \
 	  git show HEAD:README.md  2>/dev/null | \
 	  sed -n '/^## Standard/,/^## Terms/p' | sed '1d;$$d'; \
@@ -1256,17 +1269,17 @@ update/go.mod?:: $(GOBIN)/gomajor
 
 #@ update this build environment to latest version.
 update-make:: $(TARGETS_UPDATE_MAKE)
-$(TARGETS_UPDATE_MAKE):: update/%: update-base
+$(TARGETS_UPDATE_MAKE):: update/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "info: $${DIR}/$${FILE} (not configured - update skipped)"; \
 	else cd "$(BASEDIR)"; \
-	  DIFF="$$(diff <(git show HEAD:$${FILE} 2>/dev/null) $${DIR}/$${FILE})"; \
+	  DIFF="$$(diff <(git show HEAD:config/$${FILE} 2>/dev/null) $${DIR}/$${FILE})"; \
 	  if [ -n "$${DIFF}" ]; then \
 	    if [ -n "$$(cd $${DIR}; git diff $${FILE})" ]; then \
 	      echo "info: $${DIR}/$${FILE} (was updated - update blocked)"; \
 	    else echo "info: $${DIR}/$${FILE} (has changed - update executed)"; \
-	      git show HEAD:$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
+	      git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
 	    fi; \
 	  else \
 	    echo "info: $${DIR}/$${FILE} (not changed - update skipped)" >/dev/null; \
@@ -1275,7 +1288,7 @@ $(TARGETS_UPDATE_MAKE):: update/%: update-base
 
 #@ check whether updates for build environment exist.
 update-make?:: $(TARGETS_UPDATE_MAKE?)
-$(TARGETS_UPDATE_MAKE?):: update/%?: update-base
+$(TARGETS_UPDATE_MAKE?):: update/%?: setup/base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	if [ ! -e "$${DIR}/$*" ]; then \
 	  echo "info: $* is not tracked"; \
@@ -1286,17 +1299,6 @@ $(TARGETS_UPDATE_MAKE?):: update/%?: update-base
 	    else echo "info: $* needs update"; fi; \
 	  fi; \
 	fi; \
-
-#@ create a clone of the base repository to update from.
-BASE := git@github.com:tkrop/go-make.git
-update-base::
-	@$(eval BASEDIR = $(shell mktemp -d)) ( \
-	  trap "rm -rf $${DIR}" INT TERM EXIT; \
-	  while pgrep $(MAKE) > /dev/null; do sleep 1; done; \
-	  rm -rf $${DIR} \
-	) & \
-	git clone --no-checkout --depth 1 --single-branch \
-	  --branch main $(BASE) $(BASEDIR) 2> /dev/null; \
 
 #@ update all tools required by the project.
 update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
