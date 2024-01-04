@@ -448,11 +448,11 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_GO)):: $(GOBIN)/%:
+$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
 	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_SH)):: $(GOBIN)/%:
+$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
 	@if ! command -v $*; then \
 	  curl --silent --show-error --fail --location \
 	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
@@ -460,7 +460,7 @@ $(addprefix $(GOBIN)/,$(COMMANDS_SH)):: $(GOBIN)/%:
 	fi;
 # install npm tools used by the project.
 $(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
-$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)):: $(NVM_BIN)/%:
+$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
 	@if command -v npm &> /dev/null && ! command -v $*; then \
 	  echo "npm install --global ^$*$$"; \
 	  npm install --global $(filter $*-cli,$(TOOLS_NPM)); \
@@ -468,7 +468,7 @@ $(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)):: $(NVM_BIN)/%:
 
 #@ install software command or service created by the project.
 $(TARGETS_INSTALL):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS)):: $(GOBIN)/%: $(DIR_BUILD)/%
+$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
 	cp -f $< $(GOBIN)/$*;
 
 #@ uninstall all software created by the project.
