@@ -542,13 +542,13 @@ $(TARGETS_INIT_CODACY):: init-%:
 	  chmod 700 $${FILE}; \
 	fi; \
 
-#@ initialize project by copying config makefile from template.
-init-make:: $(TARGETS_INIT_MAKE)
+#@ initialize project by copying config files from template.
+init-make:: $(TARGETS_INIT_MAKE) $(TARGETS_UPDATE_MAKE)
 $(TARGETS_INIT_MAKE):: init/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
 	cd "$(BASEDIR)"; git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
 
-#@ initialize project by copying Makefile.base from template.
+#@ initialize project by copying raw Makefile.base from template.
 init-make!:: setup/base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	git show HEAD:config/Makefile.base > $${DIR}/Makefile 2>/dev/null; \

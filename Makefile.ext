@@ -4,6 +4,7 @@ clean::
 bump::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com/tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" Makefile;
+	cp Makefile Makefile.base config;
 
 commit::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
