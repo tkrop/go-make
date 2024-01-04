@@ -378,6 +378,8 @@ setup/base::
 	  --branch main $(BASE) $(BASEDIR) 2> /dev/null; \
 
 
+## Git-Support: targets for standard git commands (experimental).
+
 #@ pushes the current branch to the same branch of the origin.
 push::
 	@git push --set-upstream origin \
@@ -391,117 +393,6 @@ fix-no-verify::
 #@ pushes the latest changes to the previous commit of the origin updating the commit message.
 fix-comment::
 	@git commit --amend && git push --force;
-
-#@ <version|major|minor|patch[+-]?> # update version and prepare release of the software.
-bump::
-	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
-	if [ ! -e VERSION ]; then echo "" >VERSION; fi; \
-	if [[ "$${ARGS}" =~ ^(major|minor|patch|[.+-]*)[+-]?$$ ]]; then \
-	  VERSION="$$(awk -v arg=$${ARGS} '{ \
-	    op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
-		if ((pos = op[substr(arg,1,5)]) == 0) { pos = length(arg) }; \
-	    patsplit($$0, v, "[0-9]*", seps); len = length(seps); \
-		while (len <= 3) { seps[len-1] = "."; len++ }; \
-	    if (arg !~ "-$$") { v[pos]++ } else { v[pos]-- }; \
-	    for (i = 1; i < len; i++) { printf("%01d%s", v[i], seps[i]) } \
-	  }' VERSION)"; \
-	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
-	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
-	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
-	echo "Bumped version to $${VERSION} for auto release!"; \
-
-
-#@ <version> # release a fixed version of the software as library.
-release::
-	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
-	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
-	  VERSION="$(RUNARGS)"; \
-	fi; \
-	if [ -n "$${VERSION}" -a -z "$$(git tag -l "v$${VERSION}")" ]; then \
-	  ( git gh-release "v$${VERSION}" ) || ( \
-		git config user.name "$$(git log -n 1 --pretty=format:%an)" && \
-		git config user.email "$$(git log -n 1 --pretty=format:%ae)" && \
-	    git tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
-		git push --follow-tags origin "v$${VERSION}" \
-	  ) && echo "Added release tag v$${VERSION} to repository!"; \
-	fi; \
-
-publish:: $(TARGETS_PUBLISH)
-$(TARGETS_PUBLISH): publish-%:
-	@if [ "$*" != "all" ]; then \
-	  if [ -f "cmd/$*/main.go" ]; then CMD="/cmd/$*"; else exit 0; fi; \
-	fi; \
-	if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; else \
-	  VERSION="$$(TZ=UTC0 git show --quiet --date='format-local:%Y%m%d%H%M%S' \
-	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
-	fi; \
-	TARGET="$(REPOSITORY)$${CMD}@v$${VERSION}"; \
-	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
-	  if [ -z "$${CMD}" ]; then \
-	    echo "publish: curl $${TARGET}"; \
-	    curl  --silent --show-error --fail --location \
-	      https://sum.golang.org/lookup/$${TARGET};\
-	  fi; \
-	  if [ -f ".$${CMD}/main.go" ]; then \
-	    echo "publish: go install $${TARGET}"; \
-	    go install $${TARGET}; \
-	  fi; \
-	fi;
-
-
-#@ install all software created by the project.
-install:: $(TARGETS_INSTALL)
-#@ install all software created and used by the project.
-install-all:: $(TARGETS_INSTALL_ALL)
-#@ install-*: install the matched software command or service.
-
-# install go tools used by the project.
-$(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
-	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
-# install go tools providing an install.sh script.
-$(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
-	@if ! command -v $*; then \
-	  curl --silent --show-error --fail --location \
-	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
-	    sh -s -- -b $(GOBIN); \
-	fi;
-# install npm tools used by the project.
-$(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
-$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
-	@if command -v npm &> /dev/null && ! command -v $*; then \
-	  echo "npm install --global ^$*$$"; \
-	  npm install --global $(filter $*-cli,$(TOOLS_NPM)); \
-	fi;
-
-#@ install software command or service created by the project.
-$(TARGETS_INSTALL):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
-	cp -f $< $(GOBIN)/$*;
-
-#@ uninstall all software created by the project.
-uninstall:: $(TARGETS_UNINSTALL)
-#@ uninstall all software created and used by the projct.
-uninstall-all:: $(TARGETS_UNINSTALL_ALL)
-#@ uninstall-*: uninstall the matched software command or service.
-
-# uninstall go tools used by the project.
-$(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@#PACKAGE=$(call go-pkg,strip,$(TOOLS_GO),^$*$$); \
-	rm -rf $(wildcard $(GOBIN)/$* $(GOBIN)/$*.config);
-# uninstall npm based tools used by the project.
-$(TARGETS_UNINSTALL_NPM):: uninstall-%:
-	@if command -v npm &> /dev/null; then \
-	  echo "npm uninstall --global $*"; \
-	  npm uninstall --global $(filter $*-cli,$(TOOLS_NPM)); \
-	fi;
-# uninstall codacy tools used by the project.
-$(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
-	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	rm -f "$(GOBIN)/codacy-$*-$${VERSION}";
-# uninstall software command or service created by the project.
-$(TARGETS_UNINSTALL):: uninstall-%:; rm -f $(GOBIN)/$*;
 
 
 ## Init: targets to initialize tools and (re-)sources.
@@ -1061,6 +952,123 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	  echo "We never push pull request images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
 	$(IMAGE_CMD) push $${IMAGE}; \
+
+
+## Install: targets to (un-)install software and tools.
+
+#@ install all software created by the project.
+install:: $(TARGETS_INSTALL)
+#@ install all software created and used by the project.
+install-all:: $(TARGETS_INSTALL_ALL)
+#@ install-*: install the matched software command or service.
+
+# install go tools used by the project.
+$(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
+$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
+	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
+# install go tools providing an install.sh script.
+$(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
+$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
+	@if ! command -v $*; then \
+	  curl --silent --show-error --fail --location \
+	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
+	    sh -s -- -b $(GOBIN); \
+	fi;
+# install npm tools used by the project.
+$(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
+$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
+	@if command -v npm &> /dev/null && ! command -v $*; then \
+	  echo "npm install --global ^$*$$"; \
+	  npm install --global $(filter $*-cli,$(TOOLS_NPM)); \
+	fi;
+
+#@ install software command or service created by the project.
+$(TARGETS_INSTALL):: install-%: $(GOBIN)/%
+$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
+	cp -f $< $(GOBIN)/$*;
+
+#@ uninstall all software created by the project.
+uninstall:: $(TARGETS_UNINSTALL)
+#@ uninstall all software created and used by the projct.
+uninstall-all:: $(TARGETS_UNINSTALL_ALL)
+#@ uninstall-*: uninstall the matched software command or service.
+
+# uninstall go tools used by the project.
+$(TARGETS_UNINSTALL_GO):: uninstall-%:
+	@#PACKAGE=$(call go-pkg,strip,$(TOOLS_GO),^$*$$); \
+	rm -rf $(wildcard $(GOBIN)/$* $(GOBIN)/$*.config);
+# uninstall npm based tools used by the project.
+$(TARGETS_UNINSTALL_NPM):: uninstall-%:
+	@if command -v npm &> /dev/null; then \
+	  echo "npm uninstall --global $*"; \
+	  npm uninstall --global $(filter $*-cli,$(TOOLS_NPM)); \
+	fi;
+# uninstall codacy tools used by the project.
+$(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
+	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
+	rm -f "$(GOBIN)/codacy-$*-$${VERSION}";
+# uninstall software command or service created by the project.
+$(TARGETS_UNINSTALL):: uninstall-%:; rm -f $(GOBIN)/$*;
+
+
+## Release: targets to support release process.
+
+#@ <version|major|minor|patch[+-]?> # update version and prepare release of the software.
+bump::
+	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
+	if [ ! -e VERSION ]; then echo "" >VERSION; fi; \
+	if [[ "$${ARGS}" =~ ^(major|minor|patch|[.+-]*)[+-]?$$ ]]; then \
+	  VERSION="$$(awk -v arg=$${ARGS} '{ \
+	    op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
+		if ((pos = op[substr(arg,1,5)]) == 0) { pos = length(arg) }; \
+	    patsplit($$0, v, "[0-9]*", seps); len = length(seps); \
+		while (len <= 3) { seps[len-1] = "."; len++ }; \
+	    if (arg !~ "-$$") { v[pos]++ } else { v[pos]-- }; \
+	    for (i = 1; i < len; i++) { printf("%01d%s", v[i], seps[i]) } \
+	  }' VERSION)"; \
+	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
+	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
+	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
+	echo "Bumped version to $${VERSION} for auto release!"; \
+
+
+#@ <version> # release a fixed version of the software as library.
+release::
+	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
+	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
+	  VERSION="$(RUNARGS)"; \
+	fi; \
+	if [ -n "$${VERSION}" -a -z "$$(git tag -l "v$${VERSION}")" ]; then \
+	  ( git gh-release "v$${VERSION}" ) || ( \
+		git config user.name "$$(git log -n 1 --pretty=format:%an)" && \
+		git config user.email "$$(git log -n 1 --pretty=format:%ae)" && \
+	    git tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
+		git push --follow-tags origin "v$${VERSION}" \
+	  ) && echo "Added release tag v$${VERSION} to repository!"; \
+	fi; \
+
+#@ publish the current version by enforcing a registry lookup (experimental).
+publish:: $(TARGETS_PUBLISH)
+$(TARGETS_PUBLISH): publish-%:
+	@if [ "$*" != "all" ]; then \
+	  if [ -f "cmd/$*/main.go" ]; then CMD="/cmd/$*"; else exit 0; fi; \
+	fi; \
+	if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; else \
+	  VERSION="$$(TZ=UTC0 git show --quiet --date='format-local:%Y%m%d%H%M%S' \
+	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
+	fi; \
+	TARGET="$(REPOSITORY)$${CMD}@v$${VERSION}"; \
+	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
+	  if [ -z "$${CMD}" ]; then \
+	    echo "publish: curl $${TARGET}"; \
+	    curl  --silent --show-error --fail --location \
+	      https://sum.golang.org/lookup/$${TARGET};\
+	  fi; \
+	  if [ -f ".$${CMD}/main.go" ]; then \
+	    echo "publish: go install $${TARGET}"; \
+	    go install $${TARGET}; \
+	  fi; \
+	fi;
 
 
 ## Run: targets for starting services and commands for testing.
