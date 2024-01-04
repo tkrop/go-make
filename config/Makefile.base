@@ -167,8 +167,8 @@ TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
 
 INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS))
-UPDATE_MAKE ?= $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
-    $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE)
+UPDATE_MAKE ?=  $(notdir $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
+    $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE))
 
 # Setup go to use desired and consistent go versions.
 GOVERSION := $(shell go version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
@@ -363,7 +363,7 @@ targets::
 	  if [ "$(RUNARGS)" != "raw" ]; then awk -v RS= -F: ' \
 	    /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
 	      if ($$1 !~ "^[#.]") { print $$1 } \
-	    }' | sort -d | egrep -v -e '^[^[:alnum:]]'; \
+	    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'; \
 	  else cat -; fi || true;
 
 #@ create a clone of the base repository to update from.

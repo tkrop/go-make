@@ -23,7 +23,7 @@ const (
 	// bashCompletion contains the bash completion script for go-make.
 	BashCompletion = "### bash completion for go-make\n" +
 		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make targets)\"" +
+		"	COMPREPLY=($(compgen -W \"$(go-make targets 2>/dev/null)\"" +
 		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
 		"}\n" +
 		"complete -F __complete_go-make go-make;\n"
