@@ -30,6 +30,8 @@ init-gosec
 init-hooks
 init-make
 init-make!
+init/Makefile
+init/Makefile.vars
 init-sources
 init-staticcheck
 install
@@ -84,6 +86,7 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
+setup/base
 show
 targets
 test
@@ -119,7 +122,6 @@ update
 update?
 update-all
 update-all?
-update-base
 update-deadcode
 update-deps
 update-deps?
@@ -149,7 +151,6 @@ update/.golangci.yaml
 update/.golangci.yaml?
 update/Makefile
 update/Makefile?
-update/Makefile.vars
 update/.markdownlint.yaml
 update/.markdownlint.yaml?
 update/revive.toml
