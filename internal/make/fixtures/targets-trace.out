@@ -4,7 +4,7 @@ make --no-builtin-rules --no-builtin-variables --print-data-base \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
     /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { \
       if ($1 !~ "^[#.]") { print $1 } \
-    }' | sort -d | egrep -v -e '^[^[:alnum:]]'; \
+    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'; \
   else cat -; fi || true;
 all
 all-clean
@@ -38,19 +38,19 @@ init-gosec
 init-hooks
 init-make
 init-make!
-init/Makefile
-init/Makefile.vars
 init-sources
 init-staticcheck
+init/Makefile
+init/Makefile.vars
 install
 install-all
 install-deadcode
 install-gitleaks
+install-go-make
 install-gocognit
 install-gocyclo
 install-golangci-lint
 install-gomajor
-install-go-make
 install-gosec
 install-govulncheck
 install-grype
@@ -112,11 +112,11 @@ uninstall-codacy-gosec
 uninstall-codacy-staticcheck
 uninstall-deadcode
 uninstall-gitleaks
+uninstall-go-make
 uninstall-gocognit
 uninstall-gocyclo
 uninstall-golangci-lint
 uninstall-gomajor
-uninstall-go-make
 uninstall-gosec
 uninstall-govulncheck
 uninstall-markdownlint
@@ -127,7 +127,6 @@ uninstall-staticcheck
 uninstall-vegeta
 uninstall-zally
 update
-update?
 update-all
 update-all?
 update-deadcode
@@ -135,14 +134,12 @@ update-deps
 update-deps?
 update-gitleaks
 update-go
+update-go-make
 update-go?
 update-gocognit
 update-gocyclo
 update-golangci-lint
 update-gomajor
-update-go-make
-update/go.mod
-update/go.mod?
 update-gosec
 update-govulncheck
 update-make
@@ -151,18 +148,21 @@ update-mock
 update-mockgen
 update-revive
 update-staticcheck
+update-tools
+update-vegeta
+update-zally
 update/.codacy.yaml
 update/.codacy.yaml?
 update/.gitleaks.toml
 update/.gitleaks.toml?
 update/.golangci.yaml
 update/.golangci.yaml?
-update/Makefile
-update/Makefile?
 update/.markdownlint.yaml
 update/.markdownlint.yaml?
+update/Makefile
+update/Makefile?
+update/go.mod
+update/go.mod?
 update/revive.toml
 update/revive.toml?
-update-tools
-update-vegeta
-update-zally
+update?

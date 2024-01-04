@@ -1,6 +1,6 @@
 ### bash completion for go-make
 function __complete_go-make() {
-	COMPREPLY=($(compgen -W "$(go-make targets)" -- "${COMP_WORDS[COMP_CWORD]}"));
+	COMPREPLY=($(compgen -W "$(go-make targets 2>/dev/null)" -- "${COMP_WORDS[COMP_CWORD]}"));
 }
 complete -F __complete_go-make go-make;
 
