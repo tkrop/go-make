@@ -287,7 +287,7 @@ pos-recurs = $(if $(findstring $(1),$(2)),$(call pos-recurs,$(1),\
 pos = $(words $(call pos-recurs,$(1),$(2)))
 
 # match commands that support arguments ...
-CMDWORDS := targets bump release update test- lint run-
+CMDWORDS ?= targets git- test- lint run- bump release update 
 CMDMATCH = $(call findany,$(CMDWORDS),$(MAKECMDGOALS))%
 
 # If any argument contains "run*", "test*", "lint*", "bump" ...
@@ -298,7 +298,7 @@ ifneq ($(CMDMATCH),%)
   CMDARGS := $(wordlist $(shell expr $(POS) + 1),\
     $(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   # ...and turn them into do-nothing targets.
-  $(eval $(CMDARGS)::;@:)
+  $(eval $(subst :,\:,$(CMDARGS))::;@:)
   RUNARGS ?= $(CMDARGS)
   $(shell if [ -n "$(RUNARGS)" ]; then \
     echo "info: captured arguments [$(RUNARGS)]" >/dev/stderr; \
@@ -379,20 +379,54 @@ setup/base::
 
 
 ## Git-Support: targets for standard git commands (experimental).
+git-message = \
+	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
+	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$" ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
+	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
+	  COMMIT="$$(git log --graph --max-count=1 --pretty=format:'%s' | \
+	    sed -E 's/^.*\(([^()]*\#[0-9]*)\)$$/\1/')"; \
+	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
+	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+1)))"; \
+	fi; \
 
-#@ pushes the current branch to the same branch of the origin.
-push::
-	@git push --set-upstream origin \
-	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
+#@ shows the git log as pretty printed graph.
+git-graph::
+	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
+	git log --graph --all --date=iso \
+	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
+#@ clean up all local branches except main, master, and current branch.
+git-clean::
+	BRANCHES=($$(git branch | grep -v "main\|master" | grep "^  " | cut -c 3-));
+	@for BRANCH in $"$${BRANCHES[@]}"; do \
+    	git branch --delete "${BRANCH}"; \
+	done;
+#@ <branch> <message> # creates a branch with the current change set using next issue.
+git-create:: git-create-feature
+git-create-fix git-create-chore git-create-feature:: git-create-%:
+	@BRANCH="$(firstword $(RUNARGS))"; \
+	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
+	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
+	git checkout -B "$${BRANCH}"; $(call git-message,$*) \
+	git commit --message "$${MESSAGE}"; \
+	git push --set-upstream origin "$${BRANCH}";
+#@ <message> # commits the current change set using the given message using current issue.
+git-commit:: git-commit-feature
+git-commit-fix git-commit-chore git-commit-feature:: git-commit-%:
+	@MESSAGE="$(RUNARGS)"; $(call git-message,$*)
+	git commit --message "$$(MESSAGE)" --signoff;
 #@ pushes the latest changes to the previous commit of the origin.
-fix-commit::
+git-fix-commit::
 	@git commit --amend --no-edit && git push --force;
 #@ pushes the latest changes to the previous commit of the origin without verifying them.
-fix-no-verify::
+git-fix-no-verify::
 	@git commit --amend --no-edit --no-verify && git push --force;
 #@ pushes the latest changes to the previous commit of the origin updating the commit message.
-fix-comment::
+git-fix-comment::
 	@git commit --amend && git push --force;
+#@ pushes the current branch to the same branch of the origin.
+git-push::
+	@git push --set-upstream origin \
+	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
 
 
 ## Init: targets to initialize tools and (re-)sources.
