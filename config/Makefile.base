@@ -383,8 +383,8 @@ git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$" ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
-	  COMMIT="$$(git log --graph --max-count=1 --pretty=format:'%s' | \
-	    sed -E 's/^.*\(([^()]*\#[0-9]*)\)$$/\1/')"; \
+	  COMMIT="$$(git log --max-count=1 --pretty=format:'%s' | \
+	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+1)))"; \
 	fi; \
