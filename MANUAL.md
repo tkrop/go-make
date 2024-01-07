@@ -1,16 +1,26 @@
 # `go-make` Manual
 
-[go-make][go-make] is a thin wrapper versioned wrapper around a very generic
-[Makefile](Makefile.base).
+[`go-make`][go-make] is a thin versioned wrapper around a very generic and
+customizable [`Makefile.base`](Makefile.base), that is usually wrapped by a
+short project [`Makefile`](Makefile). In this setup the commands `go-make`
+and `make` can be used as synonyms. In the following we use just `make`.
+Please substitute with `go-make`, if you have not installed the wrapper by
+initially calling `go-make init-make` on a project.
 
 [go-make]: https://github.com/tkrop/go-make
 
 
 ## Setup and customization
 
-The [Makefile](Makefile.base) is using sensitive defaults that are supposed to
-work out-of-the-box for most targets. Please see documentation of the target
-groups for more information on setup and customization:
+While [`make`][go-make] should work out-of-the-box by using sensitive defaults,
+the latest default [`Makefile`](Makefile) and [`Makefile.vars`](Makefile.vars)
+can be installed in a project directory through calling `make init-make`.
+Similar default config files for tools can be installed using `make init/<file>`
+to allow customization. All files can be updated by calling `make update-make`
+or simpler `make update`.
+
+For more information on customization, please see documentation of the different
+target groups:
 
 * [Standard targets](#standard-targets)
 * [Test targets](#test-targets)
@@ -27,11 +37,12 @@ groups for more information on setup and customization:
 
 **Note:** To see an overview of actual targets, use the shell auto-completion
 or run `make targets`. To get a short help on most important targets and target
-families run `make help`.
+families run `make help`. To have a look at the effective targets and receipts
+use `make show`.
 
-To customize the behavior of the Makefile there exist multiple extension points
-that can be used to setup additional variables, definitions, and targets that
-modify the behavior of the [Makefile](Makefile.base).
+To customize the behavior there exist multiple extension points that can be
+used to setup additional variables, definitions, and targets that modify the
+behavior of the targets and receipts.
 
 * [Makefile.vars](Makefile.vars) allows to modify the behavior of standard
   targets by customizing and defining additional variables (see section
@@ -42,15 +53,20 @@ modify the behavior of the [Makefile](Makefile.base).
 * [Makefile.ext](Makefile.ext) is an optional extension point that allows to
   define arbitrary custom targets.
 
-**Note:** To efficiently support custom targets the [Makefile](Makefile.base)
-is extensively making use of [Double Colon Rules][make-dcr] (`::`) for the main
-[phony targets][make-phony]. This makes it easy to define additional rules
-setting up new [prerequisite][make-prerequisite] and [receipts][make-receipts].
+**Note:** To efficiently support custom [targets][make-rules] and customization
+of [rules][make-rules] the [Makefile](Makefile.base) is extensively making use
+of [Double Colon Rules][make-double-colon] (`::`) for the main. This makes it
+easy to define additional rules setting up new [prerequisite][make-prerequisite]
+and [receipts][make-receipts] for [phony targets][make-phony]. Please read the
+great [GNU `make` manual][make] for more information on how [`make`][make] works
+and interacts with its execution environment.
 
-[make-dcr]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
+[make-rules]: https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html
+[make-double-colon]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
 [make-phony]: https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
 [make-prerequisite]: https://www.gnu.org/software/make/manual/html_node/Prerequisite-Types.html
 [make-receipts]: https://www.gnu.org/software/make/manual/html_node/Recipes.html
+[make]: https://www.gnu.org/software/make/manual/html_node/index.html
 
 
 ### Modifying variables

@@ -47,8 +47,8 @@
 
 ## Introduction
 
-Goal of `go-make` is to provide a simple, versioned build environment for
-standard [`go`][go]-projects (see [Standard `go`-project](#standard-go-project)
+Goal of `go-make` is to provide a simple, versioned test and build environment
+for usual [`go`][go]-projects (see [Standard `go`-project](#standard-go-project)
 for details) providing default targets, tools, and configs for testing, linting,
 building, installing, updating, running, and releasing libraries, commands, and
 container images.
@@ -67,13 +67,18 @@ is based on a standard [`go`][go]-project supporting different tools:
 * [`syft`][syft] - for material listing.
 
 The thin wrapper provides the necessary version control for the `Makefile` and
-the default config of integrated tools. It installs these tools automatically
-when needed in the latest available version.
+the default [`config`](config) of integrated tools. The tools are automatically
+installed when needed in the latest available version and use the default
+config. All config files can be installed and customized (see [Setup and
+customization](MANUAL.md#setup-and-customization)).
 
-**Note:** We accept the risk that using the latest versions of tools, e.g. for
-linting, may break the build for the sake of constantly updating dependencies by
-default. For tools where this is not desireable, the default import is/can be
-changed to contain a version (see [manual](MANUAL.md] for more information).
+
+**Note:** Mostly, we accept the risk that using the latest versions of tools,
+e.g. for linting, may break the build for the sake of constantly updating
+dependencies by default. For tools where this is not desireable, e.g. `revive`
+and `golangci-lint` the default import is setup to contain a version. This can
+be adopted for other tools if needed (see [manual](MANUAL.md) for more
+information).
 
 **Warning:** `go-make` automatically installs a `pre-commit` hook overwriting
 and deleting any pre-existing hook. The hook calls `go-make commit` to enforce
@@ -126,9 +131,9 @@ by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04] or
 
 ## Example usage
 
-After installing `go-make` and in the build environment, you can run all targets
-by simply calling `go-make <target>` on the command line, in another `Makefile`,
-in a github action, or any other delivery pipeline config script:
+After installing `go-make`, all provided targets can executed by simply calling
+`go-make <target>` in the project repository on the command line, in another
+`Makefile`, in a github action, or any other delivery pipeline config script:
 
 ```bash
 go-make all        # execute a whole build pipeline depending on the project.
@@ -137,6 +142,10 @@ go-make image      # execute minimal steps to create all container images.
 ```
 
 For further examples see [`go-make` manual](MANUAL.md).
+
+**Note:** Many `go-make` targets can be customized via environment variables,
+that by default are defined via [`Makefile.vars`](Makefiles.vars) (see also
+[Modifying variables](Manual.md#modifying-variables)).
 
 
 ## Makefile integration
@@ -153,13 +162,17 @@ TARGETS := $(shell command -v go-make >/dev/null || \
    go install $(GOMAKE) && go-make targets)
 
 # Declare all targets phony to make them available for auto-completion.
-.PHONY: $(TARGETS)
+.PHONY:: $(TARGETS)
 
 # Delegate all targets to go-make in a single call suppressing other targets.
 $(eval $(wordlist 1,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))::;@:)
 $(firstword $(MAKECMDGOALS) all)::
    $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
 ```
+
+The default [`Makefile`](Makefile) can also be installed to a project from the
+template via `go-make init-make`. Other default [config](config) files can be
+installed using `go-make init/<file>`.
 
 
 ## Shell integration
@@ -170,6 +183,16 @@ To setup command completion for `go-make`, add the following snippet to your
 ```bash
 source <(go-make --completion=bash)
 ```
+
+
+## Makefile development
+
+To extend the `Makefile`, you develop own receipts in a custom file called
+[`Makefile.ext`](Makefile.ext) that is included automatically. If you want to
+extend original receipts, you can replace the wrapper [`Makefile`](Makefile)
+and install [`Makefile.base`](Makefile.base) and the [`MANUAL.md`](MANUAL.md)
+in your project by calling `go-make init-make!`. But be careful, this command
+always overwrites your `Makefile` with the latest version.
 
 
 ## Standard `go`-Project
@@ -224,9 +247,8 @@ targets as necessary.
 ## Terms of usage
 
 This software is open source as is under the MIT license. If you start using
-the software, please give it a star, so that I know to be more careful with
-changes. If this project has more than 25 Stars, I will introduce semantic
-versions for changes.
+the software, please give it a star, so that I know to be more careful to keep
+changes non-breaking.
 
 
 ## Building
@@ -244,4 +266,4 @@ make -f Makefile.base <target>...
 
 If you like to contribute, please create an issue and/or pull request with a
 proper description of your proposal or contribution. I will review it and
-provide feedback on it.
+provide feedback on it as soon as possible.

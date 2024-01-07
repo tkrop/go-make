@@ -43,8 +43,13 @@ init-make
 init-make!
 init-sources
 init-staticcheck
+init/.codacy.yaml
+init/.gitleaks.toml
+init/.golangci.yaml
+init/.markdownlint.yaml
 init/Makefile
 init/Makefile.vars
+init/revive.toml
 install
 install-all
 install-deadcode
