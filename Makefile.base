@@ -239,6 +239,7 @@ MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
 TARGETS_PUBLISH := $(addprefix publish-, all $(COMMANDS))
 TARGETS_TEST_INIT := test-clean init-sources init-hooks
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
+TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
@@ -367,8 +368,8 @@ targets::
 	  else cat -; fi || true;
 
 #@ create a clone of the base repository to update from.
-BASE := git@github.com:tkrop/go-make.git
-setup/base::
+BASE ?= git@github.com:tkrop/go-make.git
+setup/base:: # TODO: support cloning of a distinct revision.
 	@$(eval BASEDIR = $(shell mktemp -d)) ( \
 	  trap "rm -rf $${DIR}" INT TERM EXIT; \
 	  while pgrep $(MAKE) > /dev/null; do sleep 1; done; \
@@ -387,7 +388,7 @@ git-message = \
 	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+1)))"; \
-	fi; \
+	fi \
 
 #@ shows the git log as pretty printed graph.
 git-graph::
@@ -417,9 +418,9 @@ git-create-fix git-create-chore git-create-feature:: git-create-%:
 	@BRANCH="$(firstword $(RUNARGS))"; \
 	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
-	git checkout -B "$${BRANCH}"; $(call git-message,$*) \
-	git commit --message "$${MESSAGE}"; \
-	git push --set-upstream origin "$${BRANCH}";
+	$(call git-message,$*); \
+	git checkout -B "$${BRANCH}" && git commit --message "$${MESSAGE}" && \
+	git push --set-upstream origin "$${BRANCH}" || git checkout $${BRANCH};
 #@ <message> # commits the current change set using the given message using current issue.
 git-commit:: git-commit-feature
 git-commit-fix git-commit-chore git-commit-feature:: git-commit-%:
@@ -480,7 +481,7 @@ $(TARGETS_INIT_CODACY):: init-%:
 
 #@ initialize project by copying config files from template.
 init-make:: $(TARGETS_INIT_MAKE) $(TARGETS_UPDATE_MAKE)
-$(TARGETS_INIT_MAKE):: init/%: setup/base
+$(TARGETS_INIT_ALL):: init/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
 	cd "$(BASEDIR)"; git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
 
@@ -1236,10 +1237,6 @@ $(TARGETS_CLEAN_RUN):: clean-run-%: run-clean-%
 
 ## Update: targets to update tools, configs, and dependencies.
 
-# TODO:
-# 'update-deps' check how to utilize: 'go list -m -u -mod=mod all'
-
-
 #@ update default or customized update targets.
 update:: $(TARGETS_UPDATE)
 #@ check default or customized update targets for updates.
@@ -1287,6 +1284,8 @@ update-list = \
 	( gomajor list $(1) 2>/dev/null | sed "s/://1; s/\[latest /\[/g"; \
 	  go list -m -u -mod=mod $(2) | grep "\[.*\]$$" \
 	) | sort -u | sed "s/\]//g; s/\[/=> /"
+
+# TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod

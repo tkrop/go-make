@@ -1,4 +1,4 @@
-Makefile.base:361: target 'targets' does not exist
+Makefile.base:362: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
@@ -52,8 +52,13 @@ init-make
 init-make!
 init-sources
 init-staticcheck
+init/.codacy.yaml
+init/.gitleaks.toml
+init/.golangci.yaml
+init/.markdownlint.yaml
 init/Makefile
 init/Makefile.vars
+init/revive.toml
 install
 install-all
 install-deadcode
