@@ -37,6 +37,7 @@ git-fix-commit
 git-fix-no-verify
 git-graph
 git-push
+git-reset
 go.sum
 help
 image

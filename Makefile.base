@@ -395,12 +395,23 @@ git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
 	git log --graph --all --date=iso \
 	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
-#@ clean up all local branches except main, master, and current branch.
+#@ cleans up all local branches except the default and current branch.
 git-clean::
-	BRANCHES=($$(git branch | grep -v "main\|master" | grep "^  " | cut -c 3-));
-	@for BRANCH in $"$${BRANCHES[@]}"; do \
-    	git branch --delete "${BRANCH}"; \
+	@BRANCH="$$(git branch --show-current)"; \
+	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
+	BRANCHES=($$(git branch | cut -c 3- | grep -vw "$${MAIN}\|$${BRANCH}")); \
+	for BRANCH in $"$${BRANCHES[@]}"; do \
+	  git branch --delete "$${BRANCH}"; \
 	done;
+#@ checks out default branch and cleans up all local branches except the default.
+git-reset::
+	@BRANCH="$$(git branch --show-current)"; \
+	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
+	if [ "$${BRANCH}" != "$${MAIN}" ]; then git checkout "$${MAIN}" || exit 1; fi; \
+	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$${MAIN}"); do \
+	  git branch --delete "$${BRANCH}"; \
+	done;
+
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feature
 git-create-fix git-create-chore git-create-feature:: git-create-%:
@@ -413,8 +424,8 @@ git-create-fix git-create-chore git-create-feature:: git-create-%:
 #@ <message> # commits the current change set using the given message using current issue.
 git-commit:: git-commit-feature
 git-commit-fix git-commit-chore git-commit-feature:: git-commit-%:
-	@MESSAGE="$(RUNARGS)"; $(call git-message,$*)
-	git commit --message "$$(MESSAGE)" --signoff;
+	@MESSAGE="$(RUNARGS)"; $(call git-message,$*); \
+	git commit --message "$${MESSAGE}" --signoff;
 #@ pushes the latest changes to the previous commit of the origin.
 git-fix-commit::
 	@git commit --amend --no-edit && git push --force;
