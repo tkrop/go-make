@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -863,9 +864,14 @@ func SetupMakeConfig(t test.Test, src string) {
 	t.Helper()
 
 	if dir, err := os.Executable(); err == nil {
+		// copy configuration repository.
 		dst := dir + ".config"
 		cmd := exec.Command("cp", "--recursive", src, dst)
 		out := &strings.Builder{}
+		cmd.Stdout, cmd.Stderr = out, out
+		require.NoError(t, cmd.Run(), "copying failed", dst, out.String())
+		// Make copy dirty to prevent sync with github.
+		cmd = exec.Command("touch", filepath.Join(dst, "dirty"))
 		cmd.Stdout, cmd.Stderr = out, out
 		require.NoError(t, cmd.Run(), "copying failed", dst, out.String())
 	} else {

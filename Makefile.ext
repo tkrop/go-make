@@ -1,5 +1,5 @@
 clean::
-	rm -rf __debug_bin*;
+	find -name "__debug_bin*" -exec rm -vrf {} \;;
 
 bump::
 	@VERSION="$$(cat VERSION)"; \
