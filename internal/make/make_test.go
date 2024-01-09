@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -54,8 +55,8 @@ const (
 )
 
 var (
-	// infoDirty without version and revision hash.
-	infoDirty = info.NewInfo(goMakePath, "", "", "", "", true)
+	// infoBase without version and revision hash.
+	infoBase = info.NewInfo(goMakePath, "", "", "", "", true)
 
 	// infoTag with version and revision hash from git.
 	infoTag = info.NewInfo(goMakePath,
@@ -211,34 +212,53 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"check go-make version": {
 		mockSetup: mock.Chain(
-			LogInfo("stdout", infoDirty, true),
+			LogInfo("stdout", infoBase, true),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsVersion,
 	},
-	"dirty go-make to run target": {
+	"go-make dirty target": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist,
+				make.CmdGitStatus(), nil, "m Makefile.base", ""),
 			Exec("stdout", "stderr", dirExec,
 				make.CmdMakeTargets(make.Makefile, argsTarget...), nil, "", ""),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTarget,
 	},
 
-	"dirty go-make failed": {
+	"go-make dirty target failed": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist,
+				make.CmdGitStatus(), nil, "m Makefile.base", ""),
 			Exec("stdout", "stderr", dirExec,
 				make.CmdMakeTargets(make.Makefile, argsTarget...), errAny, "", ""),
 			LogCall("stderr", argsTarget),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
 			LogError("stderr", "execute make", make.NewErrCallFailed(
 				make.CmdMakeTargets(make.Makefile, argsTarget...), errAny)),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTarget,
 		expectError: make.NewErrCallFailed(
 			make.CmdMakeTargets(make.Makefile, argsTarget...), errAny),
 		expectExit: 2,
+	},
+
+	"go-make dirty target status failed": {
+		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist,
+				make.CmdGitStatus(), errAny, "", ""),
+			LogCall("stderr", argsTarget),
+			LogInfo("stderr", infoBase, false),
+			LogError("stderr", "update config", make.NewErrCallFailed(
+				make.CmdGitStatus(), errAny)),
+		),
+		info:        infoBase,
+		args:        argsTarget,
+		expectError: make.NewErrCallFailed(make.CmdGitStatus(), errAny),
+		expectExit:  1,
 	},
 
 	"clone go-make clone failed": {
@@ -248,11 +268,11 @@ var testMakeParams = map[string]MakeParams{
 			Exec("stderr", "stderr", dirExec,
 				make.CmdGitClone(goMakeHTTP, goMakeDirNew), errAny, "", ""),
 			LogCall("stderr", argsTarget),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
 			LogError("stderr", "update config", make.NewErrCallFailed(
 				make.CmdGitClone(goMakeHTTP, goMakeDirNew), errAny)),
 		),
-		info:      infoDirty,
+		info:      infoBase,
 		args:      argsTarget,
 		goMakeDir: goMakeDirNew,
 		expectError: make.NewErrCallFailed(
@@ -260,41 +280,47 @@ var testMakeParams = map[string]MakeParams{
 		expectExit: 1,
 	},
 
-	// dirty option targets with trace.
+	// option targets with trace.
 	"check go-make completion bash traced": {
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceBash),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
 			LogMessage("stdout", make.BashCompletion),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTraceBash,
 	},
 	"check go-make version traced": {
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceVersion),
-			LogInfo("stderr", infoDirty, false),
-			LogInfo("stdout", infoDirty, true),
+			LogInfo("stderr", infoBase, false),
+			LogInfo("stdout", infoBase, true),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTraceVersion,
 	},
-	"dirty go-make to run target traced": {
+	"go-make dirty run target traced": {
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
+			LogExec("stderr", goMakeDirExist, make.CmdGitStatus()),
+			Exec("builder", "stderr", goMakeDirExist,
+				make.CmdGitStatus(), nil, "m Makefile.base", ""),
 			LogExec("stderr", dirExec,
 				make.CmdMakeTargets(make.Makefile, argsTraceTarget...)),
 			Exec("stdout", "stderr", dirExec,
 				make.CmdMakeTargets(make.Makefile, argsTraceTarget...), nil, "", ""),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTraceTarget,
 	},
-	"dirty go-make failed traced": {
+	"go-make dirty run target failed traced": {
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
+			LogExec("stderr", goMakeDirExist, make.CmdGitStatus()),
+			Exec("builder", "stderr", goMakeDirExist,
+				make.CmdGitStatus(), nil, "m Makefile.base", ""),
 			LogExec("stderr", dirExec,
 				make.CmdMakeTargets(make.Makefile, argsTraceTarget...)),
 			Exec("stdout", "stderr", dirExec,
@@ -302,7 +328,7 @@ var testMakeParams = map[string]MakeParams{
 			LogError("stderr", "execute make", make.NewErrCallFailed(
 				make.CmdMakeTargets(make.Makefile, argsTraceTarget...), errAny)),
 		),
-		info: infoDirty,
+		info: infoBase,
 		args: argsTraceTarget,
 		expectError: make.NewErrCallFailed(
 			make.CmdMakeTargets(make.Makefile, argsTraceTarget...), errAny),
@@ -311,7 +337,7 @@ var testMakeParams = map[string]MakeParams{
 	"clone go-make failed traced": {
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
-			LogInfo("stderr", infoDirty, false),
+			LogInfo("stderr", infoBase, false),
 			LogExec("stderr", dirExec,
 				make.CmdGitClone(goMakeGit, goMakeDirNew)),
 			Exec("stderr", "stderr", dirExec,
@@ -323,7 +349,7 @@ var testMakeParams = map[string]MakeParams{
 			LogError("stderr", "update config", make.NewErrCallFailed(
 				make.CmdGitClone(goMakeHTTP, goMakeDirNew), errAny)),
 		),
-		info:      infoDirty,
+		info:      infoBase,
 		args:      argsTraceTarget,
 		goMakeDir: goMakeDirNew,
 		expectError: make.NewErrCallFailed(
@@ -575,6 +601,7 @@ var testMakeParams = map[string]MakeParams{
 	// check targets without trace.
 	"check go-make head hash failed": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashHead(), errAny, "", ""),
 			LogCall("stderr", argsTarget),
@@ -591,6 +618,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make head now failed": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashHead(), nil, revisionHead, ""),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -609,6 +637,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make tag log failed": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashTag(infoTag.Revision), errAny, revisionDefault, ""),
 			LogCall("stderr", argsTarget),
@@ -626,6 +655,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make tag fetch failed": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashTag(infoTag.Revision), nil, revisionDefault, ""),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -649,6 +679,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make head to run target": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashHead(), nil, revisionHead, ""),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -664,6 +695,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make hash to run target": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashNow(), nil, revisionHead, ""),
 			Exec("stderr", "stderr", goMakeDirExist,
@@ -679,6 +711,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make tag to run target": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashTag(infoTag.Revision), nil, revisionDefault, ""),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -696,6 +729,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"check go-make tag fetch to run target": {
 		mockSetup: mock.Chain(
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashTag(infoTag.Revision), nil, revisionDefault, ""),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -725,6 +759,8 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
 			LogInfo("stderr", infoHead, false),
+			LogExec("stderr", goMakeDirExist, make.CmdGitStatus()),
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			LogExec("stderr", goMakeDirExist, make.CmdGitHashHead()),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashHead(), nil, revisionHead, ""),
@@ -746,6 +782,8 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
 			LogInfo("stderr", infoHash, false),
+			LogExec("stderr", goMakeDirExist, make.CmdGitStatus()),
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			LogExec("stderr", goMakeDirExist, make.CmdGitHashNow()),
 			Exec("builder", "stderr", goMakeDirExist,
 				make.CmdGitHashNow(), nil, revisionHead, ""),
@@ -768,6 +806,8 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceTarget),
 			LogInfo("stderr", infoTag, false),
+			LogExec("stderr", goMakeDirExist, make.CmdGitStatus()),
+			Exec("builder", "stderr", goMakeDirExist, make.CmdGitStatus(), nil, "", ""),
 			LogExec("stderr", goMakeDirExist,
 				make.CmdGitHashTag(infoTag.Revision)),
 			Exec("builder", "stderr", goMakeDirExist,
@@ -824,9 +864,14 @@ func SetupMakeConfig(t test.Test, src string) {
 	t.Helper()
 
 	if dir, err := os.Executable(); err == nil {
+		// copy configuration repository.
 		dst := dir + ".config"
 		cmd := exec.Command("cp", "--recursive", src, dst)
 		out := &strings.Builder{}
+		cmd.Stdout, cmd.Stderr = out, out
+		require.NoError(t, cmd.Run(), "copying failed", dst, out.String())
+		// Make copy dirty to prevent sync with github.
+		cmd = exec.Command("touch", filepath.Join(dst, "dirty"))
 		cmd.Stdout, cmd.Stderr = out, out
 		require.NoError(t, cmd.Run(), "copying failed", dst, out.String())
 	} else {
@@ -838,7 +883,7 @@ var (
 	// regexMatchTestDir is the regular expression that is used to remove the
 	// test execution path dependent parts.
 	regexMatchTestDir = regexp.MustCompile(
-		"(?m)/tmp/go-build.*/make.test.config/")
+		"(?m)/tmp/go-build.*/(make.test.config/?)")
 	// regexMatchBuildDir is the regular expression that is used to remove the
 	// build path dependent parts.
 	//lint:ignore S1007 // Escaping makes it less readable.
@@ -859,7 +904,7 @@ var (
 
 func FilterMakeOutput(str string) string {
 	str = regexMatchMakeLog.ReplaceAllString(str, "")
-	str = regexMatchTestDir.ReplaceAllString(str, "")
+	str = regexMatchTestDir.ReplaceAllString(str, "$1")
 	str = regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
 	return str
 }
@@ -878,31 +923,31 @@ type MakeExecParams struct {
 
 var testMakeExecParams = map[string]MakeExecParams{
 	"go-make version": {
-		info:         infoDirty,
+		info:         infoBase,
 		args:         []string{"go-make", "--version"},
 		expectStdout: ReadFile(fixtures, "fixtures/version.out"),
 	},
 	"go-make version trace": {
-		info:         infoDirty,
+		info:         infoBase,
 		args:         []string{"go-make", "--trace", "--version"},
 		expectStdout: ReadFile(fixtures, "fixtures/version.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/version-trace.err"),
 	},
 
 	"go-make bash": {
-		info:         infoDirty,
+		info:         infoBase,
 		args:         []string{"go-make", "--completion=bash"},
 		expectStdout: ReadFile(fixtures, "fixtures/bash.out"),
 	},
 	"go-make bash trace": {
-		info:         infoDirty,
+		info:         infoBase,
 		args:         []string{"go-make", "--trace", "--completion=bash"},
 		expectStdout: ReadFile(fixtures, "fixtures/bash.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/bash-trace.err"),
 	},
 
 	"go-make targets": {
-		info:         infoDirty,
+		info:         infoBase,
 		args:         []string{"go-make", "targets"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets.err"),
@@ -923,7 +968,7 @@ func TestMakeExec(t *testing.T) {
 	test.Map(t, testMakeExecParams).
 		Run(func(t test.Test, param MakeExecParams) {
 			// Given
-			info := infoDirty
+			info := infoBase
 			stdout := &strings.Builder{}
 			stderr := &strings.Builder{}
 

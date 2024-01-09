@@ -64,13 +64,13 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make
+	github.com/tkrop/go-make@v0.0.24
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
 
-# function for correct gol-package handling.
-go-pkg = $(shell awk -v mode="$(1)" -v filter="$(3)" -v not="$(4)" ' \
+# function for correct go-package handling.
+go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" -v not="$(4)" ' \
 	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } { \
 	  field = NF; \
 	  if (version = index($$0, "@")) { field-- } \
@@ -98,8 +98,15 @@ go-pkg = $(shell awk -v mode="$(1)" -v filter="$(3)" -v not="$(4)" ' \
 	  if (version) { \
 	    return substr($$0, 1, index($$0, "@") - 1) \
 	  } else { return $$0 } \
-	}' <<<"$(2)")
-
+	}' <<<"$(1)")
+git-pkg = $(shell awk -v mode="$(2)" ' \
+	BEGIN { RS = "[ \n\r]" } { \
+	  if (mode == "repo") { \
+	    print "git@" gensub("/",":",1,substr($$0, 1, index($$0, "@") - 1)) ".git" \
+	  } else if (mode == "tag") { \
+	    print substr($$0, index($$0, "@") + 1) \
+	  } \
+	}' <<<"$(1)")
 
 BROWSER ?= xdg-open
 VERSION ?= snapshot
@@ -220,8 +227,8 @@ COMMANDS := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
 COMMANDS_PKG := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
 	sed -E "s/^(.*\/([^/]*))\/main.go$$/\2=\1/; s|$(CURDIR)|.|")
 COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
-COMMANDS_GO := $(call go-pkg,cmd,$(TOOLS_GO),$(COMMANDS_REGEX),not)
-COMMANDS_SH := $(call go-pkg,cmd,$(TOOLS_SH),$(COMMANDS_REGEX),not)
+COMMANDS_GO := $(call go-pkg,$(TOOLS_GO),cmd,$(COMMANDS_REGEX),not)
+COMMANDS_SH := $(call go-pkg,$(TOOLS_SH),cmd,$(COMMANDS_REGEX),not)
 
 
 # Setup optimized golang mock setup environment.
@@ -291,7 +298,7 @@ pos = $(words $(call pos-recurs,$(1),$(2)))
 CMDWORDS ?= targets git- test- lint run- bump release update 
 CMDMATCH = $(call findany,$(CMDWORDS),$(MAKECMDGOALS))%
 
-# If any argument contains "run*", "test*", "lint*", "bump" ...
+# If any argument contains words from "$(CMDWORDS)" ...
 ifneq ($(CMDMATCH),%)
   CMD := $(filter $(CMDMATCH),$(MAKECMDGOALS))
   POS = $(call pos,$(CMD),$(MAKECMDGOALS))
@@ -367,16 +374,24 @@ targets::
 	    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'; \
 	  else cat -; fi || true;
 
-#@ create a clone of the base repository to update from.
-BASE ?= git@github.com:tkrop/go-make.git
-setup/base:: # TODO: support cloning of a distinct revision.
+#@ <version> # create a clone of the base repository to update from.
+GOMAKE ?= $(call go-pkg,$(TOOLS_GO),install,^go-make$$)
+setup/base::
 	@$(eval BASEDIR = $(shell mktemp -d)) ( \
 	  trap "rm -rf $${DIR}" INT TERM EXIT; \
 	  while pgrep $(MAKE) > /dev/null; do sleep 1; done; \
 	  rm -rf $${DIR} \
 	) & \
+	REPO="$(call git-pkg,$(GOMAKE),repo)"; \
+	TAG="$(call git-pkg,$(GOMAKE),tag)"; \
+	if [ -n "$(RUNARGS)" ]; then TAG="$(RUNARGS)"; fi; \
 	git clone --no-checkout --depth 2 --single-branch \
-	  --branch main $(BASE) $(BASEDIR) 2> /dev/null; \
+	  --branch main $${REPO} $(BASEDIR) 2> /dev/null || \
+	( echo "error: cloning $${REPO} [$${TAG}]" >"/dev/stderr"; exit 1 ) && \
+	if [ "$${TAG}" != "latest" ]; then \
+	  cd $(BASEDIR) && git checkout tags/$${TAG} 2> /dev/null || \
+	  ( echo "error: switching $${REPO} [$${TAG}]" >"/dev/stderr"; exit 1 ) \
+	fi;
 
 
 ## Git-Support: targets for standard git commands (experimental).
@@ -397,7 +412,7 @@ git-graph::
 	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
 #@ cleans up all local branches except the default and current branch.
 git-clean::
-	@BRANCH="$$(git branch --show-current)"; \
+	@git fetch; BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
 	BRANCHES=($$(git branch | cut -c 3- | grep -vw "$${MAIN}\|$${BRANCH}")); \
 	for BRANCH in $"$${BRANCHES[@]}"; do \
@@ -405,15 +420,15 @@ git-clean::
 	done;
 #@ checks out default branch and cleans up all local branches except the default.
 git-reset::
-	@BRANCH="$$(git branch --show-current)"; \
+	@git fetch; BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then git checkout "$${MAIN}" || exit 1; fi; \
 	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$${MAIN}"); do \
 	  git branch --delete "$${BRANCH}"; \
 	done;
-
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feature
+# TODO: check whether I'm on the default branch and on remote HEAD.
 git-create-fix git-create-chore git-create-feature:: git-create-%:
 	@BRANCH="$(firstword $(RUNARGS))"; \
 	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
@@ -479,13 +494,13 @@ $(TARGETS_INIT_CODACY):: init-%:
 	  chmod 700 $${FILE}; \
 	fi; \
 
-#@ initialize project by copying config files from template.
+#@ <version> # initialize project by copying config files from template.
 init-make:: $(TARGETS_INIT_MAKE) $(TARGETS_UPDATE_MAKE)
 $(TARGETS_INIT_ALL):: init/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
 	cd "$(BASEDIR)"; git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
 
-#@ initialize project by copying raw Makefile.base from template.
+#@ <version> # initialize project by copying raw Makefile.base from template.
 init-make!:: setup/base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
 	git show HEAD:config/Makefile.base > $${DIR}/Makefile 2>/dev/null; \
@@ -555,7 +570,7 @@ test-go = \
 	    fi; \
 	    echo -e "\t$${GOCHANGE} your local go version to $${VERSION} or "; \
 	    echo -e "\trun 'make update-go $${VERSION}' to adjust the project!"; \
-	    exit -1; \
+	    exit 1; \
 	  fi; \
 	done;
 
@@ -1011,7 +1026,7 @@ install-all:: $(TARGETS_INSTALL_ALL)
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
-	go install $(call go-pkg,install,$(TOOLS_GO),^$*$$);
+	go install $(call go-pkg,$(TOOLS_GO),install,^$*$$);
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
@@ -1041,7 +1056,7 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@#PACKAGE=$(call go-pkg,strip,$(TOOLS_GO),^$*$$); \
+	@#PACKAGE=$(call go-pkg,$(TOOLS_GO),strip,^$*$$); \
 	rm -rf $(wildcard $(GOBIN)/$* $(GOBIN)/$*.config);
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
@@ -1319,7 +1334,7 @@ update/go.mod?:: $(GOBIN)/gomajor
 	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 
-#@ update this build environment to latest version.
+#@ <version> # update this build environment to latest version.
 update-make:: $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
@@ -1338,7 +1353,7 @@ $(TARGETS_UPDATE_MAKE):: update/%: setup/base
 	  fi; \
 	fi; \
 
-#@ check whether updates for build environment exist.
+#@ <version> # check whether updates for build environment exist.
 update-make?:: $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?: setup/base
 	@DIR="$$(pwd)"; cd $(BASEDIR); \
@@ -1359,7 +1374,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%:
-	go install $(call go-pkg,update,$(TOOLS_GO),^$*$$);
+	go install $(call go-pkg,$(TOOLS_GO),update,^$*$$);
 
 ## Custom: custom extension targets.
 

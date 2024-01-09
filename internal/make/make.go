@@ -86,6 +86,8 @@ var (
 	cmdGitClone = []string{"git", "clone", "--depth=1"}
 	// Base command array for `git fetch` arguments.
 	cmdGitFetch = []string{"git", "fetch"}
+	// Base command array for `git status`` arguments.
+	cmdGitStatus = []string{"git", "status", "--short"}
 	// Base command array for `git reset --hard` arguments.
 	cmdGitHashReset = []string{"git", "reset", "--hard"}
 	// Base command array for `git rev-list --max-count=1` arguments.
@@ -100,6 +102,11 @@ var (
 // repository into the target directory.
 func CmdGitClone(repo, dir string) []string {
 	return append(cmdGitClone, repo, dir)
+}
+
+// CmdGitStatus creates the argument array of a `git status` command.
+func CmdGitStatus() []string {
+	return cmdGitStatus
 }
 
 // CmdGitFetch creates the argument array of a `git fetch` command using the
@@ -189,7 +196,9 @@ func (gm *GoMake) updateGoMakeRepo() error {
 	}
 
 	// Do never update on dirty revisions.
-	if gm.Info.Dirty {
+	if ok, err := gm.repoIsDirty(); err != nil {
+		return err
+	} else if ok {
 		return nil
 	}
 
@@ -223,6 +232,16 @@ func (gm *GoMake) cloneGoMakeRepo() error {
 func (gm *GoMake) cloneGoMakeExec(repo string) error {
 	return gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
 		CmdGitClone(repo, gm.MakeDir)...)
+}
+
+// repoIsDirty returns whether the go-make command repository is dirty.
+func (gm *GoMake) repoIsDirty() (bool, error) {
+	builder := strings.Builder{}
+	if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
+		CmdGitStatus()...); err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(builder.String()) != "", nil
 }
 
 // updateRevision updates the current revision of the go-make command

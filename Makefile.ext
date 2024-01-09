@@ -1,9 +1,10 @@
 clean::
-	rm -rf __debug_bin*;
+	find -name "__debug_bin*" -exec rm -vrf {} \;;
 
 bump::
 	@VERSION="$$(cat VERSION)"; \
-	sed -i -e "s#\(github.com/tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" Makefile;
+	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
+	  Makefile Makefile.base; \
 	cp Makefile Makefile.base config;
 
 commit::
