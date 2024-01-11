@@ -14,8 +14,6 @@ FILTER := sed "s|^./||" | grep -E "^[a-z0-9/_-]*\.go$$"
 # Include custom variables to modify behavior.
 ifneq ("$(wildcard Makefile.vars)","")
   include Makefile.vars
-else
-  $(warning info: please customize variables in Makefile.vars)
 endif
 
 # Setup sensible defaults for configuration variables.
@@ -64,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.25
+	github.com/tkrop/go-make@v0.0.26
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -202,20 +200,18 @@ run-token-link = \
 	) || true
 
 # Stub function for general setup in run-targets.
-run-setup = true
+run-setup ?= true
 # Stub function for common variables in run-targets.
-run-vars =
+run-vars ?=
 # Stub function for local runtime variables in run-targets.
-run-vars-local =
+run-vars-local ?=
 # Stub function for container specific runtime variables in run-targets.
-run-vars-image = $(call run-vars-docker)
+run-vars-image ?= $(call run-vars-docker)
 # Stub function to set up aws localstack run-target.
-run-aws-setup = true
+run-aws-setup ?= true
 
 ifneq ("$(wildcard Makefile.defs)","")
   include Makefile.defs
-else
-  $(warning info: please define custom functions in Makefile.defs)
 endif
 
 
@@ -322,7 +318,7 @@ all:: $(TARGETS_ALL)
 all-clean:: clean clean-run all
 #@ executes the pre-commit check targets.
 commit:: $(TARGETS_COMMIT)
-$(DIR_BUILD) $(DIR_RUN) $(DIR_CRED):
+$(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
 
@@ -471,7 +467,7 @@ go.mod:
 init-hooks:: .git/hooks/pre-commit
 .git/hooks/pre-commit:
 	@if [ -n "$$(cat Makefile | grep "^GOMAKE ?=.*")" ]; then \
-	  echo -ne "#!/bin/sh\n$(MAKE) commit" >$@; chmod 755 $@; \
+	  echo -ne "#!/bin/sh\n$(MAKE) --no-print-directory commit" >$@; chmod 755 $@; \
 	fi; \
 
 #@ initialize the generated sources.
@@ -925,7 +921,7 @@ ifeq ($(IMAGE_OS),alpine)
   BUILD_FLAGS ?= -v -mod=readonly -buildvcs=auto
   GOCGO := 0
 else
-  BUILD_FLAGS ?= -v -mod=readonly -buildvcs=auto -race
+  BUILD_FLAGS ?= -v -mod=readonly -buildvcs=auto #-race
   GOCGO := 1
 endif
 
@@ -941,7 +937,7 @@ ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 	$(call ld-flag,Commit=$(shell git log -1 --date=iso8601-strict --format=%cd)) \
 	$(call ld-flag,Dirty=$(shell git diff --quiet && echo false || echo true)) \
 	$(call ld-flag,Path=$(REPOSITORY)$(patsubst .%,%,$(1))) \
-	$(call ld-flag,GitHash=$(shell git rev-parse --short HEAD)) $(LDFLAGS) \
+	$(call ld-flag,GitHash=$(shell git rev-parse --short HEAD)) $(LDFLAGS)
 
 
 ## Build: targets to build native and linux platform executables.
@@ -1025,11 +1021,11 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%:
-	go install $(call go-pkg,$(TOOLS_GO),install,^$*$$);
+$(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
+	go install $(BUILD_FLAGS) $(call go-pkg,$(TOOLS_GO),install,^$*$$);
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%:
+$(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
 	@if ! command -v $*; then \
 	  curl --silent --show-error --fail --location \
 	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
@@ -1081,11 +1077,13 @@ bump::
 	if [[ "$${ARGS}" =~ ^(major|minor|patch|[.+-]*)[+-]?$$ ]]; then \
 	  VERSION="$$(awk -v arg=$${ARGS} '{ \
 	    op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
-		if ((pos = op[substr(arg,1,5)]) == 0) { pos = length(arg) }; \
+	    if ((pos = op[substr(arg,1,5)]) == 0) { pos = length(arg) }; \
 	    patsplit($$0, v, "[0-9]*", seps); len = length(seps); \
-		while (len <= 3) { seps[len-1] = "."; len++ }; \
+	    while (len <= 3) { seps[len-1] = "."; len++ }; \
 	    if (arg !~ "-$$") { v[pos]++ } else { v[pos]-- }; \
-	    for (i = 1; i < len; i++) { printf("%01d%s", v[i], seps[i]) } \
+	    for (i = 1; i < len; i++) { \
+	      printf("%01d%s", (i <= pos) ? v[i] : 0, seps[i]) \
+	    } \
 	  }' VERSION)"; \
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
@@ -1127,7 +1125,7 @@ $(TARGETS_PUBLISH): publish-%:
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
 	    echo "publish: go install $${TARGET}"; \
-	    go install $${TARGET}; \
+	    go install $(BUILD_FLAGS) $${TARGET}; \
 	  fi; \
 	fi;
 
@@ -1374,7 +1372,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%:
-	go install $(call go-pkg,$(TOOLS_GO),update,^$*$$);
+	go install $(BUILD_FLAGS) $(call go-pkg,$(TOOLS_GO),update,^$*$$);
 
 ## Custom: custom extension targets.
 

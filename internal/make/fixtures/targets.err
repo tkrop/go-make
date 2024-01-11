@@ -1,2 +1,0 @@
-make.test.config/Makefile.base:18: info: please customize variables in Makefile.vars
-make.test.config/Makefile.base:218: info: please define custom functions in Makefile.defs

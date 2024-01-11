@@ -8,9 +8,9 @@ else
 endif
 
 GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@v0.0.25
-TARGETS := $(shell command -v go-make >/dev/null || \
-	go install $(GOMAKE) && go-make targets)
+GOMAKE ?= github.com/tkrop/go-make@v0.0.26
+TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
+	go install $(GOMAKE) >/dev/stderr && $(GOBIN)/go-make targets)
 
 # Declare all targets phony to make them available for auto-completion.
 .PHONY:: $(TARGETS)
