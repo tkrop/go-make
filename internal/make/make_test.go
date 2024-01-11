@@ -60,8 +60,8 @@ var (
 
 	// infoTag with version and revision hash from git.
 	infoTag = info.NewInfo(goMakePath,
-		"v1.1.1",
-		"v1.1.1",
+		"v0.0.24",
+		"v0.0.24",
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00",
 		false)
@@ -114,7 +114,7 @@ func GoMakeSetup(
 		mocks.GetArg("stdout").(io.Writer),
 		mocks.GetArg("stderr").(io.Writer),
 		param.info,
-	)
+	).Setup("")
 
 	if param.goMakeDir == "" {
 		param.goMakeDir = goMakeDirExist
