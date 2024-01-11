@@ -95,7 +95,7 @@ var (
 	// Base command array for `git rev-parse HEAD` arguments.
 	cmdGitHashHead = []string{"git", "rev-parse", "HEAD"}
 	// Base command array for `git log --max-count=1 --format="%H"` arguments.
-	cmdGitHashNow = []string{"git", "log", "--max-count=1", "--format=\"%H\""}
+	cmdGitHashNow = []string{"git", "log", "--max-count=1", "--format=%H"}
 )
 
 // CmdGitClone creates the argument array of a `git clone` command of the given
@@ -145,12 +145,6 @@ func CmdMakeTargets(file string, args ...string) []string {
 type GoMake struct {
 	// Info provides the build information of go-make.
 	Info *info.Info
-	// The directory of the go-make command.
-	MakeDir string
-	// The actual working directory.
-	WorkDir string
-	// The path to the go-make command Makefile.
-	Makefile string
 	// Executor provides the command executor.
 	Executor cmd.Executor
 	// Logger provides the logger.
@@ -159,6 +153,13 @@ type GoMake struct {
 	Stdout io.Writer
 	// Stderr provides the standard error writer.
 	Stderr io.Writer
+
+	// The actual working directory.
+	WorkDir string
+	// The directory of the go-make command.
+	MakeDir string
+	// The path to the go-make command Makefile.
+	Makefile string
 	// Trace provides the flags to trace commands.
 	Trace bool
 }
@@ -168,16 +169,8 @@ type GoMake struct {
 func NewGoMake(
 	stdout, stderr io.Writer, info *info.Info,
 ) *GoMake {
-	//revive:disable-next-line:redefines-builtin-id // Is package name.
-	make, _ := os.Executable() //nolint:predeclared // Is package name.
-	makeDir := make + ".config"
-	workdir, _ := os.Getwd()
-
 	return &GoMake{
 		Info:     info,
-		MakeDir:  makeDir,
-		WorkDir:  workdir,
-		Makefile: filepath.Join(makeDir, Makefile),
 		Executor: cmd.NewExecutor(),
 		Logger:   log.NewLogger(),
 		Stdout:   stdout,
@@ -318,20 +311,46 @@ func (gm *GoMake) exec(
 	return nil
 }
 
+func (gm *GoMake) Setup(version string) *GoMake {
+	if version == "" {
+		if gm.Info != nil && gm.Info.Version == gm.Info.Revision {
+			version = gm.Info.Version
+			// } else {
+			// version = "latest"
+		}
+	}
+
+	// ---revive:disable-next-line:redefines-builtin-id // Is package name.
+	gm.WorkDir, _ = os.Getwd()
+	if version != "" {
+		gm.MakeDir = filepath.Join(os.Getenv("GOPATH"),
+			"pkg", "mod", gm.Info.Path+"@"+version, "config")
+	} else {
+		path, _ := os.Executable()
+		gm.MakeDir = path + ".config"
+	}
+	gm.Makefile = filepath.Join(gm.MakeDir, Makefile)
+
+	return gm
+}
+
 // Make runs the go-make command with given arguments and return exit code.
 func (gm *GoMake) Make(args ...string) (int, error) {
 	for _, arg := range args {
-		switch arg {
-		case "--trace":
+		switch {
+		case arg == "--trace":
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
 			gm.Trace = true
 
-		case "--version":
+		case strings.HasPrefix(arg, "--version="):
+			gm.Setup(arg[10:])
+
+		case arg == "--version":
 			gm.Logger.Info(gm.Stdout, gm.Info, true)
 			return 0, nil
 
-		case "--completion=bash":
+		case strings.HasPrefix(arg, "--completion"):
 			gm.Logger.Message(gm.Stdout, BashCompletion)
 			return 0, nil
 		}
@@ -381,7 +400,7 @@ func Make(
 		// output that creates hard to validate output.
 		// NewMakeFilter(stdout), NewMakeFilter(stderr), info,
 		stdout, stderr, info,
-	).Make(args[1:]...)
+	).Setup("").Make(args[1:]...)
 
 	return exit
 }

@@ -64,7 +64,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.24
+	github.com/tkrop/go-make@v0.0.25
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -145,10 +145,10 @@ AWS_IMAGE ?= localstack/localstack:$(AWS_VERSION)
 
 # Setup codacy integration.
 CODACY ?= enabled
-ifdef CDP_PULL_REQUEST_NUMBER
-  CODACY_CONTINUE ?= true
-else
+ifeq ($(IMAGE_VERSION),snapshot)
   CODACY_CONTINUE ?= false
+else
+  CODACY_CONTINUE ?= true
 endif
 CODACY_PROVIDER ?= ghe
 CODACY_USER ?= $(GITORGNAME)
@@ -163,7 +163,7 @@ CODACY_STATICCHECK_VERSION ?= 3.0.12
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 
 
-# Default target list for all and cdp builds.
+# Default target list for all and pipeline builds.
 TARGETS_ALL ?= init test lint build image
 TARGETS_INIT ?= init-hooks init-go $(if $(filter $(CODACY),enabled),init-codacy,)
 TARGETS_CLEAN ?= clean-build
@@ -977,16 +977,16 @@ image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 image-build:: $(TARGETS_IMAGE_BUILD)
 
 setup-image-file = \
-  FILE="$*"; IMAGE=$(IMAGE); \
-  PREFIX="$$(basename "$${FILE%$(FILE_CONTAINER)*}")"; \
-  SUFFIX="$$(echo $${FILE\#*$(FILE_CONTAINER)} | sed "s/^[^[:alnum:]]*//")"; \
-  INFIX="$${SUFFIX:-$${PREFIX}}"; \
-  if [ -n "$${INFIX}" ]; then \
-    IMAGE="$${IMAGE/:/-$${INFIX}:}"; \
-  fi;
+	FILE="$*"; IMAGE=$(IMAGE); \
+	PREFIX="$$(basename "$${FILE%$(FILE_CONTAINER)*}")"; \
+	SUFFIX="$$(echo $${FILE\#*$(FILE_CONTAINER)} | sed "s/^[^[:alnum:]]*//")"; \
+	INFIX="$${SUFFIX:-$${PREFIX}}"; \
+	if [ -n "$${INFIX}" ]; then \
+	  IMAGE="$${IMAGE/:/-$${INFIX}:}"; \
+	fi
 
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
-	@$(call setup-image-file $*) \
+	@$(call setup-image-file $*); \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never build images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
@@ -1004,12 +1004,12 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 #@ push contianer images - if setup and allowed.
 image-push:: $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@$(call setup-image-file $*) \
+	@$(call setup-image-file $*); VERSION="${IMAGE##*:}; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never push images, aborting [$${IMAGE}]."; exit 0; \
-	elif [ "$(IMAGE_VERSION)" == "snapshot" ]; then \
+	elif [ "$${VERSION}" == "snapshot" ]; then \
 	  echo "We never push snapshot images, aborting [$${IMAGE}]."; exit 0; \
-	elif [ -n "$(CDP_PULL_REQUEST_NUMBER)" -a "$(IMAGE_PUSH)" != "pulls" ]; then \
+	elif [[ "$${VERSION}" =~ "^pr-.*$$" ]] && [ "$(IMAGE_PUSH)" != "pulls" ]; then \
 	  echo "We never push pull request images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
 	$(IMAGE_CMD) push $${IMAGE}; \

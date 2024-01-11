@@ -31,7 +31,7 @@ func (*defaultExecutor) Exec(
 	//#nosec G204 -- caller ensures safe commands
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir, cmd.Env = dir, os.Environ()
-	cmd.Env = append(cmd.Env, "MAKE=go-make")
+	cmd.Env = append(cmd.Env, "MAKE=make")
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	return cmd.Run() //nolint:wrapcheck // checked on next layer
