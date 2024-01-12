@@ -151,28 +151,14 @@ that by default are defined via [`Makefile.vars`](Makefiles.vars) (see also
 ## Makefile integration
 
 If you like to integrate `go-make` into another `Makefile` you may find the
-following snippet helpful that automatically installs `go-make` creates a set
-of phony targets to allow auto-completion and delegates the execution (see
-also [Makefile](Makefile)):
+`Makefile` provided in the [config](config) helpful that automatically installs
+`go-make` creates a set of phony targets to allow auto-completion and delegates
+the execution (see also [Makefile](config/Makefile)).
 
-```Makefile
-GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@latest
-TARGETS := $(shell command -v go-make >/dev/null || \
-   go install $(GOMAKE) && go-make targets)
-
-# Declare all targets phony to make them available for auto-completion.
-.PHONY:: $(TARGETS)
-
-# Delegate all targets to go-make in a single call suppressing other targets.
-$(eval $(wordlist 1,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))::;@:)
-$(firstword $(MAKECMDGOALS) all)::
-   $(GOBIN)/go-make $(MAKEFLAGS) $(MAKECMDGOALS);
-```
-
-The default [`Makefile`](Makefile) can also be installed to a project from the
-template via `go-make init-make`. Other default [config](config) files can be
-installed using `go-make init/<file>`.
+The default [`Makefile`](config/Makefile) can also be installed to a project
+from the [config](config) via `go-make init-make` to boot strap a project.
+Other available [config](config) files can be installed one by one using
+`go-make init/<file>`.
 
 
 ## Shell integration
