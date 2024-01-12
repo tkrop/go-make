@@ -10,13 +10,14 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
-        go-version: ^1.21
+        go-version: 1.21
 
     - name: Build and tests
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         LANG: en_US.UTF-8
-      run: make --file=Makefile.base all
+      # using --trace has a side effect on the the test output.
+      run: make --file=config/Makefile.base all
 
     - name: Send coverage report
       uses: shogo82148/actions-goveralls@v1
@@ -28,11 +29,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
-        make --file=Makefile.base --trace release
+        make --file=config/Makefile.base --trace release
 
     - name: Publish new version
       env:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
-        make --file=Makefile.base --trace publish || true
+        make --file=config/Makefile.base --trace publish || true

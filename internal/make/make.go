@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	GoMakeConfig = "GOMAKE_CONFIG"
 	// GitSha1HashLen is the full length of sha1-hashes used in git.
 	GitFullHashLen = 40
 
@@ -81,64 +82,34 @@ const (
 // 	return s, nil
 // }
 
-var (
-	// Base command array for `git clone` arguments.
-	cmdGitClone = []string{"git", "clone", "--depth=1"}
-	// Base command array for `git fetch` arguments.
-	cmdGitFetch = []string{"git", "fetch"}
-	// Base command array for `git status`` arguments.
-	cmdGitStatus = []string{"git", "status", "--short"}
-	// Base command array for `git reset --hard` arguments.
-	cmdGitHashReset = []string{"git", "reset", "--hard"}
-	// Base command array for `git rev-list --max-count=1` arguments.
-	cmdGitHashTag = []string{"git", "rev-list", "--max-count=1"}
-	// Base command array for `git rev-parse HEAD` arguments.
-	cmdGitHashHead = []string{"git", "rev-parse", "HEAD"}
-	// Base command array for `git log --max-count=1 --format="%H"` arguments.
-	cmdGitHashNow = []string{"git", "log", "--max-count=1", "--format=%H"}
-)
-
-// CmdGitClone creates the argument array of a `git clone` command of the given
-// repository into the target directory.
-func CmdGitClone(repo, dir string) []string {
-	return append(cmdGitClone, repo, dir)
+// CmdGoInstall creates the argument array of a `go install <path>@<version>`
+// command.
+func CmdGoInstall(path, version string) []string {
+	return []string{
+		"go", "install", "-v", "-mod=readonly",
+		"-buildvcs=true", path + "@" + version,
+	}
 }
 
-// CmdGitStatus creates the argument array of a `git status` command.
-func CmdGitStatus() []string {
-	return cmdGitStatus
-}
-
-// CmdGitFetch creates the argument array of a `git fetch` command using the
-// given source repository.
-func CmdGitFetch(repo string) []string {
-	return append(cmdGitFetch, repo)
-}
-
-// CmdGitHashReset creates the argument array of a `git reset --hard` command
-// using the given revision hash.
-func CmdGitHashReset(hash string) []string {
-	return append(cmdGitHashReset, hash)
-}
-
-// CmdGitHashTag creates the argument array of a `git rev-list --max-count=1`
-// command using the given target tag.
-func CmdGitHashTag(tag string) []string {
-	return append(cmdGitHashTag, "tags/"+tag)
-}
-
-func CmdGitHashHead() []string {
-	return cmdGitHashHead
-}
-
-func CmdGitHashNow() []string {
-	return cmdGitHashNow
+// CmdTestDir creates the argument array of a `test -d <path>` command. We
+// majorly use this to test if a directory exists, since it allows us to mock
+// the check.
+func CmdTestDir(path string) []string {
+	return []string{"test", "-d", path}
 }
 
 // CmdMakeTargets creates the argument array of a `make --file <Makefile>
 // <targets...>` command using the given makefile name amd argument list.
 func CmdMakeTargets(file string, args ...string) []string {
-	return append([]string{"make", "--file", file}, args...)
+	return append([]string{
+		"make", "--file", file, "--no-print-directory",
+	}, args...)
+}
+
+// GoMakePath returns the path to the go-make config directory.
+func GoMakePath(path, version string) string {
+	return filepath.Join(os.Getenv("GOPATH"),
+		"pkg", "mod", path+"@"+version, "config")
 }
 
 // GoMake provides the default `go-make` application context.
@@ -156,138 +127,62 @@ type GoMake struct {
 
 	// The actual working directory.
 	WorkDir string
-	// The directory of the go-make command.
-	MakeDir string
-	// The path to the go-make command Makefile.
+	// The version of the go-make config.
+	ConfigVersion string
+	// The directory of the go-make config.
+	ConfigDir string
+	// The path to the go-make config Makefile.
 	Makefile string
-	// Trace provides the flags to trace commands.
+	// Trace provides the flags to trace calls.
 	Trace bool
 }
 
 // NewGoMake returns a new default `go-make` application context with given
 // standard output writer, standard error writer, and trace flag.
 func NewGoMake(
-	stdout, stderr io.Writer, info *info.Info,
+	info *info.Info, config string, stdout, stderr io.Writer,
 ) *GoMake {
-	return &GoMake{
+	return (&GoMake{
 		Info:     info,
 		Executor: cmd.NewExecutor(),
 		Logger:   log.NewLogger(),
 		Stdout:   stdout,
 		Stderr:   stderr,
-	}
+	}).setupConfig(config)
 }
 
-// Updates the go-make command repository.
-func (gm *GoMake) updateGoMakeRepo() error {
-	// Update by cloning the current revision.
-	if _, err := os.Stat(gm.MakeDir); os.IsNotExist(err) {
-		return gm.cloneGoMakeRepo()
-		// I'm not sure how this can happen, so I commented it out.
-		// } else if err != nil {
-		// 	return NewErrNotFound(gm.MakeDir, gm.Info.Revision, err)
-	}
-
-	// Do never update on dirty revisions.
-	if ok, err := gm.repoIsDirty(); err != nil {
-		return err
-	} else if ok {
-		return nil
-	}
-
-	// Update revision checking for new commits.
-	if err := gm.updateRevision(); errors.Is(err, ErrNotFound) {
-		// Update revision again after fetching latest commits.
-		if err := gm.exec(gm.Stderr, gm.Stderr, gm.MakeDir,
-			CmdGitFetch(gm.Info.Repo)...); err != nil {
-			return err
+// setupConfig sets up the go-make config directory and base makefile.
+func (gm *GoMake) setupConfig(config string) *GoMake {
+	// ---revive:disable-next-line:redefines-builtin-id // Is package name.
+	gm.WorkDir, _ = os.Getwd()
+	if config != "" {
+		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+			CmdTestDir(config)...); err != nil {
+			gm.ConfigVersion = config
+			gm.ConfigDir = GoMakePath(gm.Info.Path, config)
+		} else {
+			gm.ConfigVersion = "latest"
+			gm.ConfigDir = config
 		}
-		return gm.updateRevision()
-	} else if err != nil {
-		return err
+	} else {
+		gm.ConfigVersion = gm.Info.Version
+		gm.ConfigDir = GoMakePath(gm.Info.Path, gm.Info.Version)
 	}
+	gm.Makefile = filepath.Join(gm.ConfigDir, Makefile)
 
+	return gm
+}
+
+// ensureConfig ensures the go-make config is available.
+func (gm *GoMake) ensureConfig() error {
+	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+		CmdTestDir(gm.ConfigDir)...); err != nil {
+		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+			CmdGoInstall(gm.Info.Path, gm.ConfigVersion)...); err != nil {
+			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
+		}
+	}
 	return nil
-}
-
-// cloneGoMakeRepo clones the go-make command repository.
-func (gm *GoMake) cloneGoMakeRepo() error {
-	if err := gm.cloneGoMakeExec(gm.Info.Repo); err != nil {
-		repo := "https://" + gm.Info.Path + ".git"
-		if err := gm.cloneGoMakeExec(repo); err != nil {
-			return err
-		}
-	}
-	return gm.updateRevision()
-}
-
-// cloneGoMakeExec executes the cloning of the go-make command repository.
-func (gm *GoMake) cloneGoMakeExec(repo string) error {
-	return gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
-		CmdGitClone(repo, gm.MakeDir)...)
-}
-
-// repoIsDirty returns whether the go-make command repository is dirty.
-func (gm *GoMake) repoIsDirty() (bool, error) {
-	builder := strings.Builder{}
-	if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
-		CmdGitStatus()...); err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(builder.String()) != "", nil
-}
-
-// updateRevision updates the current revision of the go-make command
-// repository as required by the go-make command. If the update fails the
-// an error is returned.
-func (gm *GoMake) updateRevision() error {
-	if revision, err := gm.findRevision(); err != nil {
-		return err
-	} else if ok, err := gm.isOnRevision(revision); err != nil {
-		return err
-	} else if !ok {
-		if err := gm.exec(gm.Stderr, gm.Stderr, gm.MakeDir,
-			CmdGitHashReset(revision)...); err != nil {
-			return NewErrNotFound(gm.MakeDir, revision, err)
-		}
-	}
-
-	return nil
-}
-
-// findRevision returns the current revision required by the go-make command
-// as git commit hash. If the revision is a git tag, it is resolved to the
-// respective git commit hash of the tag. If the resolution of the git hash
-// fails the error is returned.
-func (gm *GoMake) findRevision() (string, error) {
-	if gm.Info.Revision == "" {
-		builder := strings.Builder{}
-		if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
-			CmdGitHashHead()...); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(builder.String()), nil
-	} else if gm.Info.Version == gm.Info.Revision {
-		builder := strings.Builder{}
-		if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
-			CmdGitHashTag(gm.Info.Revision)...); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(builder.String()), nil
-	}
-	return gm.Info.Revision, nil
-}
-
-// isOnRevision returns whether the go-make config repository head commit hash
-// is matching the revision required by the go-make command. If the resolution
-// of the current hash fails the error is returned.
-func (gm *GoMake) isOnRevision(hash string) (bool, error) {
-	builder := strings.Builder{}
-	if err := gm.exec(&builder, gm.Stderr, gm.MakeDir,
-		CmdGitHashNow()...); err != nil {
-		return false, err
-	}
-	return hash == strings.TrimSpace(builder.String()), nil
 }
 
 // makeTargets executes the provided make targets.
@@ -311,40 +206,16 @@ func (gm *GoMake) exec(
 	return nil
 }
 
-func (gm *GoMake) Setup(version string) *GoMake {
-	if version == "" {
-		if gm.Info != nil && gm.Info.Version == gm.Info.Revision {
-			version = gm.Info.Version
-			// } else {
-			// version = "latest"
-		}
-	}
-
-	// ---revive:disable-next-line:redefines-builtin-id // Is package name.
-	gm.WorkDir, _ = os.Getwd()
-	if version != "" {
-		gm.MakeDir = filepath.Join(os.Getenv("GOPATH"),
-			"pkg", "mod", gm.Info.Path+"@"+version, "config")
-	} else {
-		path, _ := os.Executable()
-		gm.MakeDir = path + ".config"
-	}
-	gm.Makefile = filepath.Join(gm.MakeDir, Makefile)
-
-	return gm
-}
-
 // Make runs the go-make command with given arguments and return exit code.
 func (gm *GoMake) Make(args ...string) (int, error) {
+	var targets []string
 	for _, arg := range args {
 		switch {
 		case arg == "--trace":
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
+			targets = append(targets, arg)
 			gm.Trace = true
-
-		case strings.HasPrefix(arg, "--version="):
-			gm.Setup(arg[10:])
 
 		case arg == "--version":
 			gm.Logger.Info(gm.Stdout, gm.Info, true)
@@ -353,18 +224,23 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 		case strings.HasPrefix(arg, "--completion"):
 			gm.Logger.Message(gm.Stdout, BashCompletion)
 			return 0, nil
+
+		case strings.HasPrefix(arg, "--config="):
+			gm.setupConfig(arg[len("--config="):])
+
+		default:
+			targets = append(targets, arg)
 		}
 	}
 
-	if err := gm.updateGoMakeRepo(); err != nil {
+	if err := gm.ensureConfig(); err != nil {
 		if !gm.Trace {
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
 		}
-		gm.Logger.Error(gm.Stderr, "update config", err)
+		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
-	}
-	if err := gm.makeTargets(args...); err != nil {
+	} else if err := gm.makeTargets(targets...); err != nil {
 		if !gm.Trace {
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
@@ -375,13 +251,14 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 	return ExitSuccess, nil
 }
 
-// ErrNotFound represent a revision not found error.
-var ErrNotFound = errors.New("revision not found")
+// ErrNotFound represent a version not found error.
+var ErrNotFound = errors.New("version not found")
 
-// NewErrNotFound wraps the error of failed command unable to find a revision.
-func NewErrNotFound(dir, revision string, err error) error {
-	return fmt.Errorf("%w [dir=%s, revision=%s]: %w",
-		ErrNotFound, dir, revision, err)
+// NewErrNotFound wraps the error of failed command to install the requested
+// go-mock config version.
+func NewErrNotFound(path, version string, err error) error {
+	return fmt.Errorf("%w [path=%s, version=%s]: %w",
+		ErrNotFound, path, version, err)
 }
 
 // NewErrCallFailed wraps the error of a failed command call.
@@ -393,14 +270,16 @@ func NewErrCallFailed(args []string, err error) error {
 // Make runs the go-make command with given build information, standard output
 // writer, standard error writer, and command arguments.
 func Make(
-	info *info.Info, stdout, stderr io.Writer, args ...string,
+	info *info.Info, config string,
+	stdout, stderr io.Writer, args ...string,
 ) int {
 	exit, _ := NewGoMake(
+		info, config,
 		// TODO we would like to filter some make file startup specific
 		// output that creates hard to validate output.
 		// NewMakeFilter(stdout), NewMakeFilter(stderr), info,
-		stdout, stderr, info,
-	).Setup("").Make(args[1:]...)
+		stdout, stderr,
+	).Make(args[1:]...)
 
 	return exit
 }
