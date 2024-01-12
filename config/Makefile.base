@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.32
+	github.com/tkrop/go-make@v0.0.33
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -402,7 +402,14 @@ git-message = \
 	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
-	fi \
+	fi
+git-clean = \
+	git fetch --all --prune --verbose; \
+	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$(1)"); do \
+	  git branch --delete "$${BRANCH}"; \
+	done; \
+	git fetch --all --prune --verbose
+
 
 #@ prints the git log as pretty graph.
 git-graph::
@@ -411,20 +418,18 @@ git-graph::
 	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
 #@ cleans up the git history removing all pushed local branches except the current.
 git-clean::
-	@git fetch; BRANCH="$$(git branch --show-current)"; \
+	@BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
-	BRANCHES=($$(git branch | cut -c 3- | grep -vw "$${MAIN}\|$${BRANCH}")); \
-	for BRANCH in "$${BRANCHES[@]}"; do \
-	  git branch --delete "$${BRANCH}"; \
-	done; git fetch --all --prune --verbose;
+	$(call git-clean,$${MAIN}\|$${BRANCH});
 #@ checks out default branch and cleans up the git history removing all pushed branches.
 git-reset::
-	@git fetch; BRANCH="$$(git branch --show-current)"; \
+	@BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
-	if [ "$${BRANCH}" != "$${MAIN}" ]; then git checkout "$${MAIN}" || exit 1; fi; \
-	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$${MAIN}"); do \
-	  git branch --delete "$${BRANCH}"; \
-	done;
+	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
+	  git checkout "$${MAIN}" && git pull || (
+	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \
+	  ) || exit 1; \
+	fi; $(call git-clean,$${MAIN});
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
