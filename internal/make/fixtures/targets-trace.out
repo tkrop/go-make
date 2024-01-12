@@ -26,11 +26,11 @@ commit
 git-clean
 git-commit
 git-commit-chore
-git-commit-feature
+git-commit-feat
 git-commit-fix
 git-create
 git-create-chore
-git-create-feature
+git-create-feat
 git-create-fix
 git-fix-comment
 git-fix-commit
