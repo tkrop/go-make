@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.30
+	github.com/tkrop/go-make@v0.0.31
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -391,6 +391,9 @@ setup/base::
 
 
 ## Git-Support: targets for standard git commands (experimental).
+# https://github.com/pvdlg/conventional-changelog-metahub#commit-types
+COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
+	perf test build ci chore
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$" ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
@@ -398,23 +401,23 @@ git-message = \
 	  COMMIT="$$(git log --max-count=1 --pretty=format:'%s' | \
 	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
-	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+1)))"; \
+	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
 	fi \
 
-#@ shows the git log as pretty printed graph.
+#@ prints the git log as pretty graph.
 git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
 	git log --graph --all --date=iso \
 	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
-#@ cleans up all local branches except the default and current branch.
+#@ cleans up the git history removing all pushed local branches except the current.
 git-clean::
 	@git fetch; BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
 	BRANCHES=($$(git branch | cut -c 3- | grep -vw "$${MAIN}\|$${BRANCH}")); \
 	for BRANCH in $"$${BRANCHES[@]}"; do \
 	  git branch --delete "$${BRANCH}"; \
-	done;
-#@ checks out default branch and cleans up all local branches except the default.
+	done; git fetch --all --prune --verbose;
+#@ checks out default branch and cleans up the git history removing all pushed branches.
 git-reset::
 	@git fetch; BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
@@ -425,17 +428,17 @@ git-reset::
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
-git-create-fix git-create-chore git-create-feat:: git-create-%:
+$(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	@BRANCH="$(firstword $(RUNARGS))"; \
 	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
-	$(call git-message,$*); \
+	$(call git-message,$*,1); \
 	git checkout -B "$${BRANCH}" && git commit --message "$${MESSAGE}" && \
 	git push --set-upstream origin "$${BRANCH}" || git checkout $${BRANCH};
-#@ <message> # commits the current change set using the given message using current issue.
+#@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
-git-commit-fix git-commit-chore git-commit-feat:: git-commit-%:
-	@MESSAGE="$(RUNARGS)"; $(call git-message,$*); \
+$(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
+	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,0); \
 	git commit --message "$${MESSAGE}" --signoff;
 #@ pushes the latest changes to the previous commit of the origin.
 git-fix-commit::
@@ -494,7 +497,9 @@ $(TARGETS_INIT_CODACY):: init-%:
 init-make:: $(TARGETS_INIT_MAKE) $(TARGETS_UPDATE_MAKE)
 $(TARGETS_INIT_ALL):: init/%: setup/base
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$(DIR_CONFIG)}"; \
-	cd "$(BASEDIR)"; git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
+	if [ ! -f "$${DIR}/$${FILE}" ]; then cd "$(BASEDIR)"; \
+	  git show HEAD:config/$${FILE} > $${DIR}/$${FILE} 2>/dev/null; \
+	fi; \
 
 #@ <version> # initialize project by copying raw Makefile.base from template.
 init-make!:: setup/base

@@ -241,11 +241,14 @@ changes non-breaking.
 
 The project is using itself for building as a proof of concept. So either run
 `make all` or `go-make all`. As fallback it is always possible to directly use
-the core [Makefile](Makefile.base) calling
+the core [Makefile](Makefile.base) calling:
 
 ```bash
-make -f Makefile.base <target>...
+make -f config/Makefile.base <target>...
 ```
+
+You can also test the local build `go-make` application with the local config.
+The project compiles itself to use the local config by default.
 
 
 ## Contributing

@@ -1,8 +1,8 @@
 # `go-make` Manual
 
 [`go-make`][go-make] is a thin versioned wrapper around a very generic and
-customizable [`Makefile.base`](Makefile.base), that is usually wrapped by a
-short project [`Makefile`](Makefile). In this setup the commands `go-make`
+customizable [`Makefile.base`](config/Makefile.base), that is usually wrapped
+by a short project [`Makefile`](Makefile). In this setup the commands `go-make`
 and `make` can be used as synonyms. In the following we use just `make`.
 Please substitute with `go-make`, if you have not installed the wrapper by
 initially calling `go-make init-make` on a project.
@@ -54,12 +54,13 @@ behavior of the targets and receipts.
   define arbitrary custom targets.
 
 **Note:** To efficiently support custom [targets][make-rules] and customization
-of [rules][make-rules] the [Makefile](Makefile.base) is extensively making use
-of [Double Colon Rules][make-double-colon] (`::`) for the main. This makes it
-easy to define additional rules setting up new [prerequisite][make-prerequisite]
-and [receipts][make-receipts] for [phony targets][make-phony]. Please read the
-great [GNU `make` manual][make] for more information on how [`make`][make] works
-and interacts with its execution environment.
+of [rules][make-rules] the [Makefile](config/Makefile.base) is extensively
+making use of [Double Colon Rules][make-double-colon] (`::`) for the main. This
+makes it easy to define additional [rules][make-rules], setting up new
+[prerequisite][make-prerequisite] and [receipts][make-receipts] for
+[phony targets][make-phony]. Please read the great [GNU `make` manual][make] for
+more information on how [`make`][make] works and interacts with its execution
+environment.
 
 [make-rules]: https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html
 [make-double-colon]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
@@ -177,7 +178,7 @@ RUN_DEPS := run-aws
 AWS_SERVICES := s3 sns
 ```
 
-**Note:** Currently, the [Makefile](Makefile.base) does not support all
+**Note:** Currently, the [Makefile](config/Makefile.base) does not support all
 command-line arguments since make swallows arguments starting with `-`. To
 compensate this shortcoming the commands need to support setup via command
 specific environment variables following the principles of the
@@ -188,7 +189,7 @@ specific environment variables following the principles of the
 
 ## Standard targets
 
-The [Makefile](Makefile.base) supports the following often used standard
+The [Makefile](config/Makefile.base) supports the following often used standard
 targets.
 
 ```bash
@@ -220,7 +221,8 @@ releasing, and executing of components.
 latest version of the required tools, if some are missing. To enforce the setup
 of a new tool, you need to run `make init` explicitly.
 
-The following targets are helpful to investigate the [Makefile](Makefile.base):
+The following targets are helpful to investigate the
+[Makefile](config/Makefile.base):
 
 ```bash
 make help    # prints a short help about major target (families)
@@ -258,9 +260,9 @@ variable in `Makefile.vars`. Usually this is not necessary.
 
 ### Linter targets
 
-The [Makefile](Makefile.base) supports different targets that help with linting
-according to different quality levels, i.e. `min`,`base` (default), `plus`,
-`max`, (and `all`) as well as automatically fixing the issues.
+The [Makefile](config/Makefile.base) supports different targets that help with
+linting according to different quality levels, i.e. `min`,`base` (default),
+`plus`, `max`, (and `all`) as well as automatically fixing the issues.
 
 ```bash
 make lint          # short cut to execute default lint targets
@@ -334,8 +336,8 @@ The platform and architecture of the created executables can be customized via
 ### Image targets
 
 Based on the convention that all binaries are installed in a single container
-image, the [Makefile](Makefile.base) supports to create and push the container
-image as required for a pipeline.
+image, the [Makefile](config/Makefile.base) supports to create and push the
+container image as required for a pipeline.
 
 ```bash
 make image        # short cut for 'image-build'
@@ -352,8 +354,8 @@ ensure that images are only pushed for `main`-branch and local builds.
 
 ### Run targets
 
-The [Makefile](Makefile.base) supports targets to startup a common DB and a
-common AWS container image as well as to run the commands provided by the
+The [Makefile](config/Makefile.base) supports targets to startup a common DB
+and a common AWS container image as well as to run the commands provided by the
 repository.
 
 ```bash
@@ -378,8 +380,8 @@ and only switch application ports and setups manually when necessary.
 
 ### Update targets
 
-The [Makefile](Makefile.base) supports targets for common update tasks for
-package versions, for build, test, and linter tools, and for configuration
+The [Makefile](config/Makefile.base) supports targets for common update tasks
+for package versions, for build, test, and linter tools, and for configuration
 files.
 
 ```bash
@@ -402,8 +404,8 @@ update is available instead of executing it directly.
 
 ### Cleanup targets
 
-The [Makefile](Makefile.base) is designed to clean up everything it has created
-by executing the following targets.
+The [Makefile](config/Makefile.base) is designed to clean up everything it has
+created by executing the following targets.
 
 ```bash
 make clean         # short cut for clean-init, clean-build
@@ -450,7 +452,7 @@ make uninstall-*    # uninstalls the matched software command or service
 
 ### Release targets
 
-Finally, the [Makefile](Makefile.base) supports targets for releasing the
+Finally, the [Makefile](config/Makefile.base) supports targets for releasing the
 provided packages as library.
 
 ```bash
@@ -461,24 +463,76 @@ make release         # creates the release tags in the repository
 
 ### Init targets
 
-The [Makefile](Makefile.base) supports initialization targets that are added
-as prerequisites for targets that require them. So there is usually no need to
-call them manually.
+The [Makefile](config/Makefile.base) supports initialization targets that are
+added as prerequisites for targets that require them. So there is usually no
+need to call them manually.
 
 
 ```bash
-make init           # short cut for 'init-tools init-hooks init-packages'
-make init-codacy    # initializes the tools for running the codacy targets
-make init-hooks     # initializes github hooks for pre-commit, etc
-make init-packages  # initializes and downloads packages dependencies
-make init-sources   # initializes sources by generating mocks, etc
+make init            # short cut for 'init-tools init-hooks init-codacy'
+make init-hooks      # initializes github hooks for pre-commit, etc
+make init-codacy     # initializes the tools for running the codacy targets
+make init-sources    # initializes sources by generating mocks, etc
+make init-make <version> # initializes the project config and wrapper makefile
 ```
+
+
+### Git targets
+
+The [Makefile](config/Makefile.base) supports the following experimental
+targets that are featuring some complex git command chains helping to setup
+conventional commits, where `*` is a placeholder for the [conventional commit
+types](#commit-types):
+
+```bash
+make git-graph       # shows the git log as pretty printed graph
+make git-clean       # cleans up git history removing also local branches
+make git-reset       # checks out default branch and cleans up git history
+make git-create(-*)  # creates and pushes a branch with the current change set
+make git-commit(-*)  # commits the current change set to the current branch
+make git-fix-commit  # pushes the latest changes to the previous commit
+make git-fix-no-verify # pushes the latest changes without verifying
+make git-fix-comment # pushes the latest changes updating the commit message
+make git-push        # pushes the current branch to the upstream repository
+```
+
+The `git-create(-*)` targets support `<branch>` and a `<message...>` argument
+list. The message can be a loose collection of words, that will be extended
+by adding a conventional [commit type](#commit-types) and should contain an
+issue reference. If not issue reference is provided the last issue increased
+by one is used. Similar `git-commit(-*)` targets support a `<message...>`
+argument is enriched, but reusing the previous issue type.
+
+
+## Commit types
+
+The [Makefile](config/Makefile.base) supports the following commit types as
+described by the [GitHub Development Convention][github-commit].
+
+|    Type       | Title         | Description                    |
+|:-------------:|---------------|--------------------------------|
+| ✨ `feat`     | Features      | Adds a new feature. |
+| ⌛ `deprecate`| Deprecation   | Deprecates an existing feature. |
+| ❌ `remove`   | Removal       | Removes an existing feature. |
+| 📚 `docs`     | Documentation | Updates documentation only. |
+| 🗑 `revert`   | Reverts       | Reverts a previous commit. |
+| 🪲 `fix`      | Bug Fix       | Fixes a bug in a feature. |
+| 💎 `style`    | Style Change  | Changes the code style only.  |
+| 🛠 `refactor` | Code Refactoring | Improves code quality by refactoring. |
+| 🚀 `perf`     | Performance   | Improves the performance of a feature. |
+| 🚗 `test`     | Tests         | Adds a missing or corrects an existing test. |
+| 📦 `build`    | Builds        | Changes the product delivery. |
+| 🏗️ `ci`       | Integrations  | Improves the build process. |
+| ♻️ `chore`     | Chores        | Regular update for maintenance. |
+
+
+[github-commit]: https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md
 
 
 ## Compatibility
 
-This [Makefile](Makefile.base) is making extensive use of GNU tools but is
-supposed to be compatible to all recent Linux and MacOS versions. Since MacOS
+This [Makefile](config/Makefile.base) is making extensive use of GNU tools but
+is supposed to be compatible to all recent Linux and MacOS versions. Since MacOS
 is usually a couple of years behind in applying the GNU standard tools, we
 document the restrictions this creates here.
 
