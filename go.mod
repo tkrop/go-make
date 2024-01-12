@@ -4,18 +4,17 @@ go 1.21
 
 toolchain go1.21.6
 
-require github.com/stretchr/testify v1.8.4
-
 require (
-	github.com/kr/text v0.2.0 // indirect
-	github.com/rogpeppe/go-internal v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
+	github.com/golang/mock v1.6.0
+	github.com/stretchr/testify v1.8.4
+	github.com/tkrop/go-testing v0.0.6
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/golang/mock v1.6.0
+	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/tkrop/go-testing v0.0.0-20231116145516-bd6d45b76891
-	gopkg.in/yaml.v3 v3.0.1
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc // indirect
 )
