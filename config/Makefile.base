@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.26
+	github.com/tkrop/go-make@v0.0.27
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -1000,7 +1000,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 #@ push contianer images - if setup and allowed.
 image-push:: $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@$(call setup-image-file $*); VERSION="${IMAGE##*:}; \
+	@$(call setup-image-file $*); VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never push images, aborting [$${IMAGE}]."; exit 0; \
 	elif [ "$${VERSION}" == "snapshot" ]; then \
