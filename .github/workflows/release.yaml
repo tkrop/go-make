@@ -1,4 +1,4 @@
-name: Go
+name: Go Release
 on: [push]
 jobs:
   build:
@@ -11,18 +11,6 @@ jobs:
       uses: actions/setup-go@v3
       with:
         go-version: 1.21
-
-    - name: Build and tests
-      env:
-        CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        LANG: en_US.UTF-8
-      # using --trace has a side effect on the the test output.
-      run: make --file=config/Makefile.base all
-
-    - name: Send coverage report
-      uses: shogo82148/actions-goveralls@v1
-      with:
-        path-to-profile: ./build/test-all.cover
 
     - name: Release new version
       env:
