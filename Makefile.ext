@@ -6,10 +6,10 @@ clean::
 bump bump-reset::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
-	  Makefile config/Makefile config/Makefile.base; \
+	  Makefile Makefile.base config/Makefile config/Makefile.base; \
 
 commit::
-	@for FILE in $$(find config -type f ! -name "Makefile*"); do \
+	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
 		if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 			echo "error: $${FILE} (not synchronized)" > "/dev/stderr"; exit -1; \
 		fi; \
