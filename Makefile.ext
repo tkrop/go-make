@@ -10,7 +10,14 @@ bump bump-reset::
 
 commit::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
-		if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
-			echo "error: $${FILE} (not synchronized)" > "/dev/stderr"; exit -1; \
-		fi; \
+	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
+	    echo "error: $${FILE} (not synchronized)" > "/dev/stderr"; exit -1; \
+	  fi; \
+	done;
+
+sync-config::
+	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
+	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
+	    cp --verbose "$${FILE#*/}" "$${FILE}"; \
+	  fi; \
 	done;
