@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.29
+	github.com/tkrop/go-make@v0.0.30
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -423,9 +423,9 @@ git-reset::
 	  git branch --delete "$${BRANCH}"; \
 	done;
 #@ <branch> <message> # creates a branch with the current change set using next issue.
-git-create:: git-create-feature
+git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
-git-create-fix git-create-chore git-create-feature:: git-create-%:
+git-create-fix git-create-chore git-create-feat:: git-create-%:
 	@BRANCH="$(firstword $(RUNARGS))"; \
 	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
@@ -433,8 +433,8 @@ git-create-fix git-create-chore git-create-feature:: git-create-%:
 	git checkout -B "$${BRANCH}" && git commit --message "$${MESSAGE}" && \
 	git push --set-upstream origin "$${BRANCH}" || git checkout $${BRANCH};
 #@ <message> # commits the current change set using the given message using current issue.
-git-commit:: git-commit-feature
-git-commit-fix git-commit-chore git-commit-feature:: git-commit-%:
+git-commit:: git-commit-feat
+git-commit-fix git-commit-chore git-commit-feat:: git-commit-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*); \
 	git commit --message "$${MESSAGE}" --signoff;
 #@ pushes the latest changes to the previous commit of the origin.
