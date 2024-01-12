@@ -4,6 +4,7 @@ package make //nolint:predeclared // package name is make.
 import (
 	"errors"
 	"fmt"
+	"go/build"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,13 +16,18 @@ import (
 )
 
 const (
-	GoMakeConfig = "GOMAKE_CONFIG"
 	// GitSha1HashLen is the full length of sha1-hashes used in git.
 	GitFullHashLen = 40
 
-	// Makefile base makefile to be executed by go-make.
+	// EnvGoMakeConfig provides the name of the go-make config environment
+	// variable.
+	EnvGoMakeConfig = "GOMAKE_CONFIG"
+	// EnvGoPath provides the name of the genera go path environment variable.
+	EnvGoPath = "GOPATH"
+	// Makefile provides the name of the base makefile to be executed by
+	// go-make.
 	Makefile = "Makefile.base"
-	// bashCompletion contains the bash completion script for go-make.
+	// bashCompletion provides the bash completion script for go-make.
 	BashCompletion = "### bash completion for go-make\n" +
 		"function __complete_go-make() {\n" +
 		"	COMPREPLY=($(compgen -W \"$(go-make targets 2>/dev/null)\"" +
@@ -106,9 +112,19 @@ func CmdMakeTargets(file string, args ...string) []string {
 	}, args...)
 }
 
+// GetEnvDefault returns the value of the environment variable with given key
+// or the given default value, if the environment variable is not set.
+func GetEnvDefault(key, value string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return value
+}
+
 // GoMakePath returns the path to the go-make config directory.
 func GoMakePath(path, version string) string {
-	return filepath.Join(os.Getenv("GOPATH"),
+	return filepath.Join(
+		GetEnvDefault(EnvGoPath, build.Default.GOPATH),
 		"pkg", "mod", path+"@"+version, "config")
 }
 

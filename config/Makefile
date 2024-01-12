@@ -8,7 +8,7 @@ else
 endif
 
 GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@v0.0.28
+GOMAKE ?= github.com/tkrop/go-make@v0.0.29
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	go install $(GOMAKE) >/dev/stderr && $(GOBIN)/go-make targets)
 

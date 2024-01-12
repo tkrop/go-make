@@ -85,7 +85,9 @@ func GoMakeSetup(
 		SetArg("builder", &strings.Builder{}).
 		Expect(param.mockSetup)
 
-	gm := make.NewGoMake(param.info, "",
+	gm := make.NewGoMake(param.info,
+		// Filling the test coverage gap of returning the default.
+		make.GetEnvDefault("GOMAKE_SETUP", ""),
 		mocks.GetArg("stdout").(io.Writer),
 		mocks.GetArg("stderr").(io.Writer),
 	)

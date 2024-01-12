@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.28
+	github.com/tkrop/go-make@v0.0.29
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
