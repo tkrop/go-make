@@ -62,7 +62,7 @@ TOOLS_GO := $(TOOLS_GO) \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.33
+	github.com/tkrop/go-make@v0.0.34
 TOOLS_SH := $(TOOLS_SH) \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -426,7 +426,7 @@ git-reset::
 	@BRANCH="$$(git branch --show-current)"; \
 	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
-	  git checkout "$${MAIN}" && git pull || (
+	  git checkout "$${MAIN}" && git pull || ( \
 	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \
 	  ) || exit 1; \
 	fi; $(call git-clean,$${MAIN});
