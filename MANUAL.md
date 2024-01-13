@@ -81,6 +81,8 @@ most prominent ones
 GOMAKE := github.com/tkrop/go-make@latest
 # Setup code quality level (default: base).
 CODE_QUALITY := plus
+# Customizing codacy server (default: https://codacy.bus.zalan.do).
+CODACY_API_BASE_URL := https://api.codacy.com
 # Setup codacy integration (default: enabled [enabled, disabled]).
 CODACY := enabled
 
@@ -97,8 +99,10 @@ IMAGE_PUSH ?= never
 # Setup default test timeout (default: 10s).
 TEST_TIMEOUT := 15s
 
-# Setup custom delivery file (default: delivery.yaml).
-FILE_DELIVERY := delivery-template.yaml
+# Setup custom delivery files scanned for updating go versions
+# (default: delivery*.yaml/.github/workflows/*.yaml).
+#DELIVERY := delivery.yaml
+
 # Setup custom local build targets (default: init test lint build).
 TARGETS_ALL := init delivery test lint build
 
@@ -469,12 +473,16 @@ need to call them manually.
 
 
 ```bash
-make init            # short cut for 'init-tools init-hooks init-codacy'
-make init-hooks      # initializes github hooks for pre-commit, etc
-make init-codacy     # initializes the tools for running the codacy targets
-make init-sources    # initializes sources by generating mocks, etc
-make init-make <version> # initializes the project config and wrapper makefile
+make init          # short cut for 'init-tools init-hooks init-codacy'
+make init-hooks    # initializes github hooks for pre-commit, etc
+make init-codacy   # initializes the tools for running the codacy targets
+make init-sources  # initializes sources by running go:generate, e.g. for mocks
+make init-make     # initializes the project by copying template files
+make init-make!    # copies the Makefile.base from the template for debugging.
 ```
+
+The `init-make` targets support a `<version>` argument to install the config
+files from a specific config version.
 
 
 ### Git targets
@@ -524,7 +532,6 @@ described by the [GitHub Development Convention][github-commit].
 | 📦 `build`    | Builds        | Changes the product delivery. |
 | 🏗️ `ci`       | Integrations  | Improves the build process. |
 | ♻️ `chore`     | Chores        | Regular update for maintenance. |
-
 
 [github-commit]: https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md
 

@@ -1,4 +1,4 @@
-../../config/Makefile.base:365: target 'targets' does not exist
+../../config/Makefile.base:373: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=../../config/Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
@@ -56,6 +56,7 @@ git-fix-no-verify
 git-graph
 git-push
 git-reset
+go.mod
 go.sum
 help
 image
@@ -95,7 +96,6 @@ install-mockgen
 install-revive
 install-staticcheck
 install-syft
-install-vegeta
 install-zally
 lint
 lint-aligncheck
@@ -128,7 +128,6 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
-setup/base
 show
 targets
 test
@@ -158,7 +157,6 @@ uninstall-mock
 uninstall-mockgen
 uninstall-revive
 uninstall-staticcheck
-uninstall-vegeta
 uninstall-zally
 update
 update-all
@@ -183,7 +181,6 @@ update-mockgen
 update-revive
 update-staticcheck
 update-tools
-update-vegeta
 update-zally
 update/.codacy.yaml
 update/.codacy.yaml?

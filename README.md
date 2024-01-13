@@ -54,9 +54,9 @@ building, installing, updating, running, and releasing libraries, commands, and
 container images.
 
 `go-make` can be either run as command line tool or hooked into an existing
-project as minimal [`Makefile`](Makefile). Technically `go-make` is just a thin
-wrapper around a very generic and extensible [`Makefile`](Makefile.base) that
-is based on a standard [`go`][go]-project supporting different tools:
+project as minimal [`Makefile`](config/Makefile). Technically `go-make` is just
+a thin wrapper around a very generic and extensible [`Makefile`](Makefile.base)
+that is based on a standard [`go`][go]-project supporting different tools:
 
 * [`gomock`][gomock] - go generating mocks.
 * [`codacy`][codacy] - for code quality documentation.
@@ -175,18 +175,19 @@ source <(go-make --completion=bash)
 
 To extend the `Makefile`, you develop own receipts in a custom file called
 [`Makefile.ext`](Makefile.ext) that is included automatically. If you want to
-extend original receipts, you can replace the wrapper [`Makefile`](Makefile)
-and install [`Makefile.base`](Makefile.base) and the [`MANUAL.md`](MANUAL.md)
-in your project by calling `go-make init-make!`. But be careful, this command
-always overwrites your `Makefile` with the latest version.
+extend original receipts, you can use `make install-make!` to automatically
+replace the wrapper [`Makefile`](config/Makefile) against the original
+[`Makefile.base`](config/Makefile.base) and adding a local
+[`MANUAL.md`](MANUAL.md) to your project.
 
 
 ## Standard `go`-Project
 
-The [Makefile](Makefile) provided in this project is working under the
-conventions of a standard [`go`][go]-project. The standard [`go`][go]-project
-is defined to meet Zalando in-house requirements, but is general enough to be
-useful in open source projects too. It adheres to the following conventions:
+The [`Makefile.base`](config/Makefile.base) provided in this project is based
+on a standard [`go`][go]-project setting some limitations. The standard
+[`go`][go]-project is defined to meet Zalando in-house requirements, but is
+general enough to be useful in open source projects too. It adheres to the
+following conventions:
 
 1. All commands (services, jobs) are provided by a `main.go` placed as usual
    under `cmd` using the pattern `cmd/<name>/main.go` or in the root folder. In
@@ -220,14 +221,28 @@ useful in open source projects too. It adheres to the following conventions:
 6. For running a command in a container image, make sure that the command is
    installed in the default execution directory of the container image - usually
    the root directory. The container image must either be generated with suffix
-   matching the command or without suffix.
+   matching the command or without suffix in common container.
 
-All targets in the [Makefile](Makefile) are designated to autonomously set up
-setup the [`go`][go]-project, installing the necessary tools - except for the
-golang compiler and build environment -, and triggering the precondition
+All targets in the [Makefile](config/Makefile.base) are designated to set up
+the [`go`][go]-project automatically, installing the necessary tools - except
+for the golang compiler and build environment -, and triggering the required
 targets as necessary.
 
 [go]: <https://go.dev/>
+
+
+## Trouble Shooting
+
+If we have published an non-working version of `go-make` and your project is
+not able to build, test, run, etc, the quickest way to reset the project
+[Makefile](config/Makefile) working `go-make` version is to run:
+
+```bash
+go install github.com/tkrop/go-make@latest; go-make update;
+```
+
+If the latest version is not fixed yet, you can also try to move backward
+finding the last working [tagged version](tags).
 
 
 ## Terms of usage
