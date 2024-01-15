@@ -12,7 +12,7 @@ endif
 #GOBIN := $(CURDIR)/build/bin
 #PATH := $(GOBIN):$(PATH)
 GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@v0.0.35
+GOMAKE ?= github.com/tkrop/go-make@v0.0.36
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	make -f config/Makefile.base install >/dev/stderr &&  \
 	$(GOBIN)/go-make targets)

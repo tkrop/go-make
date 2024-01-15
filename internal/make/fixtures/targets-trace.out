@@ -1,4 +1,4 @@
-../../config/Makefile.base:373: target 'targets' does not exist
+../../config/Makefile.base:376: target 'targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=../../config/Makefile.base 2>/dev/null | \
   if [ "" != "raw" ]; then awk -v RS= -F: ' \
