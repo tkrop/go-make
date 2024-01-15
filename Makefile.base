@@ -9,13 +9,14 @@ MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Check whether bash version is higher or equal version 4,
 ifneq ($(shell echo $${BASH_VERSION} | grep -v "^[4-9]\."),)
-  $(error "error: unsupported bash version ($(shell echo $${BASH_VERSION})).")
+  $(warning warning: incompatible bash ($(shell echo $${BASH_VERSION})): \
+  targets may fail in unpredictable ways using newer features.)
 endif
 
 # Setup container image command (supports: docker or podman).
 IMAGE_CMD ?= $(shell command -v docker || command -v podman)
 ifndef IMAGE_CMD
-  $(error "error: command not found (docker/podman)")
+  $(error error: command not found (docker/podman))
 endif
 
 DIR_RUN := $(CURDIR)/run
@@ -30,6 +31,14 @@ FILTER := sed "s|^./||" | grep -E "^[a-z0-9/_-]*\.go$$"
 ifneq ("$(wildcard Makefile.vars)","")
   include Makefile.vars
 endif
+
+
+# Export private repositories that do not need to be downloaded.
+export GOPRIVATE ?= github.bus.zalan.do
+export GOBIN ?= $(shell go env GOPATH)/bin
+# Setup go to use desired and consistent go versions.
+GOVERSION := $(shell go version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
+
 
 # Setup sensible defaults for configuration variables.
 CODE_QUALITY ?= base
@@ -79,7 +88,7 @@ TOOLS_GO += \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
-	github.com/tkrop/go-make@v0.0.35
+	github.com/tkrop/go-make@v0.0.36
 TOOLS_SH += \
 	github.com/anchore/syft \
 	github.com/anchore/grype
@@ -136,7 +145,8 @@ IMAGE_VERSION ?= $(VERSION)
 
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
-    $(error "error: invalid image name ($(IMAGE_NAME))")
+    $(error error: invalid image name ($(IMAGE_NAME))
+	image name format is repo/team/name)
   endif
   IMAGE_HOST ?= $(word 1,$(subst /, ,$(IMAGE_NAME)))
   IMAGE_TEAM ?= $(word 2,$(subst /, ,$(IMAGE_NAME)))
@@ -197,13 +207,6 @@ INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS) $(FILE_MARKDOWN) \
     $(FILE_CODACY) $(FILE_REVIVE))
 UPDATE_MAKE ?=  $(notdir $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
     $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE))
-
-# Setup go to use desired and consistent go versions.
-GOVERSION := $(shell go version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
-
-# Export private repositories not to be downloaded.
-export GOPRIVATE := github.bus.zalan.do
-export GOBIN ?= $(shell go env GOPATH)/bin
 
 
 # General setup of tokens for run-targets (not to be modified)
