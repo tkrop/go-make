@@ -1,5 +1,4 @@
 SHELL := /bin/bash
-BASH_COMPAT := 31
 
 # Include custom variables to modify behavior.
 ifneq ("$(wildcard Makefile.vars)","")
@@ -9,10 +8,15 @@ else
 endif
 
 
-#GOBIN := $(CURDIR)/build/bin
-#PATH := $(GOBIN):$(PATH)
-GOBIN ?= $(shell go env GOPATH)/bin
-GOMAKE ?= github.com/tkrop/go-make@v0.0.36
+ifndef GOSETUP
+  export GOBIN ?= $(shell $(GO) env GOPATH)/bin
+else ifeq ($(GOSETUP),local)
+  export GOBIN := $(DIR_BUILD)/bin
+  export PATH := $(GOBIN):$(PATH)
+else
+  $(error error: unsupported go setup ($(GOSETUP)))
+endif
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.37
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	make -f config/Makefile.base install >/dev/stderr &&  \
 	$(GOBIN)/go-make targets)

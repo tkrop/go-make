@@ -21,3 +21,15 @@ sync-config::
 	    echo "sync: $${FILE#*/} => $${FILE}"; cp "$${FILE#*/}" "$${FILE}"; \
 	  fi; \
 	done;
+
+git-test-message:: git-test-message-fix
+$(addprefix git-test-message-,$(COMMIT_CONVENTION)):: git-test-message-%:
+	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
+
+
+# Not sure whether this helps - showing allways diff in timings.
+test-compat::
+	@ACTUAL="$$(make --makefile=$(GOMAKE_MAKEFILE) test-self 2>&1)" && \
+	COMPAT="$$(BASH_COMPAT=3.2 make --makefile=$(GOMAKE_MAKEFILE) test-self 2>&1)" && \
+	DIFF="$$(diff <(echo "$${ACTUAL}") <(echo "$${COMPAT}"))" && \
+	echo "info: test-compat finished successful!!" || echo "$${DIFF}";
