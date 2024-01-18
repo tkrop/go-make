@@ -227,9 +227,18 @@ UPDATE_MAKE ?=  $(notdir $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
     $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE))
 
 
-# General setup of tokens for run-targets (not to be modified)
+# Stub function for general setup in run-targets (default: true).
+run-setup ?= true
+# Stub function for common variables in run-targets (called with one arg).
+run-vars ?=
+# Stub function for local variables in run-targets (called with one arg).
+run-vars-local ?=
+# Stub function for container specific variables in run-targets (called with one arg).
+run-vars-image ?=
+# Stub function to set up aws localstack run-target (default: true).
+run-setup-aws ?= true
 
-# Often used token setup functions.
+# General setup of tokens for run-targets.
 run-token-create = \
 	ztoken > $(DIR_CRED)/token; echo "Bearer" > $(DIR_CRED)/type
 run-token-link = \
@@ -243,18 +252,7 @@ run-token-link = \
 		test -h "$(DIR_CRED)/$(1)" || ln -s token "$(DIR_CRED)/$(1)" \
 	) || true
 
-# Stub function for general setup in run-targets.
-run-setup ?= true
-# Stub function for common variables in run-targets.
-run-vars ?=
-# Stub function for local runtime variables in run-targets.
-run-vars-local ?=
-# Stub function for container specific runtime variables in run-targets.
-run-vars-image ?= $(call run-vars-docker)
-# Stub function to set up aws localstack run-target.
-run-aws-setup ?= true
-
-# TODO: merge with Makefile.vars!
+# TODO: merged with Makefile.vars, remove when all projects are updated!
 ifneq ("$(wildcard Makefile.defs)","")
   include Makefile.defs
 endif
@@ -606,17 +604,23 @@ test-go::
 	done;
 
 # process test arguments.
-testargs = \
-  if [ -n "$(RUNARGS)" ]; then ARGS=($(RUNARGS)); \
+test-args = \
+  if [ -n "$(1)" ]; then ARGS=($(1)); \
+	if [[ "$${ARGS[0]}" =~ ^scope:([^\\s]*)$$ ]]; then \
+	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
+	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
+	  else echo "-coverpkg=./..."; fi; \
+	  ARGS=($${ARGS[@]:1}); \
+	fi; \
     if [[ -f "$${ARGS[0]}" && ! -d "$${ARGS[0]}" && \
 			 "$${ARGS[0]}" == *_test.go ]]; then \
-	  find $$(dirname $(RUNARGS) | sort -u) \
+	  find $$(dirname "$${ARGS[@]}" | sort -u) \
 		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
 		-o -name "common_test.go" -o -name "mock_*_test.go" | \
 		sed "s|^|./|"; \
-	  echo $(addprefix ./,$(RUNARGS)); \
+	  echo $${ARGS[@]/\#/./}; \
 	elif [[ -d "$${ARGS[0]}" && ! -f "$${ARGS[0]}" ]]; then \
-	  echo $(addprefix ./,$(RUNARGS)); \
+	  echo $${ARGS[@]/\#/./}; \
 	elif [[ ! -f "$${ARGS[0]}" && ! -d "$${ARGS[0]}" ]]; then \
 	  for ARG in $${ARGS[0]}; do \
 		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
@@ -631,8 +635,9 @@ testargs = \
 	fi; \
   else echo "./..."; fi
 
-TEST_FLAGS ?= -race -mod=readonly -count=1
-TEST_ARGS ?= $(shell $(testargs))
+TESTFLAGS ?=
+TEST_FLAGS ?= $(strip -mod=readonly -count=1 -race $(TESTFLAGS))
+TEST_ARGS ?= $(shell $(call test-args,$(RUNARGS)))
 TEST_DEPS ?=
 
 # actuall targets for testing.
@@ -938,16 +943,16 @@ lint-apis:: $(GOBIN)/zally
 
 
 # Variables for setting up container specific build flags.
+BUILDFLAGS ?=
 BUILD_OS ?= $(shell $(GO) env GOOS)
 BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 IMAGE_OS ?= ${shell grep "^FROM [^ ]*$$" $(FILE_CONTAINER) 2>/dev/null | \
 	grep -v " as " | sed "s/.*\(alpine\|ubuntu\).*/\1/g"}
 ifeq ($(IMAGE_OS),alpine)
-  BUILD_FLAGS ?= -mod=readonly -buildvcs=auto
+  BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(BUILDFLAGS))
   GOCGO := 0
 else
-  #-race is not working for all tools!
-  BUILD_FLAGS ?= -mod=readonly -buildvcs=auto #-race
+  BUILD_FLAGS ?=  $(strip -mod=readonly -buildvcs=auto -race $(BUILDFLAGS))
   GOCGO := 1
 endif
 
@@ -1037,6 +1042,8 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 
 
 ## Install: targets to (un-)install software and tools.
+INSTALLFLAGS ?=
+INSTALL_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(INSTALLFLAGS))
 
 #@ install all software created by the project.
 install:: $(TARGETS_INSTALL)
@@ -1059,7 +1066,7 @@ $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 	  fi; \
 	fi;
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(GO) install $(BUILD_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1167,7 +1174,7 @@ $(TARGETS_PUBLISH): publish-%:
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
 	    echo "publish: go install $${TARGET}"; \
-	    $(GO) install $(BUILD_FLAGS) $${TARGET}; \
+	    $(GO) install $(INSTALL_FLAGS) $${TARGET}; \
 	  fi; \
 	fi;
 
@@ -1209,7 +1216,7 @@ run-aws:: $(DIR_RUN)
 	if [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
 	  echo "info: ports allocated, use existing aws container!"; \
-	  $(call run-aws-setup) || exit 1 && exit 0 ; \
+	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-aws \
@@ -1221,19 +1228,19 @@ run-aws:: $(DIR_RUN)
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-aws \
 	      curl --silent http://$(HOST):4566; \
 	do echo "waiting for aws service" >/dev/stderr; sleep 1; done && \
-	$(call run-aws-setup) || exit 1) | \
+	$(call run-setup-aws) || exit 1) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log;
 
 #@ run-*: start the matched command using the native binary.
 $(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
-	@$(call run-setup); $(call run-vars,) $(call run-vars-local,) \
+	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
 	  $(DIR_BUILD)/$* $(RUNARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-go-*: start the matched command using go run.
 $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
-	@$(call run-setup); $(call run-vars,) $(call run-vars-local,) \
+	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
 	  $(GO) run cmd/$*/main.go $(RUNARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
@@ -1244,7 +1251,7 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	trap "$(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* >/dev/null" INT TERM; \
 	if [ -n "$(filter %$*,$(TARGETS_IMAGE))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed -e "s/:/-$*:/")"; \
-	else IMAGE="$(IMAGE)" fi; $(call run-setup); \
+	else IMAGE="$(IMAGE)" fi; $(call run-setup) && \
 	$(IMAGE_CMD) run --name $(IMAGE_ARTIFACT)-$* --network=host \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
 	  $(call run-vars,--env) $(call run-vars-image,--env) \
@@ -1411,7 +1418,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%:
-	$(GO) install $(BUILD_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
 
 ## Custom: custom extension targets.
 
