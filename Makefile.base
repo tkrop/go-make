@@ -46,7 +46,7 @@ else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
 # Setup go to use desired and consistent go versions.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.37
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.38
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
@@ -416,17 +416,20 @@ git-message = \
 	fi
 git-clean = \
 	git fetch --all --prune --verbose; \
+	HISTORY=($$(git log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$(1)"); do \
-	  git branch --delete "$${BRANCH}"; \
-	done; \
-	git fetch --all --prune --verbose
+	  TIP="$$(git log --max-count=1 --pretty=format:"%T" "$${BRANCH}")"; \
+	  if [[ "$${HISTORY}" =~ "$${TIP}" ]]; then \
+	    git branch --delete --force "$${BRANCH}"; \
+	  else git branch --delete "$${BRANCH}"; fi; \
+	done; git fetch --all --prune --verbose
 
 
 #@ prints the git log as pretty graph.
 git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
 	git log --graph --all --date=iso \
-	  --pretty=format:"%Cred%h %Cgreen%ad%Creset | %s $${SUFFIX}";
+	  --pretty=format:"%Cred%h %t %Cgreen%ad%Creset | %s $${SUFFIX}";
 #@ cleans up the git history removing all pushed local branches except the current.
 git-clean::
 	@BRANCH="$$(git branch --show-current)"; \
@@ -439,8 +442,8 @@ git-reset::
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
 	  git checkout "$${MAIN}" && git pull || ( \
 	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \
-	  ) || exit 1; \
-	fi; $(call git-clean,$${MAIN});
+	  ) \
+	fi || exit 1; $(call git-clean,$${MAIN});
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
