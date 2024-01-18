@@ -26,6 +26,21 @@ git-test-message:: git-test-message-fix
 $(addprefix git-test-message-,$(COMMIT_CONVENTION)):: git-test-message-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
 
+test-args::
+	@$(call test-args,$(RUNARGS))
+
+# TODO: fix ordering issue.
+test-test-args::
+	@ACTUAL=($$(make -f Makefile.base test-args scope:all cmd/TestCmd)) && \
+	EXPECTED=("-coverpkg=./..." "./cmd" "-run" "TestCmd") && \
+	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
+	ACTUAL=($$(make -f Makefile.base test-args scope:all internal/make)) && \
+	EXPECTED=("-coverpkg=./..." "./internal/make") && \
+	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
+	ACTUAL=($$(make -f Makefile.base test-args internal/make/make_test.go)) && \
+	EXPECTED=($$(find ./internal/make -name "*.go" | sort -u)) && \
+	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
+	echo "info: test-args finished successful!!" || echo "$${DIFF}";
 
 # Not sure whether this helps - showing allways diff in timings.
 test-compat::

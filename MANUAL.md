@@ -152,13 +152,47 @@ grep -r " ?= " ${GOBIN}/go-make.config/Makefile.base`, however, most
 
 To `run-*` commands as expected, you need to setup the environment variables
 for your designated runtime by defining the custom functions for setting it up
-via `run-setup`, `run-vars`, `run-vars-local`, and `run-vars-image` in
-[Makefile.defs](Makefile.defs).
+via `run-setup`, `run-vars`, `run-vars-local`, `run-vars-image`, and
+`run-setup-aws`, in [Makefile.vars](Makefile.vars).
 
 While tests are supposed to run with global defaults and test specific config,
 the setup of the `run-*` commands strongly depends on the commands execution
-context and its purpose. Still, there are common patterns that can be copied
-from other commands and projects.
+context and its purpose. Still, there are common patterns to setup credentials
+and environment variables, that can easily derived from the following example:
+
+```Makefile
+# Setup definition specific variables.
+AWSOPTS ?= --region=eu-central-1 --endpoint-url=http://localhost:4566
+AWSBUCKET ?= cas-apidocs-test
+
+# Defines a make-fragment to setup all run-targets (default: true)
+run-setup = \
+    cp app/service/jobs.yaml $(DIR_RUN)/jobs.yaml; \
+    $(call run-token-create); \
+    $(call run-token-link,default,token-type,token-secret)
+
+# Define variables for all run-targets (called with empty and '-env' argument)
+run-vars = \
+    $(1) GODEBUG="gctrace=1" \
+    $(1) GIN_MODE="debug" \
+    $(1) CAS_LOG_LEVEL="debug" \
+    $(1) CAS_AUTH_TOKENINFOURL="$(HOST_TOKENINFO)" \
+    $(1) CAS_S3_BUCKET="$(AWSBUCKET)" \
+    $(1) CAS_S3_SHARED="false" \
+    $(1) CAS_SCAN_MODE="dynamic" \
+    $(1) CAS_AUTH_TIMEOUT="10s"
+
+# Define variables for local run-targets (called only with empty argument)
+run-vars-local = \
+    $(1) CAS_AUTH_CREDENTIALSDIR="$(DIR_CRED)"
+# Define variables for image run-targets (called with empty and '-env' argument)
+run-vars-image =
+# Define a make-fragment to setup aws localstack (default: true).
+run-setup-aws = \
+  if ! aws $(AWSOPTS) s3 ls s3://$(AWSBUCKET) >/dev/null 2>&1; then \
+    aws $(AWSOPTS) s3 mb s3://$(AWSBUCKET); \
+  fi
+```
 
 To enable postgres database support you must add `run-db` to `TEST_DEPS` and
 `RUN_DEPS` variables to [Makefile.vars](Makefile.vars).
