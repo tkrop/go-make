@@ -46,7 +46,7 @@ else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
 # Setup go to use desired and consistent go versions.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.38
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.39
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
@@ -414,14 +414,18 @@ git-message = \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
 	fi
+git-main = $$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)
 git-clean = \
 	git fetch --all --prune --verbose; \
 	HISTORY=($$(git log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$(1)"); do \
 	  TIP="$$(git log --max-count=1 --pretty=format:"%T" "$${BRANCH}")"; \
-	  if [[ "$${HISTORY}" =~ "$${TIP}" ]]; then \
+	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
 	    git branch --delete --force "$${BRANCH}"; \
-	  else git branch --delete "$${BRANCH}"; fi; \
+	  elif [ "$(RUNARGS)" == "all" ]; then \
+	    git branch --delete "$${BRANCH}"; \
+	  else echo "info: keeping $${BRANCH}" > /dev/stderr; \
+	  fi; \
 	done; git fetch --all --prune --verbose
 
 
@@ -430,15 +434,13 @@ git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
 	git log --graph --all --date=iso \
 	  --pretty=format:"%Cred%h %t %Cgreen%ad%Creset | %s $${SUFFIX}";
-#@ cleans up the git history removing all pushed local branches except the current.
+#@ [all] @ cleans up the git history removing merged branches except the current.
 git-clean::
-	@BRANCH="$$(git branch --show-current)"; \
-	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
+	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
 	$(call git-clean,$${MAIN}\|$${BRANCH});
-#@ checks out default branch and cleans up the git history removing all pushed branches.
+#@ [all] @ checks out default branch and cleans up the git history removing merged branches.
 git-reset::
-	@BRANCH="$$(git branch --show-current)"; \
-	MAIN="$$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)"; \
+	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
 	  git checkout "$${MAIN}" && git pull || ( \
 	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \

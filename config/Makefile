@@ -15,7 +15,7 @@ else ifeq ($(GOSETUP),local)
 else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.38
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.39
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	go install $(GOMAKE_DEP) >/dev/stderr && $(GOBIN)/go-make targets)
 
