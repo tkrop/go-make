@@ -528,8 +528,8 @@ types](#commit-types):
 
 ```bash
 make git-graph       # shows the git log as pretty printed graph
-make git-clean       # cleans up git history removing also local branches
-make git-reset       # checks out default branch and cleans up git history
+make git-clean [all] # cleans up git history by removing merged branches
+make git-reset [all] # checks out default branch and cleans up git history
 make git-create(-*)  # creates and pushes a branch with the current change set
 make git-commit(-*)  # commits the current change set to the current branch
 make git-fix-commit  # pushes the latest changes to the previous commit
@@ -544,6 +544,10 @@ by adding a conventional [commit type](#commit-types) and should contain an
 issue reference. If not issue reference is provided the last issue increased
 by one is used. Similar `git-commit(-*)` targets support a `<message...>`
 argument is enriched, but reusing the previous issue type.
+
+The `git-reset` and `git-clean` targets support an optional `all` argument
+to define whether also pushed branches should be cleaned up instead of only
+merged branches.
 
 
 ## Commit types
