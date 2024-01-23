@@ -50,7 +50,7 @@ export GOPRIVATE ?= github.bus.zalan.do
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.41
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.42
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -405,8 +405,8 @@ targets::
 
 
 ## Git-Support: targets for standard git commands (experimental).
-GITFIX = git commit --amend --no-edit
-GITPUSH = git push --force-with-lease
+GITFIX ?= git commit --amend --no-edit
+GITPUSH ?= git push --force-with-lease
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -469,7 +469,7 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	git commit --signoff --message "$${MESSAGE}"; exit;
 #@ pushes the latest changes to the previous commit of the origin.
 git-fix::
-	@GITFIX=($(patsubst %,"%",$(GITFIX))); \
+	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
 	if [[ "$(RUNARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
 	if [[ "$(RUNARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
 	if [[ "$(RUNARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
