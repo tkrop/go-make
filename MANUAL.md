@@ -532,9 +532,7 @@ make git-clean [all] # cleans up git history by removing merged branches
 make git-reset [all] # checks out default branch and cleans up git history
 make git-create(-*)  # creates and pushes a branch with the current change set
 make git-commit(-*)  # commits the current change set to the current branch
-make git-fix-commit  # pushes the latest changes to the previous commit
-make git-fix-no-verify # pushes the latest changes without verifying
-make git-fix-comment # pushes the latest changes updating the commit message
+make git-fix [...]   # pushes the latest changes to the previous commit
 make git-push        # pushes the current branch to the upstream repository
 ```
 
@@ -548,6 +546,11 @@ argument is enriched, but reusing the previous issue type.
 The `git-reset` and `git-clean` targets support an optional `all` argument
 to define whether also pushed branches should be cleaned up instead of only
 merged branches.
+
+The `git-fix` supports `(no-)edit` and `(no)-verify` arguments to selectively
+enable or disable commit verification and comment editing. The default is to
+using verification but disable editing. The default behavior can be defined
+by setting providing the `GITFIX` environment variable.
 
 
 ## Commit types

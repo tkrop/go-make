@@ -50,9 +50,7 @@ git-create-refactor
 git-create-remove
 git-create-style
 git-create-test
-git-fix-comment
-git-fix-commit
-git-fix-no-verify
+git-fix
 git-graph
 git-push
 git-reset

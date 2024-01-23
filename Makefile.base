@@ -46,7 +46,7 @@ else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
 # Setup go to use desired and consistent go versions.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.39
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.40
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
@@ -402,6 +402,7 @@ targets::
 
 
 ## Git-Support: targets for standard git commands (experimental).
+GITFIX = git commit --amend --no-edit
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -427,7 +428,6 @@ git-clean = \
 	  else echo "info: keeping $${BRANCH}" > /dev/stderr; \
 	  fi; \
 	done; git fetch --all --prune --verbose
-
 
 #@ prints the git log as pretty graph.
 git-graph::
@@ -464,14 +464,13 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,0); \
 	git commit --signoff --message "$${MESSAGE}"; exit;
 #@ pushes the latest changes to the previous commit of the origin.
-git-fix-commit::
-	@git commit --amend --no-edit && git push --force; exit;
-#@ pushes the latest changes to the previous commit of the origin without verifying them.
-git-fix-no-verify::
-	@git commit --amend --no-edit --no-verify && git push --force; exit;
-#@ pushes the latest changes to the previous commit of the origin updating the commit message.
-git-fix-comment::
-	@git commit --amend && git push --force; exit;
+git-fix::
+	@GITFIX=($(patsubst %,"%",$(GITFIX))); \
+	if [[ "$(RUNARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
+	if [[ "$(RUNARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
+	if [[ "$(RUNARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
+	if [[ "$(RUNARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
+	"$${GITFIX[@]}" && git push --force; exit;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@git push --set-upstream origin \
