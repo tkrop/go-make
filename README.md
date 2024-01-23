@@ -20,10 +20,10 @@
 [coveralls-link]: https://coveralls.io/github/tkrop/go-make?branch=main
 
 [coverage-badge]: https://app.codacy.com/project/badge/Coverage/b2bb898346ae4bb4be6414cd6dfe4932
-[coverage-link]: https://www.codacy.com/gh/tkrop/go-make/dashboard?utm_source=github.com&utm_medium=referral&utm_content=tkrop/go-make&utm_campaign=Badge_Coverage
+[coverage-link]: https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage
 
 [quality-badge]: https://app.codacy.com/project/badge/Grade/b2bb898346ae4bb4be6414cd6dfe4932
-[quality-link]: b2bb898346ae4bb4be6414cd6dfe4932https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade
+[quality-link]: https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade
 
 [report-badge]: https://goreportcard.com/badge/github.com/tkrop/go-make
 [report-link]: https://goreportcard.com/report/github.com/tkrop/go-make
