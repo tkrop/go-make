@@ -15,9 +15,10 @@ else ifeq ($(GOSETUP),local)
 else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.39
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.40
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
-	go install $(GOMAKE_DEP) >/dev/stderr && $(GOBIN)/go-make targets)
+	go install $(GOMAKE_DEP) >/dev/stderr && \
+	$(GOBIN)/go-make targets 2>/dev/null)
 
 # Declare all targets phony to make them available for auto-completion.
 .PHONY:: $(TARGETS)
