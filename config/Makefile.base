@@ -33,10 +33,8 @@ ifndef IMAGE_CMD
   $(error error: command not found (docker/podman))
 endif
 
-# Export private repositories that do not need to be downloaded.
+# Setup desired go compiler environemt or defaults.
 export GO ?= go
-export GOPRIVATE ?= github.bus.zalan.do
-export GOBIN ?= $(shell $(GO) env GOPATH)/bin
 ifndef GOSETUP
   export GOBIN ?= $(shell $(GO) env GOPATH)/bin
 else ifeq ($(GOSETUP),local)
@@ -45,11 +43,16 @@ else ifeq ($(GOSETUP),local)
 else
   $(error error: unsupported go setup ($(GOSETUP)))
 endif
+
+# Export private repositories that do not need to be downloaded.
+export GOPRIVATE ?= github.bus.zalan.do
 # Setup go to use desired and consistent go versions.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.40
+GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
+
+# Setup go-make to use desired build and config scripts.
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.41
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
-GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
 
 
 # Setup sensible defaults for configuration variables.
@@ -403,6 +406,7 @@ targets::
 
 ## Git-Support: targets for standard git commands (experimental).
 GITFIX = git commit --amend --no-edit
+GITPUSH = git push --force-with-lease
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -470,7 +474,7 @@ git-fix::
 	if [[ "$(RUNARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
 	if [[ "$(RUNARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
 	if [[ "$(RUNARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
-	"$${GITFIX[@]}" && git push --force; exit;
+	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@git push --set-upstream origin \
@@ -1125,7 +1129,6 @@ bump-version = \
 	  } else { arg = substr(arg,6); } \
 	  patsplit($$0, v, "[0-9-]*", seps); len = length(seps); \
 	  while (len <= 3) { seps[len-1] = "."; len++ }; \
-	  print "arg=" arg " pos=" pos " input=" $$0 > "/dev/stderr"; \
 	  if (arg !~ "-$$") { v[pos]++ } else { v[pos]-- }; \
 	  for (i = 1; i < len; i++) { \
 	    printf("%01d%s", (i <= pos) ? v[i] : 0, seps[i]) \
@@ -1149,8 +1152,8 @@ release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
 	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  VERSION="$(RUNARGS)"; \
-	fi; \
-	if [ -n "$${VERSION}" -a -z "$$(git tag -l "v$${VERSION}")" ]; then \
+	fi; git fetch --tags; \
+	if [ -n "$${VERSION}" -a -z "$$(git tag --list "v$${VERSION}")" ]; then \
 	  ( git gh-release "v$${VERSION}" ) || ( \
 		git config user.name "$$(git log -n 1 --pretty=format:%an)" && \
 		git config user.email "$$(git log -n 1 --pretty=format:%ae)" && \

@@ -15,7 +15,7 @@ commit::
 	  fi; \
 	done;
 
-sync-config::
+sync::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 	    echo "sync: $${FILE#*/} => $${FILE}"; cp "$${FILE#*/}" "$${FILE}"; \
