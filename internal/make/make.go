@@ -43,51 +43,6 @@ const (
 	ExitExecFailure   int = 2
 )
 
-// Regexp for filtering entering and leaving lines from make output.
-// var makeFilterRegexp = regexp.MustCompile(
-// 	"make\\[[0-9]+\\]: (Entering|Leaving) directory '[^\n]*'\n")
-
-// MakeFilter is a custom filter that implements the io.Writer interface.
-// type MakeFilter struct {
-// 	writer io.Writer
-// 	filter *regexp.Regexp
-// 	buf    []byte
-// }
-
-// NewMakeFilter creates a new make filter using the given writer.
-// func NewMakeFilter(writer io.Writer) *MakeFilter {
-// 	return &MakeFilter{
-// 		writer: writer,
-// 		filter: makeFilterRegexp,
-// 		buf:    []byte{},
-// 	}
-// }
-
-// Write writes the given data to the underlying writer.
-// func (f *MakeFilter) Write(data []byte) (int, error) {
-// 	s := 0
-// 	for c := 0; c < len(data); c++ {
-// 		if data[c] != '\n' {
-// 			continue
-// 		}
-
-// 		f.buf = append(f.buf, data[s:c+1]...)
-// 		if f.filter.Match(f.buf) {
-// 			fmt.Fprintf(os.Stdout, "skip: %s", string(f.buf))
-// 			f.buf = []byte{}
-// 			continue
-// 		} else if i, err := f.writer.Write(f.buf); err != nil {
-// 			fmt.Fprintf(os.Stdout, "error: %d %v", i, err)
-// 			return i, err
-// 		}
-// 		fmt.Fprintf(os.Stdout, "write: %s", string(f.buf))
-// 		f.buf = []byte{}
-// 		s = c + 1
-// 	}
-// 	f.buf = append(f.buf, data[s:]...)
-// 	return s, nil
-// }
-
 // CmdGoInstall creates the argument array of a `go install <path>@<version>`
 // command.
 func CmdGoInstall(path, version string) []string {
@@ -250,17 +205,9 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 	}
 
 	if err := gm.ensureConfig(); err != nil {
-		if !gm.Trace {
-			gm.Logger.Call(gm.Stderr, args...)
-			gm.Logger.Info(gm.Stderr, gm.Info, false)
-		}
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
 	} else if err := gm.makeTargets(targets...); err != nil {
-		if !gm.Trace {
-			gm.Logger.Call(gm.Stderr, args...)
-			gm.Logger.Info(gm.Stderr, gm.Info, false)
-		}
 		gm.Logger.Error(gm.Stderr, "execute make", err)
 		return ExitExecFailure, err
 	}
@@ -290,11 +237,7 @@ func Make(
 	stdout, stderr io.Writer, args ...string,
 ) int {
 	exit, _ := NewGoMake(
-		info, config,
-		// TODO we would like to filter some make file startup specific
-		// output that creates hard to validate output.
-		// NewMakeFilter(stdout), NewMakeFilter(stderr), info,
-		stdout, stderr,
+		info, config, stdout, stderr,
 	).Make(args[1:]...)
 
 	return exit

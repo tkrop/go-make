@@ -8,9 +8,9 @@ else
 endif
 
 # Setup desired go compiler environemt or defaults.
-export GO ?= go
+export GOPATH ?= $(shell $(GO) env GOPATH)
 ifndef GOSETUP
-  export GOBIN ?= $(shell $(GO) env GOPATH)/bin
+  export GOBIN ?= $(GOPATH)/bin
 else ifeq ($(GOSETUP),local)
   export GOBIN := $(DIR_BUILD)/bin
   export PATH := $(GOBIN):$(PATH)
@@ -19,7 +19,7 @@ else
 endif
 
 # Setup go-make to utilize desired build and config scripts.
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.45
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.46
 # Request targets from go-make targets target.
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	go install $(GOMAKE_DEP) >/dev/stderr && \

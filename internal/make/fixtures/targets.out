@@ -189,6 +189,7 @@ update/.markdownlint.yaml
 update/.markdownlint.yaml?
 update/Makefile
 update/Makefile?
+update/go-make
 update/go.mod
 update/go.mod?
 update/revive.toml

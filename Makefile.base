@@ -35,8 +35,9 @@ endif
 
 # Setup desired go compiler environemt or defaults.
 export GO ?= go
+export GOPATH ?= $(shell $(GO) env GOPATH)
 ifndef GOSETUP
-  export GOBIN ?= $(shell $(GO) env GOPATH)/bin
+  export GOBIN ?= $(GOPATH)/bin
 else ifeq ($(GOSETUP),local)
   export GOBIN := $(DIR_BUILD)/bin
   export PATH := $(GOBIN):$(PATH)
@@ -50,10 +51,16 @@ export GOPRIVATE ?= github.bus.zalan.do
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.45
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.46
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
-
+gomake-dep := $(shell command -v $(GOBIN)/go-make >/dev/null && \
+	$(GO) version -m $(GOBIN)/go-make | awk '(NR == 3) { print $$(2) "@" $$(3) }')
+ifneq ($(GOMAKE_DEP),$(gomake-dep))
+  $(shell EXPECT="$(gomake-dep)"; ACTUAL="$(GOMAKE_DEP)"; \
+	MESSAGE="go-make version ($${ACTUAL##*@} => $${EXPECT##*@})"; \
+    echo "warning: $${MESSAGE}" >/dev/stderr)
+endif
 
 # Setup sensible defaults for configuration variables.
 CODE_QUALITY ?= base
@@ -109,7 +116,8 @@ TOOLS_SH += \
 	github.com/anchore/grype
 
 # function for correct go-package handling.
-go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" -v not="$(4)" ' \
+go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
+      -v not="$(4)" -v version="$(5)" ' \
 	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } { \
 	  field = NF; \
 	  if (vindex = index($$0, "@")) { field-- } \
@@ -123,8 +131,11 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" -v not="$(4)" ' \
 	      } \
 	    } else if (mode == "module") { \
 	      if (!((pkg = package(vindex)) in map)) { \
-	        print ((vindex) ? $$0 : $$0 "@latest"); \
-	        map[pkg]++ \
+	        if (version) { \
+	          print pkg ((version == "latest") ? "@latest" : "@v" version) \
+	        } else { \
+	          print ((vindex) ? $$0 : $$0 "@latest") \
+	        } map[pkg]++ \
 	      } \
 	    } else if (mode == "origin") { \
 	      if (!((pkg = package(vindex)) in map)) { \
@@ -265,14 +276,14 @@ endif
 FIND := find . ! -path "./run/*" ! -path "./build/*"
 FILTER := sed "s|^./||" | grep -E "^[a-z0-9/_-]*\.go$$"
 SOURCES := $(shell $(FIND) -name "*.go" ! -name "mock_*_test.go" | $(FILTER))
-MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort -u)
+MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
 COMMANDS := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
-	sed -E "s/^.*\/([^/]*)\/main.go$$/\1/" | sort -u)
+	sed -E "s/^.*\/([^/]*)\/main.go$$/\1/" | sort --unique)
 COMMANDS_PKG := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
 	sed -E "s/^(.*\/([^/]*))\/main.go$$/\2=\1/; s|$(CURDIR)|.|")
 COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
-COMMANDS_GO := $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not)
-COMMANDS_SH := $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not)
+COMMANDS_GO := $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,)
+COMMANDS_SH := $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,)
 
 
 # Setup of runtime arguments for commands that support arguments.
@@ -296,12 +307,12 @@ endif
 MOCK_MATCH_DST := ^(.*)/(.*)://go:generate.*-destination=([^ ]*).*$$
 MOCK_MATCH_SRC := ^(.*)/(.*)://go:generate.*-source=([^ ]*).*$$
 MOCK_TARGETS := $(shell grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
-	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_DST)|\1/\3=\1/\2|" | sort -u)
+	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_DST)|\1/\3=\1/\2|" | sort --unique)
 MOCK_SOURCES := $(shell grep "//go:generate[[:space:]]*mockgen.*-source=" $(SOURCES) | \
-	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_SRC)|\1/\3|" | sort -u | \
+	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_SRC)|\1/\3|" | sort --unique | \
 	xargs -r readlink -f | sed "s|$(PWD)/||g")
 MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
-	do echo "$${TARGET%%=*}"; done | sort -u)
+	do echo "$${TARGET%%=*}"; done | sort --unique)
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix publish-, all $(COMMANDS))
@@ -335,7 +346,7 @@ TARGETS_RUN_IMAGE := $(addprefix run-image-, $(COMMANDS))
 TARGETS_RUN_CLEAN := $(addprefix run-clean-, $(COMMANDS) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
 TARGETS_CLEAN_RUN := $(addprefix clean-run-, $(COMMANDS) db aws)
-TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
+TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO) go-make)
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
 TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
@@ -402,7 +413,8 @@ show-vars = awk ' \
 show-targets = awk -v RS= -F: ' \
 	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished Make data base/ { \
 	  if ($$1 !~ "^[\#.]") { print $$1 } \
-	}' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'
+	}' | LC_ALL=C sort --unique | \
+	egrep --invert-match --regexp='^[^[:alnum:]]'
 
 #@ shows this help (deprecated, TODO: remove).
 help:: show-help
@@ -667,7 +679,7 @@ test-go::
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
 	    VERSIONS="$$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
-	      grep -Eo "[0-9.]*" | sort -u)"; \
+	      grep -Eo "[0-9.]*" | sort --unique)"; \
 	    $(call test-go,$${FILE}); \
 	  fi; \
 	done;
@@ -683,7 +695,7 @@ test-args = \
 	fi; \
     if [[ -f "$${ARGS[0]}" && ! -d "$${ARGS[0]}" && \
 			 "$${ARGS[0]}" == *_test.go ]]; then \
-	  find $$(dirname "$${ARGS[@]}" | sort -u) \
+	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
 		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
 		-o -name "common_test.go" -o -name "mock_*_test.go" | \
 		sed "s|^|./|"; \
@@ -697,7 +709,7 @@ test-args = \
 		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="-run $${ARG\#\#*/}"; \
 		else TEST_CASES="$${TEST_CASES} -run $${ARG\#\#*/}"; fi; \
 	  done; \
-	  echo -en "$${PACKAGES}" | sort -u | sed "s|^|./|"; \
+	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
 	  echo "$${TEST_CASES}"; \
 	else \
 	  echo "warning: invalid test parameters [$${ARGS[@]}]"; \
@@ -1126,7 +1138,7 @@ $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 	if ! [[ "$${GVERSION}" =~ ^$(GOVERSION)* ]]; then \
 	  echo "warning: $* build ($${GVERSION} => $(GOVERSION))" > /dev/stderr; \
 	fi; \
-	MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$*$$,)"; \
+	MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$*$$,,$(RUNARGS))"; \
 	if [ "$${MODULE##*@}" != "latest" ]; then \
 	  MVERSION="$$($(GO) version -m "$(GOBIN)/$*" | \
 	    grep "^\s*mod\s*$${MODULE%%@*}" | cut -f 4)"; \
@@ -1135,7 +1147,7 @@ $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 	  fi; \
 	fi;
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(RUNARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1360,7 +1372,7 @@ clean-build::; @rm -vrf $(DIR_BUILD) $(DIR_RUN);
 	$(FIND) -name "mock_*_test.go" -exec rm -vf {} \;;
 #@ clean up all package dependencies by removing packages.
 clean-deps::
-	for PACKAGE in $$(cat go.sum | cut -d ' ' -f 1 | sort -u); do \
+	for PACKAGE in $$(cat go.sum | cut -d ' ' -f 1 | sort --unique); do \
 	  $(GO) get $${PACKAGE}@none; \
 	done;
 #@ clean up all running container images.
@@ -1419,7 +1431,16 @@ update-args = \
 update-list = \
 	( gomajor list $(1) 2>/dev/null | sed "s/://1; s/\[latest /\[/g"; \
 	  $(GO) list -m -u -mod=mod $(2) | grep "\[.*\]$$" \
-	) | sort -u | sed "s/\]//g; s/\[/=> /"
+	) | sort --unique | sed "s/\]//g; s/\[/=> /"
+update-config = \
+	GOMAKE="$(call go-pkg,$(TOOLS_GO),module,^go-make$$,,$(1))"; \
+	if [ "$(2)" == "download" ]; then \
+	  $(GO) mod download $${GOMAKE} 2>/dev/null; \
+	fi && if [ "$${GOMAKE\#\#*@}" == "latest" ]; then \
+	  GOMAKE="$$($(GO) run $${GOMAKE} --version 2>/dev/null | \
+	    jq --raw-output '.path + "@" + .version')"; \
+	fi && CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"
+
 
 # TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
@@ -1454,29 +1475,34 @@ update-deps?:: test-go update/go.mod?
 update/go.mod?:: $(GOBIN)/gomajor
 	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
+update/go-make::
+	@$(call update-config,$(RUNARGS),download) || \
+	  ( echo "error: downloading $${GOMAKE}" >/dev/stderr && exit 1 )
 
 #@ <version> # update this build environment to latest version.
-update-make:: $(TARGETS_UPDATE_MAKE)
+update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
+	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFDIR)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
-	elif [ -z "$$(diff "$(GOMAKE_CONFDIR)/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
+	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (skipped)"; \
 	elif [ -n "$$(git diff $${DIR}/$${FILE})" ]; then \
 	  echo "update: $${FILE} (blocked)"; \
 	else \
 	  echo "update: $${FILE} (updated)"; \
-	  cp "$(GOMAKE_CONFDIR)/$${FILE}" "$${DIR}/$${FILE}"; \
+	  cp "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}"; \
 	fi; \
 
 #@ <version> # check whether updates for build environment exist.
-update-make?:: $(TARGETS_UPDATE_MAKE?)
+update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
+	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFDIR)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
-	elif [ -z "$$(diff "$(GOMAKE_CONFDIR)/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
+	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (unchanged)"; \
 	elif [ -n "$$(git diff $${DIR}/$${FILE})" ]; then \
 	  echo "update: $${FILE} (blocked)"; \
@@ -1485,11 +1511,11 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 #@ update all tools required by the project.
 update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 	$(GO) mod tidy -compat=${GOVERSION};
-#@ update-*: update the matched software command or service.
 
+#@ update-*: update the matched software command or service.
 # update go tools used by the project.
-$(TARGETS_UPDATE_GO):: update-%:
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
+$(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(RUNARGS));
 
 
 ## Custom: custom extension targets.

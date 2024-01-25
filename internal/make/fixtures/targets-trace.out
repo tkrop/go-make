@@ -1,7 +1,7 @@
-../../config/Makefile.base:420: target 'show-targets' does not exist
+../../config/Makefile.base:432: target 'show-targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile=../../config/Makefile.base  2>/dev/null | \
-  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true;
+  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort --unique | egrep --invert-match --regexp='^[^[:alnum:]]' || true;
 all
 all-clean
 build
@@ -193,6 +193,7 @@ update/.markdownlint.yaml
 update/.markdownlint.yaml?
 update/Makefile
 update/Makefile?
+update/go-make
 update/go.mod
 update/go.mod?
 update/revive.toml

@@ -207,8 +207,6 @@ var testMakeParams = map[string]MakeParams{
 			Exec("stdout", "stderr", dirWork, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTarget...),
 				errAny, "", ""),
-			LogCall("stderr", argsTarget),
-			LogInfo("stderr", infoBase, false),
 			LogError("stderr", "execute make", make.NewErrCallFailed(
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
 					argsTarget...), errAny)),
@@ -242,8 +240,6 @@ var testMakeParams = map[string]MakeParams{
 				errAny, "", ""),
 			Exec("stderr", "stderr", dirWork, make.CmdGoInstall(
 				infoNew.Path, infoNew.Version), errAny, "", ""),
-			LogCall("stderr", argsTarget),
-			LogInfo("stderr", infoNew, false),
 			LogError("stderr", "ensure config", make.NewErrNotFound(
 				infoNew.Path, infoNew.Version, make.NewErrCallFailed(
 					make.CmdGoInstall(infoNew.Path, infoNew.Version),
@@ -370,7 +366,6 @@ func ReadFile(fs embed.FS, name string) string {
 var (
 	// regexMatchBuildDir is the regular expression that is used to remove the
 	// build path dependent parts.
-	//lint:ignore S1007 // Escaping makes it less readable.
 	regexMatchSourceDir = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)(['\\[])([^'\\]]*/)(go-make/[^'\\]]*)(['\\]])")
 	// regexMatchMakeLog is the regular expression that is used to remove the
@@ -378,6 +373,10 @@ var (
 	//lint:ignore S1007 // Escaping makes it less readable.
 	regexMatchMakeLog = regexp.MustCompile( //nolint:gosimple // Just wrong!
 		"(?m)make\\[[0-9]*\\]: (Entering|Leaving) directory [^\\n]*\\n")
+	// regexMatchWarning is the regular expression that is used to remove the
+	// go-make version mismatch warning.
+	regexMatchWarning = regexp.MustCompile(
+		"(?m)warning: go-make version.*\n")
 	// replaceFixture replaces the placeholders in the fixture with the values
 	// provided to the replacer.
 	replacerFixture = strings.NewReplacer(
@@ -389,6 +388,7 @@ var (
 func FilterMakeOutput(str string) string {
 	str = regexMatchMakeLog.ReplaceAllString(str, "")
 	str = regexMatchSourceDir.ReplaceAllString(str, "$1$3$4")
+	str = regexMatchWarning.ReplaceAllString(str, "")
 	return str
 }
 

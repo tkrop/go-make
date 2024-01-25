@@ -447,11 +447,13 @@ make update        # short cut for 'update-{go,deps,make}'
 make update-all    # short cut to execute all update targets
 make update-go     # updates the go version to the current compiler version
 make update-deps   # updates the project dependencies to the latest version
-make update-make   # updates the build environment to a requested version
-make update-tools  # updates the project tools to the latest versions
+make update-make   # updates the build environment to a given/latest version
+make update-tools  # updates the project tools to a given/latest version
+make update-*      # updates a specific tool to a given/latest version
 ```
 
-Many update targets support a target version with `?`-suffix to test whether an
+Most `update-*` targets support a optional `<version>` argument to select a
+specific version (also `latest`) as well as a `?`-suffix to check whether an
 update is available instead of executing it directly.
 
 * For `update(-deps)` a `<mode>` can be supplied to update dependencies to the
