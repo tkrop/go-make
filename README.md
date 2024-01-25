@@ -13,8 +13,8 @@
 [![Security][security-badge]][security-link]
 -->
 
-[build-badge]: https://github.com/tkrop/go-make/actions/workflows/go.yaml/badge.svg
-[build-link]: https://github.com/tkrop/go-make/actions/workflows/go.yaml
+[build-badge]: https://github.com/tkrop/go-make/actions/workflows/build.yaml/badge.svg
+[build-link]: https://github.com/tkrop/go-make/actions/workflows/build.yaml
 
 [coveralls-badge]: https://coveralls.io/repos/github/tkrop/go-make/badge.svg?branch=main
 [coveralls-link]: https://coveralls.io/github/tkrop/go-make?branch=main
@@ -47,16 +47,17 @@
 
 ## Introduction
 
-Goal of `go-make` is to provide a simple, versioned test and build environment
-for usual [`go`][go]-projects (see [Standard `go`-project](#standard-go-project)
-for details) providing default targets, tools, and configs for testing, linting,
-building, installing, updating, running, and releasing libraries, commands, and
-container images.
+Goal of `go-make` is to provide a simple, versioned build and test environment
+for "common [`go`][go]-projects" that make standard development tasks easy (see
+also [Standard `go`-project](#standard-go-project) for details). To accomplish
+this goal `go-make` provides default targets, tools, and configs for testing,
+linting, building, installing, updating, running, and releasing libraries,
+binaries, and container images.
 
 `go-make` can be either run as command line tool or hooked into an existing
-project as minimal [`Makefile`](config/Makefile). Technically `go-make` is just
-a thin wrapper around a very generic and extensible [`Makefile`](Makefile.base)
-that is based on a standard [`go`][go]-project supporting different tools:
+project via a minimal [`Makefile`](config/Makefile). Technically `go-make` is
+just a thin wrapper around a very generic [`Makefile`](config/Makefile.base)
+based on a standard [`go`][go]-project supporting different tools:
 
 * [`gomock`][gomock] - go generating mocks.
 * [`codacy`][codacy] - for code quality documentation.
@@ -66,18 +67,18 @@ that is based on a standard [`go`][go]-project supporting different tools:
 * [`grype`][grype] - for security scanning.
 * [`syft`][syft] - for material listing.
 
-The thin wrapper provides the necessary version control for the `Makefile` and
-the default [`config`](config) of integrated tools. The tools are automatically
-installed when needed in the latest available version and use the default
-config. All config files can be installed and customized (see [Setup and
-customization](MANUAL.md#setup-and-customization)).
+The `go-make` wrapper provides the necessary version control for the `Makefile`
+and the [`config`](config) of the tools. The tools are automatically installed
+when needed in the configured (or latest) available version using a default or
+custom config file. All config files can be installed and customized (see
+[Setup and customization](MANUAL.md#setup-and-customization)).
 
 
-**Note:** Mostly, we accept the risk that using the latest versions of tools,
-e.g. for linting, may break the build for the sake of constantly updating
-dependencies by default. For tools where this is not desireable, e.g. `revive`
-and `golangci-lint` the default import is setup to contain a version. This can
-be adopted for other tools if needed (see [manual](MANUAL.md) for more
+**Note:** For many tools `go-make` accepts the risk that using the latest
+versions of tools, e.g. for linting, may break the build to allow cotinuous
+upgrading of dependencies by default. For tools were this is not desireable,
+e.g. for `revive` and `golangci-lint` the default import is version. Other
+tools can be versioned if needed (see [manual](MANUAL.md) for more
 information).
 
 **Warning:** `go-make` automatically installs a `pre-commit` hook overwriting

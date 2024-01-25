@@ -1,5 +1,6 @@
 # Security Policy
 
+
 ## Supported Versions
 
 The following versions are supported with security updates.
@@ -7,8 +8,9 @@ The following versions are supported with security updates.
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.0.x   | :white_check_mark: |
-| <0.0.38 | :x:                |
+
 
 ## Reporting a Vulnerability
 
-No vulneraility reported yet.
+If you want to report a vulnerability, please send an e-mail to the
+[owner](email:tronje.krop@zalando.de).

@@ -1,4 +1,3 @@
-# === do not change this Makefile! ===
 # See http://github.com/tkrop/go-make/MANUAL.md for documentation.
 
 SHELL := /bin/bash
@@ -50,7 +49,7 @@ export GOPRIVATE ?= github.bus.zalan.do
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.42
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.43
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -276,7 +275,7 @@ COMMANDS_SH := $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not)
 
 
 # Setup of runtime arguments for commands that support arguments.
-CMDWORDS ?= targets git- test- lint run- bump release update 
+CMDWORDS ?= show git- test- lint run- bump release update
 CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 	  for (i = 1; i <= NF; i++) { if (found) { \
 	    line = ((line) ? line " " $$i : $$i); continue \
@@ -320,14 +319,15 @@ TARGETS_INSTALL := $(addprefix install-, $(COMMANDS))
 TARGETS_INSTALL_GO := $(addprefix install-, $(COMMANDS_GO))
 TARGETS_INSTALL_SH := $(addprefix install-, $(COMMANDS_SH))
 TARGETS_INSTALL_NPM := $(addprefix install-, $(TOOLS_NPM:-cli=))
-TARGETS_INSTALL_ALL := $(TARGETS_INSTALL) $(TARGETS_INSTALL_GO) $(TARGETS_INSTALL_NPM)
+TARGETS_INSTALL_ALL := $(TARGETS_INSTALL) $(TARGETS_INSTALL_GO) \
+	$(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 TARGETS_UNINSTALL := $(addprefix uninstall-, $(COMMANDS))
 TARGETS_UNINSTALL_GO := $(addprefix uninstall-, $(COMMANDS_GO))
 TARGETS_UNINSTALL_SH := $(addprefix uninstall-, $(COMMANDS_SH))
 TARGETS_UNINSTALL_NPM := $(addprefix uninstall-, $(TOOLS_NPM:-cli=))
 TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-, $(CODACY_BINARIES))
 TARGETS_UNINSTALL_ALL := $(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) \
-	$(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY)
+	$(TARGETS_UNINSTALL_SH) $(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY)
 TARGETS_RUN := $(addprefix run-, $(COMMANDS))
 TARGETS_RUN_GO := $(addprefix run-go-, $(COMMANDS))
 TARGETS_RUN_IMAGE := $(addprefix run-image-, $(COMMANDS))
@@ -389,24 +389,41 @@ help::
 	    } \
 	  }';
 
-#@ show the effective makefile.
+#@ show [raw|vars|targets|all] # shows the selected details of the makefile.
 show::
-	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null || true;
-#@ <raw> # list all available targets.
+	@case "$(RUNARGS)" in \
+	( "raw" ) cat $(firstword $(MAKEFILE_LIST)) || true && exit;; \
+	( "vars" ) cat $(firstword $(MAKEFILE_LIST)) | awk ' \
+	    ($$0 ~ "^[A-Za-z0-9_-]* [?+]=") { \
+	      if (comment) { print comment } print $$0; var = 1; next \
+		} \
+	    (var && $$0 ~ "^([\t]|$$)") { print $$0; next } \
+	    ($$0 ~ "^#") { comment = $$0; var = 0; next } \
+	    { comment = ""; var = 0; next } \
+	  ' || true && exit;; \
+	( "targets" | * ) $(MAKE) --no-builtin-rules --no-builtin-variables \
+	    --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
+	    2>/dev/null |  awk -v RS= -F: ' \
+	      /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
+	        if ($$1 !~ "^[#.]") { print $$1 } \
+	      }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true && exit;; \
+	( "database" ) $(MAKE) --no-builtin-rules --no-builtin-variables \
+	    --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
+	    2>/dev/null || true && exit;; \
+	esac;
+#@ <raw> # list all available targets (deprecated: use 'show targets').
 targets::
-	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null | \
-	  if [ "$(RUNARGS)" != "raw" ]; then awk -v RS= -F: ' \
+	@$(MAKE) --no-builtin-rules --no-builtin-variables \
+	  --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
+	  2>/dev/null | awk -v RS= -F: ' \
 	    /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
 	      if ($$1 !~ "^[#.]") { print $$1 } \
-	    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'; \
-	  else cat -; fi || true;
+	    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true;
 
 
 ## Git-Support: targets for standard git commands (experimental).
 GITFIX ?= git commit --amend --no-edit
-GITPUSH ?= git push --force-with-lease
+GITPUSH ?= git push --force
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -438,11 +455,11 @@ git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
 	git log --graph --all --date=iso \
 	  --pretty=format:"%Cred%h %t %Cgreen%ad%Creset | %s $${SUFFIX}";
-#@ [all] @ cleans up the git history removing merged branches except the current.
+#@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
 	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
 	$(call git-clean,$${MAIN}\|$${BRANCH});
-#@ [all] @ checks out default branch and cleans up the git history removing merged branches.
+#@ [all] # checks out default branch and cleans up the git history removing merged branches.
 git-reset::
 	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
@@ -467,13 +484,16 @@ git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,0); \
 	git commit --signoff --message "$${MESSAGE}"; exit;
-#@ pushes the latest changes to the previous commit of the origin.
+#@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 git-fix::
 	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
 	if [[ "$(RUNARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
 	if [[ "$(RUNARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
 	if [[ "$(RUNARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
 	if [[ "$(RUNARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
+	for KEY in "$${!GITFIX[@]}"; do \
+	  if [ "$${GITFIX[$${KEY}]}" == "" ]; then unset GITFIX[$${KEY}]; fi; \
+	done; \
 	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
@@ -1104,6 +1124,9 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
+	@rm -vf $(wildcard $(GOBIN)/$*);
+# uninstall tools providing an install.sh tool.
+$(TARGETS_UNINSTALL_SH):: uninstall-%:
 	@rm -vf $(wildcard $(GOBIN)/$*);
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:

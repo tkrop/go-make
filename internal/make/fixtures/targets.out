@@ -142,11 +142,13 @@ uninstall-golangci-lint
 uninstall-gomajor
 uninstall-gosec
 uninstall-govulncheck
+uninstall-grype
 uninstall-markdownlint
 uninstall-mock
 uninstall-mockgen
 uninstall-revive
 uninstall-staticcheck
+uninstall-syft
 uninstall-zally
 update
 update-all

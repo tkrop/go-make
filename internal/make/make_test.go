@@ -429,16 +429,14 @@ var testMakeExecParams = map[string]MakeExecParams{
 		expectStderr: ReadFile(fixtures, "fixtures/bash-trace.err"),
 	},
 
-	"go-make targets": {
+	"go-make show targets": {
 		info:         infoBase,
-		args:         []string{"go-make", "targets"},
+		args:         []string{"go-make", "show" /*, "targets"*/},
 		expectStdout: ReadFile(fixtures, "fixtures/targets.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets.err"),
 	},
-	"go-make targets trace": {
-		args: []string{
-			"go-make", "--trace", "targets",
-		},
+	"go-make show targets trace": {
+		args:         []string{"go-make", "--trace", "show" /*"targets"*/},
 		expectStdout: ReadFile(fixtures, "fixtures/targets-trace.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets-trace.err"),
 	},
