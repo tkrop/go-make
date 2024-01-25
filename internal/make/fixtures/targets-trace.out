@@ -1,4 +1,4 @@
-../../config/Makefile.base:394: target 'show' does not exist
+../../config/Makefile.base:395: target 'show' does not exist
 case "" in \
 ( "raw" ) cat ../../config/Makefile.base || true && exit;; \
 ( "vars" ) cat ../../config/Makefile.base | awk ' \
@@ -67,6 +67,7 @@ git-fix
 git-graph
 git-push
 git-reset
+git-verify
 go.mod
 go.sum
 help
