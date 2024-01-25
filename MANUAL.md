@@ -269,8 +269,11 @@ The following targets are helpful to investigate the
 [Makefile](config/Makefile.base):
 
 ```bash
-make help     # prints a short help about major target (families)
-make show     # shows the effective makefile implementation
+make show-help    # shows a short help about main targets (families)
+make show-vars    # shows all supported (customizable) variables (with defaults)
+make show-targets # shows all supported targets (without prerequisites)
+make show-raw     # shows the raw base makefile as implemented
+make show-make    # shows the effective makefile as evaluated by make
 ```
 
 The `show` target supports an additional argument to switch to show different

@@ -119,7 +119,11 @@ run-clean
 run-clean-aws
 run-clean-db
 run-db
-show
+show-help
+show-make
+show-raw
+show-targets
+show-vars
 targets
 test
 test-all

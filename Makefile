@@ -19,11 +19,11 @@ else
 endif
 
 # Setup go-make to utilize desired build and config scripts.
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.43
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.45
 # Request targets from go-make targets target.
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	go install $(GOMAKE_DEP) >/dev/stderr && \
-	$(GOBIN)/go-make targets 2>/dev/null)
+	$(GOBIN)/go-make show-targets 2>/dev/null)
 # Declare all targets phony to make them available for auto-completion.
 .PHONY:: $(TARGETS)
 
