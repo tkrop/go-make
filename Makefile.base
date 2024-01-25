@@ -15,6 +15,7 @@ endif
 MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-print-directory
+MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
@@ -49,7 +50,7 @@ export GOPRIVATE ?= github.bus.zalan.do
 GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.43
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.45
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -356,70 +357,76 @@ $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
 
-## Support: targets to support processes and users.
-
-#@ prints this help.
-help::
-	@cat $(MAKEFILE_LIST) | awk ' \
-	  BEGIN { \
-	    printf("\n\033[1mUsage:\033[0m $(MAKE) \033[36m<target>\033[0m\n") \
-	  } \
-	  /^## .*/ { \
-	    if (i = index($$0, ":")) { \
-	      printf("\n\033[1m%s\033[0m%s\n", \
-	        substr($$0, 4, i - 4), substr($$0, i)) \
-	    } else { \
-	      printf("\n\033[1m%s\033[0m\n", substr($$0, 4)) \
-	    } next \
-	  } \
-	  /^#@ / { \
-	    if (i = index($$0, ":")) { \
-	      printf("  \033[36m%-25s\033[0m %s\n", \
-	        substr($$0, 4, i - 4), substr($$0, i + 2)) \
-	    } else { line = substr($$0, 4) } next \
-	  } \
-	  /^[a-zA-Z_0-9?-]+:/ { \
-	    if (line) { \
-	      target = substr($$1, 1, length($$1) - 1); \
-	      if (i = index(line, " # ")) { \
-	        target = target " " substr(line, 1, i - 1); \
-	        line = substr(line, i + 3) \
-	      } \
-	      printf("  \033[36m%-25s\033[0m %s\n", target, line); \
-	      line = "" \
+## Make-Support: targets to support user understanding.
+show-help = awk ' \
+	BEGIN { \
+	  printf("\n\033[1mUsage:\033[0m $(MAKE) \033[36m<target>\033[0m\n") \
+	} \
+	/^\#\# .*/ { \
+	  if (i = index($$0, ":")) { \
+	    printf("\n\033[1m%s\033[0m%s\n", \
+	      substr($$0, 4, i - 4), substr($$0, i)) \
+	  } else { \
+	    printf("\n\033[1m%s\033[0m\n", substr($$0, 4)) \
+	  } next \
+	} \
+	/^\#@ / { \
+	  if (i = index($$0, ":")) { \
+	    printf("  \033[36m%-25s\033[0m %s\n", \
+	      substr($$0, 4, i - 4), substr($$0, i + 2)) \
+	  } else { line = substr($$0, 4) } next \
+	} \
+	/^[a-zA-Z_0-9?-]+:/ { \
+	  if (line) { \
+	    target = substr($$1, 1, length($$1) - 1); \
+	    if (i = index(line, " \# ")) { \
+	      target = target " " substr(line, 1, i - 1); \
+	      line = substr(line, i + 3) \
 	    } \
-	  }';
+	    printf("  \033[36m%-25s\033[0m %s\n", target, line); \
+	    line = "" \
+	  } \
+	}'
+show-vars = awk ' \
+	($$0 ~ "^[[:alnum:]_-]* [?+]=") { \
+	  if (comment) { print comment } print $$0; var = 1; next \
+	} \
+	(var && $$0 ~ "^([\t]|$$)") { \
+	  print $$0; next \
+	} \
+	($$0 ~ "^\#") { \
+	  comment = $$0; var = 0; next \
+	} { \
+	  comment = ""; var = 0; next \
+	}'
+show-targets = awk -v RS= -F: ' \
+	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished Make data base/ { \
+	  if ($$1 !~ "^[\#.]") { print $$1 } \
+	}' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'
 
-#@ show [raw|vars|targets|all] # shows the selected details of the makefile.
-show::
-	@case "$(RUNARGS)" in \
-	( "raw" ) cat $(firstword $(MAKEFILE_LIST)) || true && exit;; \
-	( "vars" ) cat $(firstword $(MAKEFILE_LIST)) | awk ' \
-	    ($$0 ~ "^[A-Za-z0-9_-]* [?+]=") { \
-	      if (comment) { print comment } print $$0; var = 1; next \
-		} \
-	    (var && $$0 ~ "^([\t]|$$)") { print $$0; next } \
-	    ($$0 ~ "^#") { comment = $$0; var = 0; next } \
-	    { comment = ""; var = 0; next } \
-	  ' || true && exit;; \
-	( "targets" | * ) $(MAKE) --no-builtin-rules --no-builtin-variables \
-	    --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
-	    2>/dev/null |  awk -v RS= -F: ' \
-	      /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
-	        if ($$1 !~ "^[#.]") { print $$1 } \
-	      }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true && exit;; \
-	( "database" ) $(MAKE) --no-builtin-rules --no-builtin-variables \
-	    --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
-	    2>/dev/null || true && exit;; \
-	esac;
-#@ <raw> # list all available targets (deprecated: use 'show targets').
-targets::
-	@$(MAKE) --no-builtin-rules --no-builtin-variables \
-	  --print-data-base --question --makefile=$(firstword $(MAKEFILE_LIST)) \
-	  2>/dev/null | awk -v RS= -F: ' \
-	    /(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
-	      if ($$1 !~ "^[#.]") { print $$1 } \
-	    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true;
+#@ shows this help (deprecated, TODO: remove).
+help:: show-help
+#@ shows targets (deprecated, TODO: remove).
+targets:: show-targets
+
+#@ shows this short extracted help about main targets (families).
+show-help::
+	@cat $(MAKEFILE_LIST) | $(show-help) || true;
+#@ shows all supported (customizable) variable (with defaults).
+show-vars:
+	@cat $(firstword $(MAKEFILE_LIST)) | $(show-vars) || true;
+#@ shows all supported targets (without prerequesites).
+show-targets:
+	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
+	  --question --makefile=$(firstword $(MAKEFILE_LIST))  2>/dev/null | \
+	  $(show-targets) || true;
+#@ shows the raw base makefile as implemented.
+show-raw:
+	@cat $(firstword $(MAKEFILE_LIST)) || true;
+#@ shows the effective makefile as evaluated by make.
+show-make:
+	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
+	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null || true;
 
 
 ## Git-Support: targets for standard git commands (experimental).
@@ -1483,6 +1490,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%:
 	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,);
+
 
 ## Custom: custom extension targets.
 
