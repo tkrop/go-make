@@ -36,37 +36,47 @@ target groups:
 * [Init targets](#init-targets) (usually no need to call)
 
 **Note:** To see an overview of actual targets, use the shell auto-completion
-or run `make targets`. To get a short help on most important targets and target
-families run `make help`. To have a look at the effective targets and receipts
-use `make show`.
+or run `make show targets`. To get a short help on most important targets and
+target families run `make help`. To have a look at the effective targets and
+receipts use `make show all`.
 
-To customize the behavior there exist multiple extension points that can be
-used to setup additional variables, definitions, and targets that modify the
-behavior of the targets and receipts.
+To customize the behavior there exist two extension points at the begin and the
+end of the [Makefile](config/Makefile.base) that can be used to setup additional
+variables, definitions, and targets that modify the behavior and receipts.
 
-* [Makefile.vars](Makefile.vars) allows to modify the behavior of standard
-  targets by customizing and defining additional variables (see section
-  [Modifying variables](#modifying-variables) for more details).
-* [Makefile.defs](Makefile.defs) allows to customize the runtime environment
-  for executing of commands (see Section [Running commands](#running-commands)
-  for more details).
-* [Makefile.ext](Makefile.ext) is an optional extension point that allows to
-  define arbitrary custom targets.
+* The extension point at the begin is called [Makefile.vars](Makefile.vars) and
+  allows to modify the behavior of targets by customizing [variables][make-vars]
+  and [functions][make-calls] (see [Modifying variables](#modifying-variables)
+  and [Running commands](#running-commands) for more details and examples).
+* The extension point at the end is called [Makefile.ext](Makefile.ext) and is
+  optimal to define additional [targets][make-rules] and [rules][make-rules],
+  with [prerequisite][make-prerequisite] and [receipts][make-receipts].
 
 **Note:** To efficiently support custom [targets][make-rules] and customization
 of [rules][make-rules] the [Makefile](config/Makefile.base) is extensively
-making use of [Double Colon Rules][make-double-colon] (`::`) for the main. This
-makes it easy to define additional [rules][make-rules], setting up new
-[prerequisite][make-prerequisite] and [receipts][make-receipts] for
-[phony targets][make-phony]. Please read the great [GNU `make` manual][make] for
-more information on how [`make`][make] works and interacts with its execution
-environment.
+using [double colon rules][make-double-colon] (`::`). This has the following
+consequences:
 
+1. The targets of [double colon rules][make-double-colon] is [phony][make-phony]
+   and triggers a [rule][make-rules] execution even if the [target][make-rules]
+   exists and is up-to-date.
+2. The target of [double colon rules][make-double-colon] can appear in multiple
+   [rule][make-rules] making it easy to define additional [rules][make-rules]
+   with new [prerequisite][make-prerequisite] and  [receipts][make-receipts]
+   for existing targets.
+
+To account for this nature [double colon rules][make-double-colon] are usually
+defined using deputy targets. Please read the great [GNU `make` manual][make]
+for more information on how [`make`][make] works and interacts with its
+execution environment.
+
+[make-vars]: https://www.gnu.org/software/make/manual/html_node/Using-Variables.html
+[make-calls]: https://www.gnu.org/software/make/manual/html_node/Call-Function.html
 [make-rules]: https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html
-[make-double-colon]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
-[make-phony]: https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
 [make-prerequisite]: https://www.gnu.org/software/make/manual/html_node/Prerequisite-Types.html
 [make-receipts]: https://www.gnu.org/software/make/manual/html_node/Recipes.html
+[make-double-colon]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
+[make-phony]: https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
 [make]: https://www.gnu.org/software/make/manual/html_node/index.html
 
 
@@ -112,8 +122,8 @@ LINTERS_CUSTOM := nonamedreturns gochecknoinits tagliatelle
 LINTERS_DISABLED :=
 ```
 
-If you need add or downgrade tools, the following variables are your customize
-entry points for customization:
+The following variables are your entry points for customizing the version
+of supported tools or adding additional tools:
 
 ```Makefile
 TOOLS_NPM := \
@@ -139,13 +149,9 @@ TOOLS_SH := \
   github.com/anchore/grype
 ```
 
-While the above list is surely non-exhaustive, all other variables are not part
-of the official interface and may be changed. Still, you can lookup these up
-using the following command:
-
-```bash
-grep -r " ?= " ${GOBIN}/go-make.config/Makefile.base`, however, most
-```
+While the above list of variables is non-exhaustive, all other variables are
+not part of the official interface and may be changed. Still, you can lookup
+customizable variables using `make show vars`;
 
 
 ### Running commands
@@ -263,10 +269,21 @@ The following targets are helpful to investigate the
 [Makefile](config/Makefile.base):
 
 ```bash
-make help    # prints a short help about major target (families)
-make targets # prints a list of all available targets
-make show    # shows the effective target implementation
+make help     # prints a short help about major target (families)
+make show     # shows the effective makefile implementation
 ```
+
+The `show` target supports an additional argument to switch to show different
+[Makefile](config/Makefile) details:
+
+* `raw` shows the raw text of the actual used [Makefile](config/Makefile)
+  version, which allows the details of the implementation.
+* `vars` shows only the customizable variables supported by the actual
+  used [Makefile](config/Makefile) version.
+* `targets` shows the list of actual targets supported by the effective
+  [Makefile](config/Makefile) (default).
+* `database` shows the effective [Makefile](config/Makefile) stored in the
+  database created by `make`.
 
 
 ### Test targets

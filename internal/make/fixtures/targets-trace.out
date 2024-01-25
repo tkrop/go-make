@@ -1,11 +1,24 @@
-../../config/Makefile.base:398: target 'targets' does not exist
-make --no-builtin-rules --no-builtin-variables --print-data-base \
-  --question --makefile=../../config/Makefile.base 2>/dev/null | \
-  if [ "" != "raw" ]; then awk -v RS= -F: ' \
-    /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { \
-      if ($1 !~ "^[#.]") { print $1 } \
-    }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]'; \
-  else cat -; fi || true;
+../../config/Makefile.base:394: target 'show' does not exist
+case "" in \
+( "raw" ) cat ../../config/Makefile.base || true && exit;; \
+( "vars" ) cat ../../config/Makefile.base | awk ' \
+    ($0 ~ "^[A-Za-z0-9_-]* [?+]=") { \
+      if (comment) { print comment } print $0; var = 1; next \
+	} \
+    (var && $0 ~ "^([\t]|$)") { print $0; next } \
+    ($0 ~ "^#") { comment = $0; var = 0; next } \
+    { comment = ""; var = 0; next } \
+  ' || true && exit;; \
+( "targets" | * ) make --no-builtin-rules --no-builtin-variables \
+    --print-data-base --question --makefile=../../config/Makefile.base \
+    2>/dev/null |  awk -v RS= -F: ' \
+      /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { \
+        if ($1 !~ "^[#.]") { print $1 } \
+      }' | LC_ALL=C sort | egrep -v -e '^[^[:alnum:]]' || true && exit;; \
+( "database" ) make --no-builtin-rules --no-builtin-variables \
+    --print-data-base --question --makefile=../../config/Makefile.base \
+    2>/dev/null || true && exit;; \
+esac;
 all
 all-clean
 build
@@ -150,11 +163,13 @@ uninstall-golangci-lint
 uninstall-gomajor
 uninstall-gosec
 uninstall-govulncheck
+uninstall-grype
 uninstall-markdownlint
 uninstall-mock
 uninstall-mockgen
 uninstall-revive
 uninstall-staticcheck
+uninstall-syft
 uninstall-zally
 update
 update-all
