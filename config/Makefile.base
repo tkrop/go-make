@@ -351,6 +351,7 @@ all:: $(TARGETS_ALL)
 all-clean:: clean clean-run all
 #@ executes the pre-commit check targets.
 commit:: $(TARGETS_COMMIT)
+
 $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
@@ -423,7 +424,7 @@ targets::
 
 ## Git-Support: targets for standard git commands (experimental).
 GITFIX ?= git commit --amend --no-edit
-GITPUSH ?= git push --force
+GITPUSH ?= git push --force-with-lease
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -449,6 +450,19 @@ git-clean = \
 	  else echo "info: keeping $${BRANCH}" > /dev/stderr; \
 	  fi; \
 	done; git fetch --all --prune --verbose
+git-author = $$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$$/\1/p')
+# TODO implement validation of commit log with mode 'raw'.
+git-verify = awk -v mode="$(1)" -v author="$(git-author)" ' \
+	(mode == "msg" && $$0 ~ "^Signed-off-by:") { \
+	  signed++; actual = substr($$0, 16); if (actual != author) { \
+	    printf("error: invalid signed-off-by (%s)\n", actual); error++ \
+	  } \
+	} \
+	END { \
+	  if (signed >= 1) { \
+	    printf("error: duplicate signed-off-by (%d)\n", signed); error++ \
+	  } \
+	}' >/dev/stderr
 
 #@ prints the git log as pretty graph.
 git-graph::
@@ -467,6 +481,18 @@ git-reset::
 	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \
 	  ) \
 	fi || exit 1; $(call git-clean,$${MAIN});
+#@ check whether git log is compliant with conventional commit messages and signed.
+git-verify::
+	@BRANCH="$$(git branch --show-current)"; TARGET="main"; \
+	case "$(firstword $(RUNARGS))" in \
+	( "message" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))" | \
+	  $(call git-verify,msg) >/dev/stderr || exit 1 && exit 0;; \
+	( "change" ) git log --no-merges --format=raw $${BRANCH} ^$${TARGET} | \
+	    $(call git-verify,raw) >/dev/stderr || exit 1 && exit 0;; \
+	( "log" ) git log --no-merges --format=raw $${BRANCH} | \
+	    $(call git-verify,raw) >/dev/stderr || exit 1 && exit 0;; \
+	esac;
+
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
@@ -511,14 +537,22 @@ go.sum: go.mod
 	$(GO) mod tidy -go=$(GOVERSION) && touch go.sum &&	$(GO) mod download;
 go.mod:
 	$(GO) mod init "$(REPOSITORY)";
-#@ initialize the pre-commit hook.
+#@ initialize git pre-commit and commit-message hooks.
 init-hooks:: .git/hooks/pre-commit
-.git/hooks/pre-commit:
-	@if [ -n "$$(cat Makefile | grep "^GOMAKE ?=.*")" ]; then \
-	  ( echo -e "#!/bin/sh\n"; \
-	    echo -e "echo \"make commit\" >/dev/stderr"; \
-	    echo -e "make commit" ) >$@; chmod 755 $@; \
-	fi; \
+git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
+	echo "make git-verify $${1}" >/dev/stderr;\n\
+	make git-verify message $${1};\n' | sed 's/^ *//g'
+git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
+	echo "make commit" >/dev/stderr;\n\
+	make commit;\n' | sed 's/^ *//g'
+.git/hooks/commit-msg: $(MAKEFILE_LIST)
+	@if ! diff <(cat $@) <($(git-hooks-commit-msg)) >/dev/null; then \
+	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
+	fi;
+.git/hooks/pre-commit: $(MAKEFILE_LIST)
+	@if ! diff <(cat $@) <($(git-hooks-pre-commit)) >/dev/null; then \
+	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
+	fi;
 
 #@ initialize the generated sources.
 init-sources:: $(MOCKS)

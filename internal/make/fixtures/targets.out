@@ -46,6 +46,7 @@ git-fix
 git-graph
 git-push
 git-reset
+git-verify
 go.mod
 go.sum
 help
