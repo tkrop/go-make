@@ -6,7 +6,7 @@ clean::
 bump bump-reset::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
-	  Makefile Makefile.base config/Makefile config/Makefile.base; \
+	  Makefile config/Makefile config/Makefile.base; \
 
 commit::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
@@ -16,7 +16,7 @@ commit::
 	done;
 
 sync::
-	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
+	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 	    echo "sync: $${FILE#*/} => $${FILE}"; cp "$${FILE#*/}" "$${FILE}"; \
 	  fi; \

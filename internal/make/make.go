@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	// GitSha1HashLen is the full length of sha1-hashes used in git.
-	GitFullHashLen = 40
-
 	// EnvGoMakeConfig provides the name of the go-make config environment
 	// variable.
 	EnvGoMakeConfig = "GOMAKE_CONFIG"
@@ -30,8 +27,8 @@ const (
 	// bashCompletion provides the bash completion script for go-make.
 	BashCompletion = "### bash completion for go-make\n" +
 		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make targets 2>/dev/null)\"" +
-		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"	COMPREPLY=($(compgen -W \"$(go-make show-targets 2>/dev/null)\" \\\n" +
+		"		-- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
 		"}\n" +
 		"complete -F __complete_go-make go-make;\n"
 )
@@ -39,9 +36,16 @@ const (
 // Available exit code constants.
 const (
 	ExitSuccess       int = 0
-	ExitConfigFailure int = 1
-	ExitExecFailure   int = 2
+	ExitGitFailure    int = 1
+	ExitConfigFailure int = 2
+	ExitTargetFailure int = 3
 )
+
+// AbsPath returns the absolute path of given directory.
+func AbsPath(dir string) string {
+	path, _ := filepath.Abs(dir)
+	return path
+}
 
 // CmdGoInstall creates the argument array of a `go install <path>@<version>`
 // command.
@@ -53,8 +57,8 @@ func CmdGoInstall(path, version string) []string {
 }
 
 // CmdTestDir creates the argument array of a `test -d <path>` command. We
-// majorly use this to test if a directory exists, since it allows us to mock
-// the check.
+// use this to test if a directory exists, since it allows us to mock the
+// check.
 func CmdTestDir(path string) []string {
 	return []string{"test", "-d", path}
 }
@@ -65,6 +69,12 @@ func CmdMakeTargets(file string, args ...string) []string {
 	return append([]string{
 		"make", "--file", file, "--no-print-directory",
 	}, args...)
+}
+
+// CmdGitTop creates the argument array of a `git rev-parse` command to
+// get the root path of the current git repository.
+func CmdGitTop() []string {
+	return []string{"git", "rev-parse", "--show-toplevel"}
 }
 
 // GetEnvDefault returns the value of the environment variable with given key
@@ -78,8 +88,7 @@ func GetEnvDefault(key, value string) string {
 
 // GoMakePath returns the path to the go-make config directory.
 func GoMakePath(path, version string) string {
-	return filepath.Join(
-		GetEnvDefault(EnvGoPath, build.Default.GOPATH),
+	return filepath.Join(GetEnvDefault(EnvGoPath, build.Default.GOPATH),
 		"pkg", "mod", path+"@"+version, "config")
 }
 
@@ -95,6 +104,8 @@ type GoMake struct {
 	Stdout io.Writer
 	// Stderr provides the standard error writer.
 	Stderr io.Writer
+	// Config provides the go-make config argument.
+	Config string
 
 	// The actual working directory.
 	WorkDir string
@@ -109,9 +120,10 @@ type GoMake struct {
 }
 
 // NewGoMake returns a new default `go-make` application context with given
-// standard output writer, standard error writer, and trace flag.
+// standard output writer, standard error writer, config setup, and working
+// directory.
 func NewGoMake(
-	info *info.Info, config string, stdout, stderr io.Writer,
+	stdout, stderr io.Writer, info *info.Info, config, wd string,
 ) *GoMake {
 	return (&GoMake{
 		Info:     info,
@@ -119,33 +131,52 @@ func NewGoMake(
 		Logger:   log.NewLogger(),
 		Stdout:   stdout,
 		Stderr:   stderr,
-	}).setupConfig(config)
+		Config:   config,
+		WorkDir:  wd,
+	})
 }
 
-// setupConfig sets up the go-make config directory and base makefile.
-func (gm *GoMake) setupConfig(config string) *GoMake {
-	// ---revive:disable-next-line:redefines-builtin-id // Is package name.
-	gm.WorkDir, _ = os.Getwd()
-	if config != "" {
-		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
-			CmdTestDir(config)...); err != nil {
-			gm.ConfigVersion = config
-			gm.ConfigDir = GoMakePath(gm.Info.Path, config)
-		} else {
-			gm.ConfigVersion = "latest"
-			gm.ConfigDir = config
-		}
-	} else {
-		gm.ConfigVersion = gm.Info.Version
-		gm.ConfigDir = GoMakePath(gm.Info.Path, gm.Info.Version)
+// setupWorkDir ensures that the working directory is setup to the root of the
+// current git repository since this is where the go-make targets should be
+// executed.
+func (gm *GoMake) setupWorkDir() error {
+	buffer := &strings.Builder{}
+	if err := gm.exec(buffer, gm.Stderr, gm.WorkDir,
+		CmdGitTop()...); err != nil {
+		return err
 	}
-	gm.Makefile = filepath.Join(gm.ConfigDir, Makefile)
-
-	return gm
+	gm.WorkDir = strings.TrimSpace(buffer.String())
+	return nil
 }
 
-// ensureConfig ensures the go-make config is available.
-func (gm *GoMake) ensureConfig() error {
+// setupConfig sets up the go-make config by evaluating the director or version
+// as provided by the command line arguments, the environment variables, or the
+// context of the executed go-make command. The setup ensures that the expected
+// go-make config is installed and the correct Makefile is referenced.
+func (gm *GoMake) setupConfig() error {
+	if gm.Config == "" {
+		return gm.ensureConfig(gm.Info.Version,
+			GoMakePath(gm.Info.Path, gm.Info.Version))
+	}
+
+	path := AbsPath(gm.Config)
+	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+		CmdTestDir(path)...); err != nil {
+		return gm.ensureConfig(gm.Config,
+			GoMakePath(gm.Info.Path, gm.Config))
+	}
+	return gm.ensureConfig("custom", path)
+}
+
+// ensureConfig ensures that the go-make config is valid and installed and
+// the correct Makefile is referenced.
+func (gm *GoMake) ensureConfig(version, dir string) error {
+	gm.ConfigVersion, gm.ConfigDir = version, dir
+	gm.Makefile = filepath.Join(dir, Makefile)
+	if version == "custom" {
+		return nil
+	}
+
 	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
 		CmdTestDir(gm.ConfigDir)...); err != nil {
 		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
@@ -172,7 +203,7 @@ func (gm *GoMake) exec(
 	}
 
 	if err := gm.Executor.Exec(stdout, stderr, dir, args...); err != nil {
-		return NewErrCallFailed(args, err)
+		return NewErrCallFailed(dir, args, err)
 	}
 	return nil
 }
@@ -197,19 +228,22 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 			return 0, nil
 
 		case strings.HasPrefix(arg, "--config="):
-			gm.setupConfig(arg[len("--config="):])
+			gm.Config = arg[len("--config="):]
 
 		default:
 			targets = append(targets, arg)
 		}
 	}
 
-	if err := gm.ensureConfig(); err != nil {
+	if err := gm.setupWorkDir(); err != nil {
+		gm.Logger.Error(gm.Stderr, "ensure top", err)
+		return ExitGitFailure, err
+	} else if err := gm.setupConfig(); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
 	} else if err := gm.makeTargets(targets...); err != nil {
 		gm.Logger.Error(gm.Stderr, "execute make", err)
-		return ExitExecFailure, err
+		return ExitTargetFailure, err
 	}
 	return ExitSuccess, nil
 }
@@ -225,19 +259,18 @@ func NewErrNotFound(path, version string, err error) error {
 }
 
 // NewErrCallFailed wraps the error of a failed command call.
-func NewErrCallFailed(args []string, err error) error {
-	return fmt.Errorf("call failed [name=%s, args=%v]: %w",
-		args[0], args[1:], err)
+func NewErrCallFailed(path string, args []string, err error) error {
+	return fmt.Errorf("call failed [path=%s, call=%s]: %w", path, args, err)
 }
 
 // Make runs the go-make command with given build information, standard output
 // writer, standard error writer, and command arguments.
 func Make(
-	info *info.Info, config string,
-	stdout, stderr io.Writer, args ...string,
+	stdout, stderr io.Writer, info *info.Info,
+	config, wd string, args ...string,
 ) int {
 	exit, _ := NewGoMake(
-		info, config, stdout, stderr,
+		stdout, stderr, info, config, wd,
 	).Make(args[1:]...)
 
 	return exit

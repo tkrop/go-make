@@ -3,9 +3,14 @@
 [`go-make`][go-make] is a thin versioned wrapper around a very generic and
 customizable [`Makefile.base`](config/Makefile.base), that is usually wrapped
 by a short project [`Makefile`](Makefile). In this setup the commands `go-make`
-and `make` can be used as synonyms. In the following we use just `make`.
-Please substitute with `go-make`, if you have not installed the wrapper by
-initially calling `go-make init-make` on a project.
+and `make` can be used as synonyms. The only difference is that `go-make` can
+be executed anywhere in a project tree, while `make` can only be executed at
+the root of the project tree. However, this comes with the downside that paths
+are still interpreted relative to the root of the project.
+
+In the following we use just `make`. Please substitute with `go-make`, if you
+have not installed the wrapper by initially calling `go-make init-make` on a
+project.
 
 [go-make]: https://github.com/tkrop/go-make
 
@@ -458,8 +463,9 @@ update is available instead of executing it directly.
 
 * For `update(-deps)` a `<mode>` can be supplied to update dependencies to the
   latest `minor` (default), `major`, or `pre`-release version.
-* For `update(-make)` a `<tag>` can be supplied to define the version used to
-  update the `Makefile`and config files to.
+* For `update(-make)` also `current` can be supplied as version to update the
+  the config files to the version determined by the currently executed
+  `Makefile`.
 
 
 ### Cleanup targets
