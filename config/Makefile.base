@@ -1,14 +1,40 @@
-# See http://github.com/tkrop/go-make/MANUAL.md for documentation.
-
+## Manual: http://github.com/tkrop/go-make/MANUAL.md
 SHELL := /bin/bash
 
-# Check whether bash version is higher or equal version 4 and warn.
-ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+\.[0-9]+|3\.2)"),)
-  $(warning warning: incompatible bash ($(shell echo $${BASH_VERSION})): \
-  targets may fail in unpredictable ways using newer features.)
+# Setup variables for special purposes.
+NULL :=
+COMMA := ,
+SPACE := $(NULL) $(NULL)
+TAB := $(NULL)	$(NULL)
+
+# Setup colored message templates for output.
+# Finding: \$\((call )?[cm]*(info|error|warning|failure|success)
+minfo = $(strip \033[1;97minfo:\033[0m $(1))
+merror = $(strip \033[1;91merror:\033[0m $(1))
+mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
+mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
+msuccess = $(strip \033[1;92msuccess:\033[0m $(1))
+
+cinfo = $(info $(shell echo -e "$(call minfo,"$(1)")"))
+cerror = $(error $(shell echo -e "$(call merror,"$(1)")"))
+cwarning = $(warning $(shell echo -e "$(call mwarning,$(1))"))
+cfailure = $(warning $(shell echo -e "$(call mfailure,"$(1)")"))
+csuccess = $(info $(shell echo -e "$(call msuccess,"$(1)")"))
+
+# Finding: \$\((call )?(topic|cmd|arg)
+topic = \033[1;97m$(1)\033[0m
+cmd = \033[1;96m$(1)\033[0m
+arg = \033[0;96m$(1)\033[0m
+
+
+# Check whether bash version is higher or equal version 3.2 to be compatible.
+ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
+  $(call cerror,bash version incompatible [$${BASH_VERSION}])
 endif
+# Check whether bash is running in minmal compatibility mode for testing.
 ifdef BASH_COMPAT
-  $(warning "warning: bash compatibility mode set ($(BASH_COMPAT)))
+  $(shell echo -e "$(call minfo,bash compatibility mode set \
+    [$(BASH_COMPAT)])" >/dev/stderr)
 endif
 
 # Setup default makeflags create consistent behavior.
@@ -27,48 +53,156 @@ ifneq ("$(wildcard Makefile.vars)","")
   include Makefile.vars
 endif
 
+
 # Setup container image command (supports: docker or podman).
 IMAGE_CMD ?= $(shell command -v docker || command -v podman)
 ifndef IMAGE_CMD
-  $(error error: command not found (docker/podman))
+  $(call cerror,command not found [docker/podman])
 endif
 
-# Setup desired go compiler environemt or defaults.
+# Setup default go compiler environment.
 export GO ?= go
 export GOPATH ?= $(shell $(GO) env GOPATH)
-ifndef GOSETUP
-  export GOBIN ?= $(GOPATH)/bin
-else ifeq ($(GOSETUP),local)
-  export GOBIN := $(DIR_BUILD)/bin
-  export PATH := $(GOBIN):$(PATH)
-else
-  $(error error: unsupported go setup ($(GOSETUP)))
-endif
-
+export GOBIN ?= $(GOPATH)/bin
 # Export private repositories that do not need to be downloaded.
 export GOPRIVATE ?= github.bus.zalan.do
 # Setup go to use desired and consistent go versions.
-GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9]+\.[0-9]+).*/\1/")
+GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9.]+).*/\1/")
+# Function for checking and wanring about go and package version mismatches.
+go-check-version = \
+	if [ -f "$(GOBIN)/$(1)" ]; then \
+	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
+	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
+	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
+	    echo -e "$(call mwarning,$(1) build [$${CHECK}]: \
+	      run 'make update-go' or install matching compiler version)" \
+	      > /dev/stderr; \
+	  fi; \
+	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
+	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
+	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
+	      grep -E "^\s*(mod|dep)\s*$${MODULE%%@*}" | cut -f 4)"; \
+	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
+	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
+	      echo -e "$(call mwarning,$(1) version [$${CHECK}]: \
+	        run 'make update-$(1)' to sync with project version)" \
+	        > /dev/stderr; \
+	    fi; \
+	  fi; \
+	fi
+# Function for determining the actual version of a go package from downloading.
+VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
+go-download-version = \
+	$(GO) mod download --json $(1) 2>/dev/null | \
+	  sed --regexp-extended --null-data $(VERSION_REGEX)
+# Function for go-package handling (TODO: check spliting and simplifying).
+go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
+      -v not="$(4)" -v version="$(5)" ' \
+	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } \
+	function package(vindex) { \
+	  if (vindex) { \
+	    return substr($$0, 1, vindex - 1) \
+	  } else { return $$0 } \
+	} { \
+	  field = NF; \
+	  if (vindex = index($$0, "@")) { field-- } \
+	  if ($$(field) ~ "v[0-9]+") { field-- } \
+	  if (!filter || \
+	      (not && ($$(field) !~ filter)) || \
+	      (!not && ($$(field) ~ filter))) { \
+	    if (mode == "command") { \
+	      if (!($$(field) in map)) { \
+	        print $$(field); map[$$(field)]++ \
+	      } \
+	    } else if (mode == "module") { \
+	      if (!((pkg = package(vindex)) in map)) { \
+	        if (version ~ "^[0-9.]+(-[0-9]{14}-[0-9a-f]{12})?$$") { \
+	          print pkg ((version == "latest") ? "@latest" : "@v" version) \
+	        } else { \
+	          print ((vindex) ? $$0 : $$0 "@latest") \
+	        } map[pkg]++ \
+	      } \
+	    } else if (mode == "origin") { \
+	      if (!((pkg = package(vindex)) in map)) { \
+	        print $$1 "/" $$2 "/" $$3 "@" \
+	          ((vindex) ? substr($$0, vindex + 1) : "latest"); \
+			map[pkg]++ \
+	      } \
+	    } else if (mode == "package") { \
+	      if (!((pkg = package(vindex)) in map)) { \
+	        print pkg; map[pkg]++ \
+	      } \
+	    } \
+	  } \
+	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.46
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.47
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
-GOMAKE_CONFDIR := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
-gomake-dep := $(shell command -v $(GOBIN)/go-make >/dev/null && \
-	$(GO) version -m $(GOBIN)/go-make | awk '(NR == 3) { print $$(2) "@" $$(3) }')
-ifneq ($(GOMAKE_DEP),$(gomake-dep))
-  $(shell EXPECT="$(gomake-dep)"; ACTUAL="$(GOMAKE_DEP)"; \
-	MESSAGE="go-make version ($${ACTUAL##*@} => $${EXPECT##*@})"; \
-    echo "warning: $${MESSAGE}" >/dev/stderr)
-endif
+GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
-# Setup sensible defaults for configuration variables.
+# Setup default tool command versions to be installed.
+TOOLS_GO += \
+	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 \
+	github.com/zalando/zally/cli/zally \
+	golang.org/x/vuln/cmd/govulncheck \
+	github.com/uudashr/gocognit/cmd/gocognit \
+	github.com/fzipp/gocyclo/cmd/gocyclo \
+	github.com/mgechev/revive@v1.2.3 \
+	github.com/securego/gosec/v2/cmd/gosec \
+	github.com/tsenart/deadcode \
+	honnef.co/go/tools/cmd/staticcheck \
+	github.com/zricethezav/gitleaks/v8 \
+	github.com/icholy/gomajor \
+	github.com/golang/mock/mockgen \
+	github.com/tkrop/go-testing/cmd/mock \
+	$(GOMAKE_DEP)
+TOOLS_SH += \
+	github.com/anchore/syft \
+	github.com/anchore/grype
+TOOLS_NPM += \
+	markdownlint-cli
+NVM_BIN ?=
+
+# Check for the actually used go-make version.
+$(shell $(call go-check-version,go-make,))
+
+# Setup default browser command to open coverage reports.
+BROWSER ?= xdg-open
+# Setup default verions used for building, releasing, and publishing.
+VERSION ?= snapshot
+ifeq ($(wildcard VERSION),VERSION)
+  BUILD_VERSION := v$(shell cat VERSION)
+else
+  BUILD_VERSION ?= $(VERSION)
+endif
+IMAGE_VERSION ?= $(VERSION)
+
+# Setup default docker image name and host.
+ifdef IMAGE_NAME
+  ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
+    $(call cerror,invalid image name [$(IMAGE_NAME)] \
+      - image name format is repo/team/name!)
+  endif
+  IMAGE_HOST ?= $(word 1,$(subst /, ,$(IMAGE_NAME)))
+  IMAGE_TEAM ?= $(word 2,$(subst /, ,$(IMAGE_NAME)))
+  IMAGE_ARTIFACT ?= $(word 3,$(subst /, ,$(IMAGE_NAME)))
+else
+  IMAGE_HOST ?= pierone.stups.zalan.do
+  IMAGE_TEAM ?= $(TEAM)
+  IMAGE_ARTIFACT ?= $(GITREPONAME)
+endif
+IMAGE ?= $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
+
+# Setup sensible defaults for workflow configuration variables.
+IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
-# Function to search default config files
-search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFDIR)/$(1)))
+# Function to search default config files.
+search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1)))
 
+# Setup default config files to be used.
 FILE_MAKE ?= $(call search-default,Makefile)
 FILE_VARS ?= $(call search-default,Makefile.vars)
 FILE_GOLANGCI ?= $(call search-default,.golangci.yaml)
@@ -92,105 +226,7 @@ GITREPONAME ?= $(word 3,$(subst /, ,$(REPOSITORY)))
 TEAM ?= $(shell cat .zappr.yaml | grep "X-Zalando-Team" | \
 	sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/")
 
-
-NVM_BIN ?= # For compatibility only.
-TOOLS_NPM += \
-	markdownlint-cli
-TOOLS_GO += \
-	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 \
-	github.com/zalando/zally/cli/zally \
-	golang.org/x/vuln/cmd/govulncheck \
-	github.com/uudashr/gocognit/cmd/gocognit \
-	github.com/fzipp/gocyclo/cmd/gocyclo \
-	github.com/mgechev/revive@v1.2.3 \
-	github.com/securego/gosec/v2/cmd/gosec \
-	github.com/tsenart/deadcode \
-	honnef.co/go/tools/cmd/staticcheck \
-	github.com/zricethezav/gitleaks/v8 \
-	github.com/icholy/gomajor \
-	github.com/golang/mock/mockgen \
-	github.com/tkrop/go-testing/cmd/mock \
-	$(GOMAKE_DEP)
-TOOLS_SH += \
-	github.com/anchore/syft \
-	github.com/anchore/grype
-
-# function for correct go-package handling.
-go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
-      -v not="$(4)" -v version="$(5)" ' \
-	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } { \
-	  field = NF; \
-	  if (vindex = index($$0, "@")) { field-- } \
-	  if ($$(field) ~ "v[0-9]+") { field-- } \
-	  if (!filter || \
-	      (not && ($$(field) !~ filter)) || \
-	      (!not && ($$(field) ~ filter))) { \
-	    if (mode == "command") { \
-	      if (!($$(field) in map)) { \
-	        print $$(field); map[$$(field)]++ \
-	      } \
-	    } else if (mode == "module") { \
-	      if (!((pkg = package(vindex)) in map)) { \
-	        if (version) { \
-	          print pkg ((version == "latest") ? "@latest" : "@v" version) \
-	        } else { \
-	          print ((vindex) ? $$0 : $$0 "@latest") \
-	        } map[pkg]++ \
-	      } \
-	    } else if (mode == "origin") { \
-	      if (!((pkg = package(vindex)) in map)) { \
-	        print $$1 "/" $$2 "/" $$3 "@" \
-	          ((vindex) ? substr($$0, vindex + 1) : "latest"); \
-			map[pkg]++ \
-	      } \
-	    } else if (mode == "package") { \
-	      if (!((pkg = package(vindex)) in map)) { \
-	        print pkg; map[pkg]++ \
-	      } \
-	    } \
-	  } \
-	} \
-	function package(vindex) { \
-	  if (vindex) { \
-	    return substr($$0, 1, vindex - 1) \
-	  } else { return $$0 } \
-	}' <<<"$(1)")
-git-pkg = $(shell awk -v mode="$(2)" ' \
-	BEGIN { RS = "[ \n\r]" } { \
-	  if (mode == "repo") { \
-	    print "git@" gensub("/",":",1,substr($$0, 1, index($$0, "@") - 1)) ".git" \
-	  } else if (mode == "tag") { \
-	    print substr($$0, index($$0, "@") + 1) \
-	  } \
-	}' <<<"$(1)")
-
-BROWSER ?= xdg-open
-VERSION ?= snapshot
-ifeq ($(wildcard VERSION),VERSION)
-  BUILD_VERSION := v$(shell cat VERSION)
-else
-  BUILD_VERSION ?= $(VERSION)
-endif
-
-IMAGE_PUSH ?= pulls
-IMAGE_VERSION ?= $(VERSION)
-
-ifdef IMAGE_NAME
-  ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
-    $(error error: invalid image name ($(IMAGE_NAME))
-	image name format is repo/team/name)
-  endif
-  IMAGE_HOST ?= $(word 1,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_TEAM ?= $(word 2,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_ARTIFACT ?= $(word 3,$(subst /, ,$(IMAGE_NAME)))
-else
-  IMAGE_HOST ?= pierone.stups.zalan.do
-  IMAGE_TEAM ?= $(TEAM)
-  IMAGE_ARTIFACT ?= $(GITREPONAME)
-endif
-IMAGE ?= $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
-
-
+# Setup default database connection.
 DB_HOST ?= 127.0.0.1
 DB_PORT ?= 5432
 DB_NAME ?= db
@@ -199,6 +235,7 @@ DB_PASSWORD ?= pass
 DB_VERSION ?= latest
 DB_IMAGE ?= postgres:$(DB_VERSION)
 
+# Setup default aws startup settings.
 AWS_SERVICES ?= sqs s3
 AWS_VERSION ?= latest
 AWS_IMAGE ?= localstack/localstack:$(AWS_VERSION)
@@ -266,11 +303,6 @@ run-token-link = \
 		test -h "$(DIR_CRED)/$(1)" || ln -s token "$(DIR_CRED)/$(1)" \
 	) || true
 
-# TODO: merged with Makefile.vars, remove when all projects are updated!
-ifneq ("$(wildcard Makefile.defs)","")
-  include Makefile.defs
-endif
-
 
 # Setup default environment variables.
 FIND := find . ! -path "./run/*" ! -path "./build/*"
@@ -298,7 +330,8 @@ ifdef CMDARGS
   RUNARGS ?=
   RUNARGS := $(strip $(CMDARGS) $(RUNARGS))
   $(shell if [ -n "$(RUNARGS)" ]; then \
-    echo "info: captured arguments [$(RUNARGS)]" >/dev/stderr; fi)
+    echo -e "$(call minfo,captured arguments [$(RUNARGS)])" >/dev/stderr; \
+  fi)
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
 
@@ -371,19 +404,19 @@ $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 ## Make-Support: targets to support user understanding.
 show-help = awk ' \
 	BEGIN { \
-	  printf("\n\033[1mUsage:\033[0m $(MAKE) \033[36m<target>\033[0m\n") \
+	  printf("\n$(call topic,Usage:) $(call cmd,$(MAKE)) $(call arg,<target>)\n") \
 	} \
 	/^\#\# .*/ { \
 	  if (i = index($$0, ":")) { \
-	    printf("\n\033[1m%s\033[0m%s\n", \
+	    printf("\n$(call topic,%s)%s\n", \
 	      substr($$0, 4, i - 4), substr($$0, i)) \
 	  } else { \
-	    printf("\n\033[1m%s\033[0m\n", substr($$0, 4)) \
+	    printf("\n$(call topic,%s)\n", substr($$0, 4)) \
 	  } next \
 	} \
 	/^\#@ / { \
 	  if (i = index($$0, ":")) { \
-	    printf("  \033[36m%-25s\033[0m %s\n", \
+	    printf("  $(call cmd,%-25s) %s\n", \
 	      substr($$0, 4, i - 4), substr($$0, i + 2)) \
 	  } else { line = substr($$0, 4) } next \
 	} \
@@ -394,7 +427,7 @@ show-help = awk ' \
 	      target = target " " substr(line, 1, i - 1); \
 	      line = substr(line, i + 3) \
 	    } \
-	    printf("  \033[36m%-25s\033[0m %s\n", target, line); \
+	    printf("  $(call cmd,%-25s) %s\n", target, line); \
 	    line = "" \
 	  } \
 	}'
@@ -466,7 +499,7 @@ git-clean = \
 	    git branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(RUNARGS)" == "all" ]; then \
 	    git branch --delete "$${BRANCH}"; \
-	  else echo "info: keeping $${BRANCH}" > /dev/stderr; \
+	  else echo -e "$(call minfo,keeping $${BRANCH})" > /dev/stderr; \
 	  fi; \
 	done; git fetch --all --prune --verbose
 git-author = $$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$$/\1/p')
@@ -474,12 +507,14 @@ git-author = $$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$$/\1/p')
 git-verify = awk -v mode="$(1)" -v author="$(git-author)" ' \
 	(mode == "msg" && $$0 ~ "^Signed-off-by:") { \
 	  signed++; actual = substr($$0, 16); if (actual != author) { \
-	    printf("error: invalid signed-off-by (%s)\n", actual); error++ \
+	    printf("$(call merror,invalid signed-off-by [%s])", actual); \
+	    error++ \
 	  } \
 	} \
 	END { \
 	  if (signed >= 1) { \
-	    printf("error: duplicate signed-off-by (%d)\n", signed); error++ \
+	    printf("$(call merror,duplicate signed-off-by [%d])", signed); \
+	    error++ \
 	  } \
 	}' >/dev/stderr
 
@@ -575,7 +610,7 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 
 #@ initialize the generated sources.
 init-sources:: $(MOCKS)
-$(MOCKS):: go.sum $(MOCK_SOURCES) $(GOBIN)/mockgen $(GOBIN)/mock
+$(MOCKS):: go.sum $(MOCK_SOURCES) install-mockgen install-mock
 	$(GO) generate "$(shell echo $(MOCK_TARGETS) | \
 	  sed -E "s|.*$@=([^ ]*).*$$|\1|")";
 
@@ -599,12 +634,12 @@ $(TARGETS_INIT_ALL):: init/%:
 	@DIR="$$(pwd)"; FILE="$*"; #FILE="$${FILE##$${DIR}/}"; \
 	if [ ! -f "$${DIR}/$${FILE}" ]; then \
 	  echo "install: $${FILE} (installed)"; \
-	  cp "$(GOMAKE_CONFDIR)/$${FILE}" "$${DIR}/$${FILE}"; \
+	  cp "$(GOMAKE_CONFIG)/$${FILE}" "$${DIR}/$${FILE}"; \
 	else echo "install: $${FILE} (blocked)"; fi; \
 
 #@ <version> # initialize project by copying Makefile.base from template.
 init-make!::
-	cp "$(GOMAKE_CONFDIR)/Makefile.base" "Makefile"; \
+	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile"; \
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -655,34 +690,30 @@ test-upload::
 
 # Function to test versions.
 test-go = \
-	for VERSION in $${VERSIONS}; do \
-	  if [ "$(GOVERSION)" != "$${VERSION}" ]; then \
-	    echo "$${ERROR}: '$(1)' requires $${VERSION}!"; \
+	for VERSION in $(2); do \
+	  if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]* ]]; then \
 	    if [[ "$(GOVERSION)" < "$${VERSION}" ]]; then \
 	      GOCHANGE="upgrade"; CHANGE="downgrade"; \
 	    else \
 	      GOCHANGE="downgrade"; CHANGE="upgrade"; \
 	    fi; \
-	    echo -e "\t$${GOCHANGE} your local go version to $${VERSION} or "; \
-	    echo -e "\trun 'make update-go $${VERSION}' to adjust the project!"; \
-	    exit 1; \
+	    echo -e "$(call merror, go version [$(1): $${VERSION} => $(GOVERSION)]: \
+	      run 'make update-go $${VERSION}' to adjust the project or \
+	      $${GOCHANGE} your local go compiler version to $${VERSION}!)"; \
 	  fi; \
 	done
 
 #@ test whether project is using the latest go-version.
 test-go::
-	@ERROR="error: local go version is $(GOVERSION)"; \
-	if [ ! -f go.mod ];  then \
-	  VERSIONS=$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' '); \
-	  $(call test-go,go.mod); \
+	@if [ ! -f go.mod ];  then \
+	  $(call test-go,go.mod,$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' ')); \
 	fi; \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
-	    VERSIONS="$$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
-	      grep -Eo "[0-9.]*" | sort --unique)"; \
-	    $(call test-go,$${FILE}); \
+	    $(call test-go,$${FILE},$$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
+	      grep -Eo "[0-9.]*" | sort --unique)); \
 	  fi; \
-	done;
+	done; if [ -n "$${GOCHANGE}" ]; then exit 1; fi
 
 # process test arguments.
 test-args = \
@@ -712,7 +743,7 @@ test-args = \
 	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
 	  echo "$${TEST_CASES}"; \
 	else \
-	  echo "warning: invalid test parameters [$${ARGS[@]}]"; \
+	  echo -e "$(call mwarning,invalid test parameters [$${ARGS[@]}])"; \
 	fi; \
   else echo "./..."; fi
 
@@ -734,12 +765,7 @@ $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
 
 #@ execute a kind of self-test running the main targets.
 test-self:: update-all? update-all clean-all all-clean install-all
-	@echo "info: test-self finished successfully!!!";
-
-# Variables and definitions for linting of source code.
-NULL :=
-COMMA := ,
-SPACE := $(NULL) #
+	@echo -e "$(call msuccess,test-self finished successfully!)";
 
 # disabled (deprecated): deadcode golint interfacer ifshort maligned musttag
 #   nosnakecase rowserrcheck scopelint structcheck varcheck wastedassign
@@ -824,15 +850,15 @@ endif
 #@ <fix|linter> # execute all linters for the custom code quality level.
 lint:: $(TARGETS_LINT)
 #@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
-lint-min:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MIN)
+lint-min:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_MIN)
 #@ <fix|linter> # execute golangci linters for base code quality level (go-files).
-lint-base:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_BASE)
+lint-base:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_BASE)
 #@ <fix|linter> # execute golangci linters for plus code quality level (go-files).
-lint-plus:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_PLUS)
+lint-plus:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_PLUS)
 #@ <fix|linter> # execute golangci linters for maximal code quality level (go-files).
-lint-max:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_MAX)
+lint-max:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_MAX)
 #@ <fix|linter> # execute all golangci linters for insane code quality level (go-files).
-lint-all:: init-sources $(GOBIN)/golangci-lint; $(LINT_CMD) $(LINT_ALL)
+lint-all:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_ALL)
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
@@ -928,7 +954,7 @@ LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
 LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 
-$(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% $(GOBIN)/%
+$(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% install-%
 	@COMMIT=$$(git log --max-count=1 --pretty=format:"%H"); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
@@ -957,7 +983,7 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% $(GOBIN)/%
 	fi; \
 
 #@ execute revive linter (go-files).
-lint-revive:: init-sources $(GOBIN)/revive
+lint-revive:: init-sources install-revive
 	revive -formatter friendly -config=revive.toml $(SOURCES) || $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
@@ -985,16 +1011,16 @@ lint-shell:: init-sources
 	fi; \
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
-lint-leaks:: $(GOBIN)/gitleaks
+lint-leaks:: install-gitleaks
 	gitleaks detect --no-banner --verbose --source .;
 #@ execute gitleaks to check un-committed code changes for leaking secrets (all files).
-lint-leaks?:: $(GOBIN)/gitleaks
+lint-leaks?:: install-gitleaks
 	gitleaks protect --no-banner --verbose --source .;
 #@ execute govulncheck to find vulnerabilities in dependencies (go-files).
-lint-vuln:: $(GOBIN)/govulncheck
+lint-vuln:: install-govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
-lint-gocyclo lint-gocognit:: lint-%: $(GOBIN)/%
+lint-gocyclo lint-gocognit:: lint-%: install-%
 	@RUNARGS=($(RUNARGS)); MODS="0"; \
 	while [ "$${#RUNARGS[@]}" != "0" ]; do \
 	  if [ "$${RUNARGS[0]}" == "top" ]; then ARGS+=(-$${RUNARGS[0]}); MODS="1"; \
@@ -1007,10 +1033,10 @@ lint-gocyclo lint-gocognit:: lint-%: $(GOBIN)/%
 	$* "$${ARGS[@]}";
 
 #@ execute zally api-linter to find API issues (yaml-files).
-lint-apis:: $(GOBIN)/zally
+lint-apis:: install-zally
 	@LINTER="https://infrastructure-api-linter.zalandoapis.com"; \
 	if ! curl --silent $${LINTER}; then \
-	  echo "warning: API linter not available;"; exit 0; \
+	  echo -e "$(call mwarning,API linter not available)"; exit 0; \
 	fi; \
 	ARGS=("--linter-service" "$${LINTER}"); \
 	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
@@ -1134,18 +1160,7 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-	@GVERSION="$$($(GO) version -v "$(GOBIN)/$*" | sed "s/.*: go//")"; \
-	if ! [[ "$${GVERSION}" =~ ^$(GOVERSION)* ]]; then \
-	  echo "warning: $* build ($${GVERSION} => $(GOVERSION))" > /dev/stderr; \
-	fi; \
-	MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$*$$,,$(RUNARGS))"; \
-	if [ "$${MODULE##*@}" != "latest" ]; then \
-	  MVERSION="$$($(GO) version -m "$(GOBIN)/$*" | \
-	    grep "^\s*mod\s*$${MODULE%%@*}" | cut -f 4)"; \
-	  if [ "$${MVERSION}" != "$${MODULE##*@}" ]; then \
-	    echo "warning: $* version ($${MVERSION} => $${MODULE##*@})" > /dev/stderr; \
-	  fi; \
-	fi;
+	@$(call go-check-version,$*,$(RUNARGS))
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
 	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(RUNARGS));
 # install go tools providing an install.sh script.
@@ -1269,9 +1284,9 @@ RUN_DEPS ?=
 #@ start a postgres database instance for testing.
 run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
-	echo "info: ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)"; \
+	echo -e "$(call minfo,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT))"; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
-	  echo "info: port allocated, use existing db container!"; exit 0; \
+	  echo -e "$(call minfo,port allocated - use existing db container!)"; exit 0; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty \
@@ -1285,7 +1300,7 @@ run-db:: $(DIR_RUN)
         -c 'pg_stat_statements.track=all' \
 	  $(RUNARGS) 2>&1 & \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
-	         $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
+	  $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
 	do echo "waiting for db container" >/dev/stderr; sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
@@ -1295,10 +1310,10 @@ run-db:: $(DIR_RUN)
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
-	echo "info: ensure $(AWS_IMAGE) is running on $(HOST):4566/4571" && \
+	echo -e "$(call minfo,ensure $(AWS_IMAGE) is running on $(HOST):4566/4571)" && \
 	if [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
-	  echo "info: ports allocated, use existing aws container!"; \
+	  echo -e "$(call minfo,ports allocated - use existing aws container!))"; \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
@@ -1306,10 +1321,10 @@ run-aws:: $(DIR_RUN)
 	  --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(RUNARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
-	         $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
+	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
 	do echo "waiting for aws container" >/dev/stderr; sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-aws \
-	      curl --silent http://$(HOST):4566; \
+	  curl --silent http://$(HOST):4566; \
 	do echo "waiting for aws service" >/dev/stderr; sleep 1; done && \
 	$(call run-setup-aws) || exit 1) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log;
@@ -1392,34 +1407,35 @@ update-all:: $(TARGETS_UPDATE_ALL)
 #@ check all components for udpdates.
 update-all?:: $(TARGETS_UPDATE_ALL?)
 
+# Function to determine the latest go version.
+update-go-version = \
+	$$(ARCH="$$($(GO) env GOOS)-$$($(GO) env GOARCH)" && \
+	  curl --silent --header "Accept-Encoding: gzip" "https://go.dev/dl/" | \
+	    gunzip | grep -o "go[0-9.]*$${ARCH}\.tar\.gz" | head -n 1 | \
+	    sed "s/go\(.*\)\.$${ARCH}\.tar\.gz/\1/")
+
 #@ <version> # update go to latest or given version.
 update-go::
-	@if [[ "$(RUNARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(RUNARGS)"; else \
-	  ARCH="linux-amd64"; BASE="https://go.dev/dl"; \
-	  VERSION="$$(curl --silent --header "Accept-Encoding: gzip" \
-	    "$${BASE}/" | gunzip | grep -o "go[0-9.]*$${ARCH}.tar.gz" | \
-	      head -n 1 | sed "s/go\(.*\)\.[0-9]*\.$${ARCH}\.tar\.gz/\1/")"; \
-	fi; \
+	@if [[ "$(RUNARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(RUNARGS)"; \
+	else VERSION="$(update-go-version)"; fi; \
 	echo "update: golang version to $${VERSION}"; \
-	$(GO) get go@latest;  $(GO) mod tidy -go=$${VERSION}; \
+	$(GO) get go@$${VERSION}; $(GO) mod tidy -go=$${VERSION}; \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
 	    sed -E -i -e "s/$(DELIVERY_REGEX)/\1$${VERSION}/" "$${FILE}"; \
 	  fi; \
 	done; \
-	if [ "$(GOVERSION)" != "$${VERSION}" ]; then \
-	  echo "warning: current compiler is using $(GOVERSION)" >/dev/stderr; \
+	if ! [[ "$${VERSION}" =~ ^$(GOVERSION)[0-9.]*$$ ]]; then \
+	  echo -e "$(call mwarning, current compiler is using \
+	    [$(GOVERSION) => $${VERSION}])" >/dev/stderr; \
 	fi; \
 
 #@ check whether a new go version exists.
 update-go?::
-	@ARCH="linux-amd64"; BASE="https://go.dev/dl"; \
-	VERSION="$$(curl --silent --header "Accept-Encoding: gzip" \
-	  "$${BASE}/" | gunzip | grep -o "go[0-9.]*$${ARCH}.tar.gz" | \
-	    head -n 1 | sed "s/go\(.*\)\.[0-9]*\.$${ARCH}\.tar\.gz/\1/")"; \
-	if [ "$(GOVERSION)" != "$${VERSION}" ]; then \
-	  echo "info: new golang version $${VERSION} available"; \
-	  echo -e "\trun 'make update-go' to update the project!"; \
+	@VERSION="$(update-go-version)"; \
+	if ! [[ "$${VERSION}" =~ ^$(GOVERSION)[0-9.]*$$ ]]; then \
+	  echo -e "$(call minfo,new golang version available [$${VERSION}]: \
+	    run 'make update-go' to update the project!)"; \
 	  exit -1; \
 	fi; \
 
@@ -1433,20 +1449,19 @@ update-list = \
 	  $(GO) list -m -u -mod=mod $(2) | grep "\[.*\]$$" \
 	) | sort --unique | sed "s/\]//g; s/\[/=> /"
 update-config = \
-	GOMAKE="$(call go-pkg,$(TOOLS_GO),module,^go-make$$,,$(1))"; \
-	if [ "$(2)" == "download" ]; then \
-	  $(GO) mod download $${GOMAKE} 2>/dev/null; \
-	fi && if [ "$${GOMAKE\#\#*@}" == "latest" ]; then \
-	  GOMAKE="$$($(GO) run $${GOMAKE} --version 2>/dev/null | \
-	    jq --raw-output '.path + "@" + .version')"; \
-	fi && CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"
+	if [ "$(1)" == "current" ]; then CONFIG="$(GOMAKE_CONFIG)"; else \
+	  GOMAKE="$(call go-pkg,$(TOOLS_GO),module,^go-make$$,,$(1))"; \
+	  if [ "$(2)" == "download" ]; then \
+	    GOMAKE="$$($(call go-download-version,$${GOMAKE}))"; \
+	  fi && CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"; \
+	fi
 
 
 # TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
-update/go.mod:: $(GOBIN)/gomajor
+update/go.mod:: install-gomajor
 	@if [ -n "$(RUNARGS)" ]; then $(call update-args,$(RUNARGS)); \
 	  if [[ " $(RUNARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
 	  readarray -t UPDATES < <($(call update-list,$${ARGS},$${PACKAGES})); \
@@ -1472,7 +1487,7 @@ update/go.mod:: $(GOBIN)/gomajor
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
-update/go.mod?:: $(GOBIN)/gomajor
+update/go.mod?:: install-gomajor
 	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 update/go-make::
@@ -1483,7 +1498,7 @@ update/go-make::
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFDIR)"; \
+	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
@@ -1499,7 +1514,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFDIR)"; \
+	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
@@ -1519,7 +1534,6 @@ $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
 
 
 ## Custom: custom extension targets.
-
 # Include custom targets to extend scripts.
 ifneq ("$(wildcard Makefile.ext)","")
   include Makefile.ext

@@ -1,6 +1,6 @@
-../../config/Makefile.base:432: target 'show-targets' does not exist
+go-make/config/Makefile.base: target 'show-targets' does not exist
 make --no-builtin-rules --no-builtin-variables --print-data-base \
-  --question --makefile=../../config/Makefile.base  2>/dev/null | \
+  --question --makefile=go-make/config/Makefile.base  2>/dev/null | \
   awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort --unique | egrep --invert-match --regexp='^[^[:alnum:]]' || true;
 all
 all-clean
@@ -113,8 +113,6 @@ lint-revive
 lint-shell
 lint-staticcheck
 lint-vuln
-mock_cmd_test.go
-mock_logger_test.go
 publish
 publish-all
 release

@@ -109,8 +109,6 @@ lint-revive
 lint-shell
 lint-staticcheck
 lint-vuln
-mock_cmd_test.go
-mock_logger_test.go
 publish
 publish-all
 release
