@@ -24,6 +24,17 @@ Similar default config files for tools can be installed using `make init/<file>`
 to allow customization. All files can be updated by calling `make update-make`
 or simpler `make update`.
 
+**Warning:** `go-make` automatically installs `pre-commit` and `commit-msg`
+[hooks][git-hooks] overwriting and deleting pre-existing hooks (see also
+[Customizing Git - Git Hooks][git-hooks]). The `pre-commit` hook calls
+`make commit` as an alias for executing  `test-go`, `test-unit`, `lint-<level>`,
+and `lint-markdown` to enforce successful testing and linting. The `commit-msg`
+hook calls `make git-verify message` for validating whether the commit message
+is following the [conventional commit][convent-commit] best practice.
+
+[git-hooks]: <https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks>
+[convent-commit]: <https://www.conventionalcommits.org/en/v1.0.0/>
+
 For more information on customization, please see documentation of the different
 target groups:
 
@@ -92,14 +103,24 @@ them might need to be adjusted. The following list provides an overview of the
 most prominent ones
 
 ```Makefile
+# Setup default test timeout (default: 10s).
+TEST_TIMEOUT := 15s
+# Setup when to push images (default: pulls [never, pulls, merges])
+IMAGE_PUSH ?= never
 # Setup specific go-make version.
 GOMAKE := github.com/tkrop/go-make@latest
+# Setup the activated commit hooks (default: pre-commit commit-msg).
+GITHOOKS := pre-commit commit-msg
 # Setup code quality level (default: base).
-CODE_QUALITY := plus
-# Customizing codacy server (default: https://codacy.bus.zalan.do).
-CODACY_API_BASE_URL := https://api.codacy.com
+CODE_QUALITY := base
+
+
 # Setup codacy integration (default: enabled [enabled, disabled]).
 CODACY := enabled
+# Customizing codacy server (default: https://codacy.bus.zalan.do).
+CODACY_API_BASE_URL := https://api.codacy.com
+# (default: false / true [cdp-pipeline])
+#CODACY_CONTINUE := true
 
 # Setup required targets before testing (default: <empty>).
 TEST_DEPS := run-db
@@ -107,12 +128,6 @@ TEST_DEPS := run-db
 RUN_DEPS := run-db
 # Setup required aws services for testing (default: <empty>).
 AWS_SERVICES :=
-
-# Setup when to push images (default: pulls [never, pulls, merges])
-IMAGE_PUSH ?= never
-
-# Setup default test timeout (default: 10s).
-TEST_TIMEOUT := 15s
 
 # Setup custom delivery files scanned for updating go versions
 # (default: delivery*.yaml/.github/workflows/*.yaml).

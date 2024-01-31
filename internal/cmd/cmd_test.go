@@ -10,6 +10,7 @@ import (
 )
 
 type ExecutorParams struct {
+	env          []string
 	args         []string
 	expectStdout string
 	expectStderr string
@@ -32,7 +33,7 @@ func TestExecutor(t *testing.T) {
 			stderr := &strings.Builder{}
 
 			// When
-			err := exec.Exec(stdout, stderr, ".", param.args...)
+			err := exec.Exec(stdout, stderr, ".", param.env, param.args...)
 
 			// Then
 			assert.Equal(t, param.expectError, err)

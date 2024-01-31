@@ -106,6 +106,8 @@ type GoMake struct {
 	Stderr io.Writer
 	// Config provides the go-make config argument.
 	Config string
+	// Env provides the additional environment variables.
+	Env []string
 
 	// The actual working directory.
 	WorkDir string
@@ -124,6 +126,7 @@ type GoMake struct {
 // directory.
 func NewGoMake(
 	stdout, stderr io.Writer, info *info.Info, config, wd string,
+	env ...string,
 ) *GoMake {
 	return (&GoMake{
 		Info:     info,
@@ -133,6 +136,7 @@ func NewGoMake(
 		Stderr:   stderr,
 		Config:   config,
 		WorkDir:  wd,
+		Env:      env,
 	})
 }
 
@@ -141,7 +145,7 @@ func NewGoMake(
 // executed.
 func (gm *GoMake) setupWorkDir() error {
 	buffer := &strings.Builder{}
-	if err := gm.exec(buffer, gm.Stderr, gm.WorkDir,
+	if err := gm.exec(buffer, gm.Stderr, gm.WorkDir, gm.Env,
 		CmdGitTop()...); err != nil {
 		return err
 	}
@@ -160,7 +164,7 @@ func (gm *GoMake) setupConfig() error {
 	}
 
 	path := AbsPath(gm.Config)
-	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir, gm.Env,
 		CmdTestDir(path)...); err != nil {
 		return gm.ensureConfig(gm.Config,
 			GoMakePath(gm.Info.Path, gm.Config))
@@ -177,9 +181,9 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 		return nil
 	}
 
-	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+	if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir, gm.Env,
 		CmdTestDir(gm.ConfigDir)...); err != nil {
-		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir,
+		if err := gm.exec(gm.Stderr, gm.Stderr, gm.WorkDir, gm.Env,
 			CmdGoInstall(gm.Info.Path, gm.ConfigVersion)...); err != nil {
 			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
 		}
@@ -189,26 +193,27 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 
 // makeTargets executes the provided make targets.
 func (gm *GoMake) makeTargets(args ...string) error {
-	return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir,
+	return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir, gm.Env,
 		CmdMakeTargets(gm.Makefile, args...)...)
 }
 
 // Executes the command with given name and arguments in given directory
 // calling the command executor taking care to wrap the resulting error.
 func (gm *GoMake) exec(
-	stdout, stderr io.Writer, dir string, args ...string,
+	stdout, stderr io.Writer, dir string, env []string, args ...string,
 ) error {
 	if gm.Trace {
 		gm.Logger.Exec(stderr, dir, args...)
 	}
 
-	if err := gm.Executor.Exec(stdout, stderr, dir, args...); err != nil {
+	if err := gm.Executor.Exec(stdout, stderr, dir, env, args...); err != nil {
 		return NewErrCallFailed(dir, args, err)
 	}
 	return nil
 }
 
-// Make runs the go-make command with given arguments and return exit code.
+// Make runs the go-make command with given arguments and return the exit code
+// and error.
 func (gm *GoMake) Make(args ...string) (int, error) {
 	var targets []string
 	for _, arg := range args {
@@ -265,12 +270,12 @@ func NewErrCallFailed(path string, args []string, err error) error {
 
 // Make runs the go-make command with given build information, standard output
 // writer, standard error writer, and command arguments.
-func Make(
+func Make( //revive:disable-line:argument-limit // ensures testability.
 	stdout, stderr io.Writer, info *info.Info,
-	config, wd string, args ...string,
+	config, wd string, env []string, args ...string,
 ) int {
 	exit, _ := NewGoMake(
-		stdout, stderr, info, config, wd,
+		stdout, stderr, info, config, wd, env...,
 	).Make(args[1:]...)
 
 	return exit

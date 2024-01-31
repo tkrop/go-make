@@ -90,7 +90,8 @@ func GoMakeSetup(
 		mocks.GetArg("stdout").(io.Writer),
 		mocks.GetArg("stderr").(io.Writer),
 		// Filling the test coverage gap of returning the default.
-		param.info, make.GetEnvDefault(make.EnvGoMakeConfig, ""), ".",
+		param.info, make.GetEnvDefault(make.EnvGoMakeConfig, ""),
+		".", param.env...,
 	)
 
 	gm.Executor = mock.Get(mocks, NewMockExecutor)
@@ -103,13 +104,13 @@ func ToAny(args ...any) []any {
 	return args
 }
 
-func Exec( //revive:disable:argument-limit
-	stdout, stderr string, dir string,
+func Exec( //revive:disable-line:argument-limit
+	stdout, stderr string, dir string, env []string,
 	args []string, err error, sout, serr string,
 ) mock.SetupFunc {
 	return func(mocks *mock.Mocks) any {
 		return mock.Get(mocks, NewMockExecutor).EXPECT().
-			Exec(mocks.GetArg(stdout), mocks.GetArg(stderr), dir, ToAny(args)...).
+			Exec(mocks.GetArg(stdout), mocks.GetArg(stderr), dir, env, ToAny(args)...).
 			DoAndReturn(mocks.Call(cmd.Executor.Exec,
 				func(args ...any) []any {
 					if _, err := args[0].(io.Writer).Write([]byte(sout)); err != nil {
@@ -166,6 +167,7 @@ func LogMessage(writer string, message string) mock.SetupFunc {
 type MakeParams struct {
 	mockSetup   mock.SetupFunc
 	info        *info.Info
+	env         []string
 	args        []string
 	expectError error
 	expectExit  int
@@ -190,12 +192,12 @@ var testMakeParams = map[string]MakeParams{
 
 	"go-make target": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version)),
 				nil, "", ""),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTarget...),
 				nil, "", ""),
 		),
@@ -204,14 +206,14 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make target install": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoNew.Path, infoNew.Version)),
 				errAny, "", ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdGoInstall(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdGoInstall(
 				infoNew.Path, infoNew.Version), nil, "", ""),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoNew.Path, infoNew.Version), argsTarget...),
 				nil, "", ""),
 		),
@@ -220,29 +222,28 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make target config custom": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.AbsPath("custom")), nil, "", ""),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				filepath.Join(make.AbsPath("custom"), make.Makefile),
-				argsTarget...),
-				nil, "", ""),
+				argsTarget...), nil, "", ""),
 		),
 		info: infoBase,
 		args: argsTargetCustom,
 	},
 	"go-make target config version latest": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.AbsPath("latest")), errAny, "", ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, "latest")), errAny, "", ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdGoInstall(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdGoInstall(
 				infoBase.Path, "latest"), nil, "", ""),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoBase.Path, "latest"), argsTarget...),
 				nil, "", ""),
 		),
@@ -252,7 +253,7 @@ var testMakeParams = map[string]MakeParams{
 
 	"go-make target top failed": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				errAny, "", ""),
 			LogError("stderr", "ensure top", make.NewErrCallFailed(
 				dirWork, make.CmdGitTop(), errAny)),
@@ -265,12 +266,12 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make target install failed": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoNew.Path, infoNew.Version)),
 				errAny, "", ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdGoInstall(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdGoInstall(
 				infoNew.Path, infoNew.Version), errAny, "", ""),
 			LogError("stderr", "ensure config", make.NewErrNotFound(
 				infoNew.Path, infoNew.Version, make.NewErrCallFailed(dirRoot,
@@ -285,12 +286,12 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make target failed": {
 		mockSetup: mock.Chain(
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version)),
 				nil, "", ""),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTarget...),
 				errAny, "", ""),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
@@ -328,16 +329,16 @@ var testMakeParams = map[string]MakeParams{
 			LogCall("stderr", argsTraceTarget),
 			LogInfo("stderr", infoBase, false),
 			LogExec("stderr", dirWork, make.CmdGitTop()),
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
 			LogExec("stderr", dirRoot, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version))),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version)),
 				nil, "", ""),
 			LogExec("stderr", dirRoot, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTraceTarget...)),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTraceTarget...),
 				nil, "", ""),
 		),
@@ -349,16 +350,16 @@ var testMakeParams = map[string]MakeParams{
 			LogCall("stderr", argsTraceTarget),
 			LogInfo("stderr", infoBase, false),
 			LogExec("stderr", dirWork, make.CmdGitTop()),
-			Exec("builder", "stderr", dirWork, make.CmdGitTop(),
+			Exec("builder", "stderr", dirWork, nil, make.CmdGitTop(),
 				nil, dirRoot, ""),
 			LogExec("stderr", dirRoot, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version))),
-			Exec("stderr", "stderr", dirRoot, make.CmdTestDir(
+			Exec("stderr", "stderr", dirRoot, nil, make.CmdTestDir(
 				make.GoMakePath(infoBase.Path, infoBase.Version)),
 				nil, "", ""),
 			LogExec("stderr", dirRoot, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTraceTarget...)),
-			Exec("stdout", "stderr", dirRoot, make.CmdMakeTargets(
+			Exec("stdout", "stderr", dirRoot, nil, make.CmdMakeTargets(
 				Makefile(infoBase.Path, infoBase.Version), argsTraceTarget...),
 				errAny, "", ""),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
@@ -404,11 +405,9 @@ func ReadFile(fs embed.FS, name string) string {
 }
 
 var (
-	// regexMakePrintDir is the regular expression used to remove the make
-	// print directory specific output. At the moment printing the directory
-	// is disabled by default and the filter is matching nothing.
-	regexMakePrintDir = regexp.MustCompile(
-		`(?m)make\[[0-9]*\]: (Entering|Leaving) directory [^\n]*\n`)
+	// regexMakeCall is the regular expression used to remove the nesting level
+	// of the make call when an error is observed.
+	regexMakeCall = regexp.MustCompile(`(?m)(make)\[[0-9]*\](: [^\n]*\n)`)
 	// regexGoMakeWarning is the regular expression that is used to remove the
 	// go-make version mismatch warning that happens after bumping the version.
 	regexGoMakeWarning = regexp.MustCompile(
@@ -430,7 +429,7 @@ var (
 )
 
 func FilterMakeOutput(str string) string {
-	str = regexMakePrintDir.ReplaceAllString(str, "")
+	str = regexMakeCall.ReplaceAllString(str, "$1$2")
 	str = regexGoMakeWarning.ReplaceAllString(str, "")
 	str = regexGoMakeSource.ReplaceAllString(str, "go-make")
 	str = regexMakeTrace.ReplaceAllString(str, "$1")
@@ -443,6 +442,7 @@ func SetupMakeFixture(str string) string {
 
 type MakeExecParams struct {
 	info         *info.Info
+	env          []string
 	args         []string
 	expectExit   int
 	expectStdout string
@@ -485,6 +485,39 @@ var testMakeExecParams = map[string]MakeExecParams{
 		expectStdout: ReadFile(fixtures, "fixtures/targets-trace.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets-trace.err"),
 	},
+
+	"go-make git-verify log": {
+		info: infoBase,
+		args: []string{
+			"go-make", "git-verify", "log",
+			"../internal/make/fixtures/git-verify/log-all.in",
+		},
+		expectStdout: ReadFile(fixtures, "fixtures/git-verify/log-all.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/git-verify/log-all.err"),
+		expectExit:   3,
+	},
+	"go-make git-verify message failed": {
+		info: infoBase,
+		env:  []string{"GITAUTHOR=John Doe <john.doe@zalando.de>"},
+		args: []string{
+			"go-make", "git-verify", "message",
+			"../internal/make/fixtures/git-verify/msg-failed.in",
+		},
+		expectStdout: ReadFile(fixtures, "fixtures/git-verify/msg-failed.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/git-verify/msg-failed.err"),
+		expectExit:   3,
+	},
+	"go-make git-verify message okay": {
+		info: infoBase,
+		env:  []string{"GITAUTHOR=John Doe <john.doe@zalando.de>"},
+		args: []string{
+			"go-make", "git-verify", "message",
+			"../internal/make/fixtures/git-verify/msg-okay.in",
+		},
+		expectStdout: ReadFile(fixtures, "fixtures/git-verify/msg-okay.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/git-verify/msg-okay.err"),
+		expectExit:   0,
+	},
 }
 
 // TODO: this test is sensitive to the execution parameters and fails if the
@@ -508,7 +541,7 @@ func TestMakeExec(t *testing.T) {
 
 			// When
 			exit := make.Make(stdout, stderr, info,
-				configDir, workDir, param.args...)
+				configDir, workDir, param.env, param.args...)
 
 			// Then
 			assert.Equal(t, param.expectExit, exit)

@@ -1,0 +1,43 @@
+--- commit type is missing
+    commit type is missing (#0)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- commit type is invalid
+    feature: commit type is invalid (#1)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- commit type with scope
+    feat[service]: initial commit (#2)
+
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- commit type with breaking change
+    feat!: initial commit (#3)
+
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- issue is missing
+    feat: issue is missing
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- issue number is invalid
+    feat: issue is invalid (#4a)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- issue path is invalid
+    feat: issue is invalid (org#5)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- issue with correct path
+    feat: issue is invalid (org/repo#6)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- issue with multiple issues
+    feat: issue is invalid (org/repo#7,#8) (#9)(#10)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+--- signed-off-by is missing
+    feat[service]!: initial commit (#11)
+--- signed-off-by to often
+    feat[service]!: initial commit (#12)
+    
+    Signed-off-by: John Doe <john.doe@zalando.de>
+    Signed-off-by: John Doe <john.doe@zalando.de>
