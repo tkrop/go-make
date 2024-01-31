@@ -73,19 +73,12 @@ when needed in the configured (or latest) available version using a default or
 custom config file. All config files can be installed and customized (see
 [Setup and customization](MANUAL.md#setup-and-customization)).
 
-
 **Note:** For many tools `go-make` accepts the risk that using the latest
 versions of tools, e.g. for linting, may break the build to allow cotinuous
 upgrading of dependencies by default. For tools were this is not desireable,
 e.g. for `revive` and `golangci-lint` the default import is version. Other
 tools can be versioned if needed (see [manual](MANUAL.md) for more
 information).
-
-**Warning:** `go-make` automatically installs a `pre-commit` hook overwriting
-and deleting any pre-existing hook. The hook calls `go-make commit` to enforce
-successful unit testing and linting before allowing to commit, i.e. the goals
-`test-go`, `test-unit`, `lint-base` (or what code quality level is defined as
-standard), and `lint-markdown`.
 
 [gomock]: <https://github.com/uber/mock>
 [golangci]: <https://github.com/golangci/golangci-lint>

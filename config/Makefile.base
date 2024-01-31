@@ -15,11 +15,7 @@ mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
 mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
 msuccess = $(strip \033[1;92msuccess:\033[0m $(1))
 
-cinfo = $(info $(shell echo -e "$(call minfo,"$(1)")"))
-cerror = $(error $(shell echo -e "$(call merror,"$(1)")"))
-cwarning = $(warning $(shell echo -e "$(call mwarning,$(1))"))
-cfailure = $(warning $(shell echo -e "$(call mfailure,"$(1)")"))
-csuccess = $(info $(shell echo -e "$(call msuccess,"$(1)")"))
+cerror = $(error $(shell echo -e "$(call merror,"$(1)")" >/dev/stderr))
 
 # Finding: \$\((call )?(topic|cmd|arg)
 topic = \033[1;97m$(1)\033[0m
@@ -53,12 +49,6 @@ ifneq ("$(wildcard Makefile.vars)","")
   include Makefile.vars
 endif
 
-
-# Setup container image command (supports: docker or podman).
-IMAGE_CMD ?= $(shell command -v docker || command -v podman)
-ifndef IMAGE_CMD
-  $(call cerror,command not found [docker/podman])
-endif
 
 # Setup default go compiler environment.
 export GO ?= go
@@ -137,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.47
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.48
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -178,7 +168,9 @@ else
 endif
 IMAGE_VERSION ?= $(VERSION)
 
-# Setup default docker image name and host.
+# Setup container image command (supports: docker or podman).
+IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
+# Setup default container image name and host.
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
     $(call cerror,invalid image name [$(IMAGE_NAME)] \
@@ -217,11 +209,15 @@ FILE_CONTAINER ?= Dockerfile
 DELIVERY := $(strip $(wildcard delivery.yaml) $(wildcard .github/workflows/*.yaml))
 DELIVERY_REGEX ?= (cdp-runtime\/go-|go-version: \^?)[0-9.]*
 
-REPOSITORY ?= $(shell git remote get-url origin | \
+# Setup default git command and repository information.
+GIT ?= git
+GITHOOKS ?= pre-commit commit-msg
+GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get user.email)>")
+GITREPO ?= $(shell $(GIT) remote get-url origin 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/:/\//")
-GITHOSTNAME ?= $(word 1,$(subst /, ,$(REPOSITORY)))
-GITORGNAME ?= $(word 2,$(subst /, ,$(REPOSITORY)))
-GITREPONAME ?= $(word 3,$(subst /, ,$(REPOSITORY)))
+GITHOSTNAME ?= $(word 1,$(subst /, ,$(GITREPO)))
+GITORGNAME ?= $(word 2,$(subst /, ,$(GITREPO)))
+GITREPONAME ?= $(word 3,$(subst /, ,$(GITREPO)))
 
 TEAM ?= $(shell cat .zappr.yaml | grep "X-Zalando-Team" | \
 	sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/")
@@ -339,11 +335,16 @@ endif
 # Setup optimized golang mock setup environment.
 MOCK_MATCH_DST := ^(.*)/(.*)://go:generate.*-destination=([^ ]*).*$$
 MOCK_MATCH_SRC := ^(.*)/(.*)://go:generate.*-source=([^ ]*).*$$
-MOCK_TARGETS := $(shell grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
-	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_DST)|\1/\3=\1/\2|" | sort --unique)
-MOCK_SOURCES := $(shell grep "//go:generate[[:space:]]*mockgen.*-source=" $(SOURCES) | \
-	sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_SRC)|\1/\3|" | sort --unique | \
-	xargs -r readlink -f | sed "s|$(PWD)/||g")
+MOCK_TARGETS := $(shell if [ -n "$(SOURCES)" ]; then \
+      grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
+	  sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_DST)|\1/\3=\1/\2|" | \
+	  sort --unique; \
+	fi)
+MOCK_SOURCES := $(shell if [ -n "$(SOURCES)" ]; then \
+      grep "//go:generate[[:space:]]*mockgen.*-source=" $(SOURCES) | \
+	  sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_SRC)|\1/\3|" | sort --unique | \
+	  xargs -r readlink -f | sed "s|$(PWD)/||g"; \
+	fi)
 MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
 	do echo "$${TARGET%%=*}"; done | sort --unique)
 
@@ -475,8 +476,11 @@ show-make:
 
 
 ## Git-Support: targets for standard git commands (experimental).
-GITFIX ?= git commit --amend --no-edit
-GITPUSH ?= git push --force-with-lease
+GITFIX ?= $(GIT) commit --amend --no-edit
+GITPUSH ?= $(GIT) push --force-with-lease
+GITBRANCH ?= $(GIT) branch --show-current
+GITPRUNE ?=$(GIT) fetch --all --prune --verbose
+GITLOGFMT ?= $(GIT) log --max-count=1 --pretty=format
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -484,68 +488,101 @@ git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
-	  COMMIT="$$(git log --max-count=1 --pretty=format:'%s' | \
+	  COMMIT="$$($(GITLOGFMT):"%s" | \
 	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
 	fi
-git-main = $$(git remote show origin | grep "HEAD branch:" | cut -d ' ' -f 5)
+git-main = \
+	$$($(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | cut -d ' ' -f 5)
 git-clean = \
-	git fetch --all --prune --verbose; \
-	HISTORY=($$(git log --pretty=format:"%T" "$${MAIN}")); \
-	for BRANCH in $$(git branch | cut -c 3- | grep -vw "$(1)"); do \
-	  TIP="$$(git log --max-count=1 --pretty=format:"%T" "$${BRANCH}")"; \
+	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
+	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
+	  TIP="$$($(GITLOGFMT):"%T" "$${BRANCH}")"; \
 	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
-	    git branch --delete --force "$${BRANCH}"; \
+	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(RUNARGS)" == "all" ]; then \
-	    git branch --delete "$${BRANCH}"; \
+	    $(GIT) branch --delete "$${BRANCH}"; \
 	  else echo -e "$(call minfo,keeping $${BRANCH})" > /dev/stderr; \
 	  fi; \
-	done; git fetch --all --prune --verbose
-git-author = $$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$$/\1/p')
-# TODO implement validation of commit log with mode 'raw'.
-git-verify = awk -v mode="$(1)" -v author="$(git-author)" ' \
-	(mode == "msg" && $$0 ~ "^Signed-off-by:") { \
-	  signed++; actual = substr($$0, 16); if (actual != author) { \
-	    printf("$(call merror,invalid signed-off-by [%s])", actual); \
-	    error++ \
-	  } \
+	done; $(GITPRUNE)
+git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
+	BEGIN { \
+	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
+	  re_type_missing = "^([a-z]+)" re_type_suffix; \
+	  re_type_invalid = "^(" gensub(" ", "|", "g", \
+	    "$(COMMIT_CONVENTION)") ")" re_type_suffix; \
+	  re_issue = "([a-z]+/[a-z]+)?\#[0-9]+"; \
+	  re_issue_list = "\\(" re_issue "((,|\\) *\\()" re_issue ")*\\)"; \
+	  re_issue_missing = re_issue_list "$$"; \
+	  re_issue_invalid = "^[^(]*" re_issue_list "$$"; \
+	  signed_by = "Signed-off-by:"; \
+	  re_signed_missing = signed_by " +[^\\n]*$$"; \
+	  re_signed_author = "^" signed_by " +" author "$$"; \
 	} \
-	END { \
-	  if (signed >= 1) { \
-	    printf("$(call merror,duplicate signed-off-by [%d])", signed); \
-	    error++ \
+	function verify() { \
+	  title = (i = index(msg,"\n")) ? substr(msg, 0, i - 1) : msg; \
+	  if (title !~ re_type_missing) { \
+	    printf("$(call merror,commit type missing [title=%s])\n", title); error++ \
+	  } else if (title !~ re_type_invalid) { \
+	    printf("$(call merror,commit type invalid [title=%s])\n", title); error++ \
 	  } \
-	}' >/dev/stderr
+	  if (title !~ re_issue_missing) { \
+	    printf("$(call merror,issue missing [titel=%s])\n", title); error++ \
+	  } else if (title !~ re_issue_invalid) { \
+	    printf("$(call merror,issue invalid [titel=%s])\n", title); error++ \
+	  } \
+	  sign = (i = index(msg, signed_by)) ? substr(msg, i) : ""; \
+	  if (sign !~ re_signed_missing) { \
+	    printf("$(call merror,signed-off-by missing [msg=%s])\n", msg); error++ \
+	  } else if (sign !~ "^" re_signed_missing) { \
+		printf("$(call merror,signed-off-by by to many [sign=%s])\n", sign); error++ \
+	  } else if (mode == "message" && sign !~ re_signed_author) { \
+		printf("$(call merror,signed-off-by not the author \
+		  [sign=%s; author=%s])\n", sign, author); error++ \
+	  } msg = "" \
+	} \
+	(mode == "message") { \
+	  if (msg != "") { \
+		msg = msg "\n" $$0 \
+	  } else { msg = $$0 } next \
+	} \
+	(mode != "message" && $$0 ~ "^    ") { \
+	  if (msg != "") { \
+		msg = msg "\n" substr($$0, 5) \
+	  } else { msg = substr($$0, 5) } next \
+	} \
+	(mode != "message") { if (msg) { verify(); } } \
+	END { verify(); if (error) { exit 1 } }'
 
 #@ prints the git log as pretty graph.
 git-graph::
 	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
-	git log --graph --all --date=iso \
+	$(GIT) log --graph --all --date=iso \
 	  --pretty=format:"%Cred%h %t %Cgreen%ad%Creset | %s $${SUFFIX}";
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
-	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
+	@BRANCH="$$($(GITBRANCH))"; MAIN="$(git-main)"; \
 	$(call git-clean,$${MAIN}\|$${BRANCH});
 #@ [all] # checks out default branch and cleans up the git history removing merged branches.
 git-reset::
-	@BRANCH="$$(git branch --show-current)"; MAIN="$(git-main)"; \
+	@BRANCH="$$($(GITBRANCH))"; MAIN="$(git-main)"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
-	  git checkout "$${MAIN}" && git pull || ( \
-	    git stash && git checkout "$${MAIN}" && git pull && git stash apply \
+	  $(GIT) checkout "$${MAIN}" && $(GIT) pull || ( \
+	    $(GIT) stash && $(GIT) checkout "$${MAIN}" && \
+		$(GIT) pull && $(GIT) stash apply \
 	  ) \
 	fi || exit 1; $(call git-clean,$${MAIN});
 #@ check whether git log is compliant with conventional commit messages and signed.
 git-verify::
-	@BRANCH="$$(git branch --show-current)"; TARGET="main"; \
-	case "$(firstword $(RUNARGS))" in \
-	( "message" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))" | \
-	  $(call git-verify,msg) >/dev/stderr || exit 1 && exit 0;; \
-	( "change" ) git log --no-merges --format=raw $${BRANCH} ^$${TARGET} | \
-	    $(call git-verify,raw) >/dev/stderr || exit 1 && exit 0;; \
-	( "log" ) git log --no-merges --format=raw $${BRANCH} | \
-	    $(call git-verify,raw) >/dev/stderr || exit 1 && exit 0;; \
-	esac;
+	@MODE="$(firstword $(RUNARGS))"; case "$${MODE}" in \
+	( "log" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))";; \
+	( "message" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))";; \
+	( "pull" ) BRANCH="$$($(GITBRANCH))"; TARGET="$(git-main)"; \
+	  $(GIT) log --no-merges --format=raw $${BRANCH} ^$${TARGET};; \
+	( "branch" ) BRANCH="$$($(GITBRANCH))"; \
+	  $(GIT) log --no-merges --format=raw $${BRANCH};; \
+	esac | $(call git-verify,$${MODE}) >/dev/stderr
 
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
@@ -555,15 +592,15 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	$(call git-message,$*,1); \
-	git checkout -B "$${BRANCH}" && \
-	git commit --signoff --message "$${MESSAGE}" && \
-	git push --set-upstream origin "$${BRANCH}" || \
-	git checkout $${BRANCH}; exit;
+	$(GIT) checkout -B "$${BRANCH}" && \
+	$(GIT) commit --signoff --message "$${MESSAGE}" && \
+	$(GIT) push --set-upstream origin "$${BRANCH}" || \
+	$(GIT) checkout $${BRANCH}; exit;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,0); \
-	git commit --signoff --message "$${MESSAGE}"; exit;
+	$(GIT) commit --signoff --message "$${MESSAGE}"; exit;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 git-fix::
 	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
@@ -577,8 +614,8 @@ git-fix::
 	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
-	@git push --set-upstream origin \
-	  $$(git branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
+	@$(GIT) push --set-upstream origin \
+	  $$($(GIT) branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
 
 
 ## Init: targets to initialize tools and (re-)sources.
@@ -590,15 +627,21 @@ init-go:: go.sum
 go.sum: go.mod
 	$(GO) mod tidy -go=$(GOVERSION) && touch go.sum &&	$(GO) mod download;
 go.mod:
-	$(GO) mod init "$(REPOSITORY)";
+	$(GO) mod init "$(GITREPO)";
+
+
 #@ initialize git pre-commit and commit-message hooks.
-init-hooks:: .git/hooks/pre-commit
+init-hooks:: $(GITHOOKS:%=.git/hooks/%)
 git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
-	echo "make git-verify $${1}" >/dev/stderr;\n\
-	make git-verify message $${1};\n' | sed 's/^ *//g'
+	echo "make git-verify message $${1}" >/dev/stderr;\n\
+	command -v $(GOBIN)/go-make >/dev/null || \\\n\
+	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
+	$(GOBIN)/go-make git-verify message $${1};\n' | sed 's/^ *//g'
 git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	echo "make commit" >/dev/stderr;\n\
-	make commit;\n' | sed 's/^ *//g'
+	command -v $(GOBIN)/go-make >/dev/null || \\\n\
+	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
+	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
 .git/hooks/commit-msg: $(MAKEFILE_LIST)
 	@if ! diff <(cat $@) <($(git-hooks-commit-msg)) >/dev/null; then \
 	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
@@ -672,7 +715,7 @@ test-cover::
 test-upload::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); \
-	COMMIT="$$(git log --max-count=1 --pretty=format:"%H")"; \
+	COMMIT="$$($(GITLOGFMT):"%H")"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
 	  bash <(curl --silent --location $${SCRIPT}) report \
@@ -955,7 +998,7 @@ LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 
 $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% install-%
-	@COMMIT=$$(git log --max-count=1 --pretty=format:"%H"); \
+	@COMMIT=$$($(GITLOGFMT):"%H"); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
 	  "--header" "Content-type: application/json"); \
@@ -1071,12 +1114,12 @@ LDFLAGS ?=
 LD_CONFIG_PATHS ?= main $(shell $(GO) list ./... | grep "config$$")
 ld-flag = $(addprefix -X ,$(addsuffix .$(1),$(LD_CONFIG_PATHS)))
 ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
-	$(call ld-flag,Revision=$(shell git rev-parse HEAD)) \
+	$(call ld-flag,Revision=$(shell $(GIT) rev-parse HEAD)) \
 	$(call ld-flag,Build=$(shell date --iso-8601=seconds)) \
-	$(call ld-flag,Commit=$(shell git log -1 --date=iso8601-strict --format=%cd)) \
-	$(call ld-flag,Dirty=$(shell git diff --quiet && echo false || echo true)) \
-	$(call ld-flag,Path=$(REPOSITORY)$(patsubst .%,%,$(1))) \
-	$(call ld-flag,GitHash=$(shell git rev-parse --short HEAD))
+	$(call ld-flag,Commit=$(shell $(GIT) log -1 --date=iso8601-strict --format=%cd)) \
+	$(call ld-flag,Dirty=$(shell $(GIT) diff --quiet && echo false || echo true)) \
+	$(call ld-flag,Path=$(GITREPO)$(patsubst .%,%,$(1))) \
+	$(call ld-flag,GitHash=$(shell $(GIT) rev-parse --short HEAD))
 
 
 ## Build: targets to build native and linux platform executables.
@@ -1123,12 +1166,12 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never build images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
-	REVISION=$$(git rev-parse HEAD 2>/dev/null); \
+	REVISION=$$($(GIT) rev-parse HEAD 2>/dev/null); \
 	BASE=$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2); \
 	$(IMAGE_CMD) build --tag $${IMAGE} --file=$${FILE} . \
 	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
 	  --label=org.opencontainers.image.vendor=zalando/$(TEAM) \
-	  --label=org.opencontainers.image.source=$(REPOSITORY) \
+	  --label=org.opencontainers.image.source=$(GITREPO) \
 	  --label=org.opencontainers.image.version=$${IMAGE##*:} \
 	  --label=org.opencontainers.image.revision=$${REVISION} \
 	  --label=org.opencontainers.image.base.name=$${BASE} \
@@ -1243,13 +1286,13 @@ release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
 	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  VERSION="$(RUNARGS)"; \
-	fi; git fetch --tags; \
-	if [ -n "$${VERSION}" -a -z "$$(git tag --list "v$${VERSION}")" ]; then \
-	  ( git gh-release "v$${VERSION}" ) || ( \
-		git config user.name "$$(git log -n 1 --pretty=format:%an)" && \
-		git config user.email "$$(git log -n 1 --pretty=format:%ae)" && \
-	    git tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
-		git push --follow-tags origin "v$${VERSION}" \
+	fi; $(GIT) fetch --tags; \
+	if [ -n "$${VERSION}" -a -z "$$($(GIT) tag --list "v$${VERSION}")" ]; then \
+	  ( $(GIT) gh-release "v$${VERSION}" ) || ( \
+		$(GIT) config user.name "$$($(GIT) log -n 1 --pretty=format:%an)" && \
+		$(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
+	    $(GIT) tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
+		$(GIT) push --follow-tags origin "v$${VERSION}" \
 	  ) && echo "Added release tag v$${VERSION} to repository!"; \
 	fi; \
 
@@ -1260,10 +1303,10 @@ $(TARGETS_PUBLISH): publish-%:
 	  if [ -f "cmd/$*/main.go" ]; then CMD="/cmd/$*"; else exit 0; fi; \
 	fi; \
 	if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; else \
-	  VERSION="$$(TZ=UTC0 git show --quiet --date='format-local:%Y%m%d%H%M%S' \
+	  VERSION="$$(TZ=UTC0 $(GIT) show --quiet --date='format-local:%Y%m%d%H%M%S' \
 	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
 	fi; \
-	TARGET="$(REPOSITORY)$${CMD}@v$${VERSION}"; \
+	TARGET="$(GITREPO)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
 	    echo "publish: curl $${TARGET}"; \
@@ -1503,7 +1546,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (skipped)"; \
-	elif [ -n "$$(git diff $${DIR}/$${FILE})" ]; then \
+	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ]; then \
 	  echo "update: $${FILE} (blocked)"; \
 	else \
 	  echo "update: $${FILE} (updated)"; \
@@ -1519,7 +1562,7 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (unchanged)"; \
-	elif [ -n "$$(git diff $${DIR}/$${FILE})" ]; then \
+	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ]; then \
 	  echo "update: $${FILE} (blocked)"; \
 	else echo "update: $${FILE} (updated)"; fi; \
 
