@@ -13,5 +13,6 @@
 [1;91merror:[0m signed-off-by missing [msg=feat[service]!: initial commit (#11)]
 [1;91merror:[0m signed-off-by by to many [sign=Signed-off-by: John Doe <john.doe@zalando.de>
 Signed-off-by: John Doe <john.doe@zalando.de>]
+[1;91mfailure:[0m git-verify log ../internal/make/fixtures/git-verify/log-all.in [errors=13]
 make: *** [go-make/config/Makefile.base: git-verify] Error 1
 error: execute make: call failed [path=go-make/run, call=[make --file go-make/config/Makefile.base --no-print-directory git-verify log ../internal/make/fixtures/git-verify/log-all.in]]: exit status 2
