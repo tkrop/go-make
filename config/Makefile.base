@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.49
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.50
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -554,7 +554,7 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	} \
 	(mode != "message") { if (msg) { verify(); } } \
 	END { \
-	  verify(); if (errors) { \
+	  if (mode == "message" || msg) { verify(); } if (errors) { \
 	    printf("$(call mfailure,git-verify $(RUNARGS) [errors=%d])\n", \
 		  errors); exit 1 \
 	  } \
