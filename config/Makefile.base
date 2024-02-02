@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.50
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.51
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -561,11 +561,13 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	  printf("$(call msuccess,git-verify $(RUNARGS) [errors=%d])\n", errors) \
 	}'
 
-#@ prints the git log as pretty graph.
+GITFORMAT ?= "%Cred%h %t %Cgreen%ad%Creset | %s %C(bold blue)[%an]%Creset%C(yellow)%d%Creset"
+#@ prints the git log as in pretty short format.
+git-log::
+	@$(GIT) log --graph --date=iso --pretty=format:$(GITFORMAT);
+#@ prints the git log as graph in pretty short format.
 git-graph::
-	@SUFFIX="%C(bold blue)[%an]%Creset%C(yellow)%d%Creset"; \
-	$(GIT) log --graph --all --date=iso \
-	  --pretty=format:"%Cred%h %t %Cgreen%ad%Creset | %s $${SUFFIX}";
+	@$(GIT) log --graph --date=iso --pretty=format:$(GITFORMAT) --all;
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
 	@BRANCH="$$($(GITBRANCH))"; MAIN="$(git-main)"; \

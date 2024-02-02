@@ -44,6 +44,7 @@ git-create-style
 git-create-test
 git-fix
 git-graph
+git-log
 git-push
 git-reset
 git-verify

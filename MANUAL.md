@@ -126,8 +126,8 @@ CODACY_API_BASE_URL := https://api.codacy.com
 TEST_DEPS := run-db
 # Setup required targets before running commands (default: <empty>).
 RUN_DEPS := run-db
-# Setup required aws services for testing (default: <empty>).
-AWS_SERVICES :=
+# Setup required aws services for testing (comma separated, default: <empty>).
+AWS_SERVICES := s3,sqs
 
 # Setup custom delivery files scanned for updating go versions
 # (default: delivery*.yaml/.github/workflows/*.yaml).
@@ -229,17 +229,18 @@ You can also override the default setup via the `DB_HOST`, `DB_PORT`, `DB_NAME`,
 **Note:** when running test against a DB you usually have to extend the default
 `TEST_TIMEOUT` of 10s to a less aggressive value.
 
-To enable AWS localstack you have to add `run-aws` to the default`TEST_DEPS` and
-`RUN_DEPS` variables, as well as to add your list of required aws services to
-the `AWS_SERVICES` variable.
+To enable AWS [LocalStack][localstack] you have to add `run-aws` to the default
+`TEST_DEPS` and `RUN_DEPS` variables, as well as to add your comma separated
+list of required aws services to the `AWS_SERVICES` variable. The empty default
+value enables all services as standard.
 
 ```Makefile
 # Setup required targets before testing (default: <empty>).
 TEST_DEPS := run-aws
 # Setup required targets before running commands (default: <empty>).
 RUN_DEPS := run-aws
-# Setup required aws services for testing (default: <empty>).
-AWS_SERVICES := s3 sns
+# Setup required aws services for testing (comma separated, default: <empty>).
+AWS_SERVICES := s3,sns,sqs
 ```
 
 **Note:** Currently, the [Makefile](config/Makefile.base) does not support all
@@ -249,6 +250,7 @@ specific environment variables following the principles of the
 [Twelf Factor App][12factor].
 
 [12factor]: https://12factor.net/
+[localstack]: https://docs.localstack.cloud/
 
 
 ## Standard targets
@@ -570,6 +572,7 @@ conventional commits, where `*` is a placeholder for the [conventional commit
 types](#commit-types):
 
 ```bash
+make git-list        # shows the git log as pretty printed list
 make git-graph       # shows the git log as pretty printed graph
 make git-clean [all] # cleans up git history by removing merged branches
 make git-reset [all] # checks out default branch and cleans up git history
