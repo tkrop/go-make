@@ -467,7 +467,7 @@ files.
 ```bash
 make update        # short cut for 'update-{go,deps,make}'
 make update-all    # short cut to execute all update targets
-make update-go     # updates the go version to the current compiler version
+make update-go     # updates the go to the given, current, or latest version
 make update-deps   # updates the project dependencies to the latest version
 make update-make   # updates the build environment to a given/latest version
 make update-tools  # updates the project tools to a given/latest version

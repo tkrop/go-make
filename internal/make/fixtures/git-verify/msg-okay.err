@@ -1,2 +1,2 @@
-[1;97minfo:[0m captured arguments [message ../internal/make/fixtures/git-verify/msg-okay.in]
+[1;96minfo:[0m captured arguments [message ../internal/make/fixtures/git-verify/msg-okay.in]
 [1;92msuccess:[0m git-verify message ../internal/make/fixtures/git-verify/msg-okay.in [errors=0]
