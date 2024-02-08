@@ -46,7 +46,7 @@ target groups:
 * [Release targets](#run-targets)
 * [Install targets](#install-targets)
 * [Uninstall targets](#uninstall-targets)
-* [Release targets](#release-targets)
+* [Version targets](#version-targets)
 * [Update targets](#update-targets)
 * [Cleanup targets](#cleanup-targets)
 * [Init targets](#init-targets) (usually no need to call)
@@ -533,15 +533,20 @@ make uninstall-*    # uninstalls the matched software command or service
 **Note:** Please use carefully, if your project uses common command names.
 
 
-### Release targets
+### Version targets
 
-Finally, the [Makefile](config/Makefile.base) supports targets for releasing the
-provided packages as library.
+Finally, the [Makefile](config/Makefile.base) supports targets for bumping,
+releasing, and publishing the provided packages as library.
 
 ```bash
-make bump <version>  # bumps version to prepare a new release
-make release         # creates the release tags in the repository
+make version-bump <version>  # bumps version to prepare a new release
+make version-release         # creates the release tags in the repository
+make version-publish         # 
 ```
+
+The `version-bump` target supports an optional `<version>` argument that allows
+to name define a version or increment the version using the semantic keywords
+`major`, `minor`, and `patch` to signal the scope.
 
 
 ### Init targets
