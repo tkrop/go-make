@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.55
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.56
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -1295,14 +1295,15 @@ release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
 	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  VERSION="$(RUNARGS)"; \
-	fi; $(GIT) fetch --tags; \
+	fi; $(GIT) fetch --verbose --tags; \
 	if [ -n "$${VERSION}" -a -z "$$($(GIT) tag --list "v$${VERSION}")" ]; then \
 	  ( $(GIT) gh-release "v$${VERSION}" ) || ( \
 		$(GIT) config user.name "$$($(GIT) log -n 1 --pretty=format:%an)" && \
 		$(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
 	    $(GIT) tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
-		$(GIT) push --follow-tags origin "v$${VERSION}" \
-	  ) && echo "Added release tag v$${VERSION} to repository!"; \
+		$(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
+	  ) && echo -e "$(call msuccess, release version [v$${VERSION}])" || \
+	  echo -e "$(call mfailure, release version [v$${VERSION}])"; \
 	fi; \
 
 #@ publish the current version by enforcing a registry lookup (experimental).
