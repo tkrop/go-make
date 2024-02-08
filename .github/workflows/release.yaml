@@ -17,11 +17,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
-        make --file=config/Makefile.base --trace release
+        make --file=config/Makefile.base --trace version-release
 
     - name: Publish new version
       env:
         GH_TOKEN: ${{ github.token }}
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       run: |-
-        make --file=config/Makefile.base --trace publish || true
+        make --file=config/Makefile.base --trace version-publish || true

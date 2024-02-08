@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.56
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.58
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -316,7 +316,7 @@ COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
 
 
 # Setup of runtime arguments for commands that support arguments.
-CMDWORDS ?= show git- test- lint run- bump release update
+CMDWORDS ?= show git- test- lint run- version- update
 CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 	  for (i = 1; i <= NF; i++) { if (found) { \
 	    line = ((line) ? line " " $$i : $$i); continue \
@@ -350,7 +350,7 @@ MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
 	do echo "$${TARGET%%=*}"; done | sort --unique)
 
 # Prepare target lists used to define rules and preconditions.
-TARGETS_PUBLISH := $(addprefix publish-, all $(COMMANDS))
+TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
 TARGETS_TEST_INIT := test-clean init-sources init-hooks
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
@@ -1264,7 +1264,7 @@ $(TARGETS_UNINSTALL):: uninstall-%:
 
 
 ## Release: targets to support release process.
-bump-version = \
+version-bump = \
 	$$(awk -v arg="$(1)" '{ \
 	  op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
 	  if ((pos = op[substr(arg,1,5)]) == 0) { \
@@ -1279,11 +1279,11 @@ bump-version = \
 	}' "$(2)")
 
 #@ <version|major|minor|patch>[+-]{}? # update version and prepare release of the software.
-bump::
+version-bump::
 	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
 	if [ ! -e VERSION ]; then echo "0.0.0" >VERSION; fi; \
 	if [[ "$${ARGS}" =~ ^(major|minor|patch|)[+-]*$$ ]]; then \
-	  VERSION="$(call bump-version,$${ARGS},VERSION)"; \
+	  VERSION="$(call version-bump,$${ARGS},VERSION)"; \
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
 	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
@@ -1291,24 +1291,24 @@ bump::
 
 
 #@ <version> # release a fixed version of the software as library.
-release::
+version-release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
 	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  VERSION="$(RUNARGS)"; \
 	fi; $(GIT) fetch --verbose --tags; \
 	if [ -n "$${VERSION}" -a -z "$$($(GIT) tag --list "v$${VERSION}")" ]; then \
 	  ( $(GIT) gh-release "v$${VERSION}" ) || ( \
-		$(GIT) config user.name "$$($(GIT) log -n 1 --pretty=format:%an)" && \
-		$(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
+	    $(GIT) config user.name "$$($(GIT) log -n 1 --pretty=format:%an)" && \
+	    $(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
 	    $(GIT) tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
-		$(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
+	    $(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
 	  ) && echo -e "$(call msuccess, release version [v$${VERSION}])" || \
 	  echo -e "$(call mfailure, release version [v$${VERSION}])"; \
 	fi; \
 
 #@ publish the current version by enforcing a registry lookup (experimental).
-publish:: $(TARGETS_PUBLISH)
-$(TARGETS_PUBLISH): publish-%:
+version-publish:: $(TARGETS_PUBLISH)
+$(TARGETS_PUBLISH): version-publish-%:
 	@if [ "$*" != "all" ]; then \
 	  if [ -f "cmd/$*/main.go" ]; then CMD="/cmd/$*"; else exit 0; fi; \
 	fi; \
@@ -1319,13 +1319,17 @@ $(TARGETS_PUBLISH): publish-%:
 	TARGET="$(GITREPO)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
-	    echo "publish: curl $${TARGET}"; \
+	    echo -e "$(call minfo,publish via curl [$${TARGET}])"; \
 	    curl  --silent --show-error --fail --location \
-	      https://sum.golang.org/lookup/$${TARGET};\
+	      https://sum.golang.org/lookup/$${TARGET} && \
+	    echo -e "$(call success,publish via curl [$${TARGET}])" || \
+	    echo -e "$(call failure,publish via curl [$${TARGET}])"; \
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
-	    echo "publish: go install $${TARGET}"; \
+	    echo -e "$(call minfo,publish go install [$${TARGET}])"; \
 	    $(GO) install $(INSTALL_FLAGS) $${TARGET}; \
+	    echo -e "$(call success,publish go install [$${TARGET}])" || \
+	    echo -e "$(call failure,publish go install [$${TARGET}])"; \
 	  fi; \
 	fi;
 

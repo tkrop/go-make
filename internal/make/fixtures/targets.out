@@ -4,7 +4,6 @@ build
 build-image
 build-linux
 build-native
-bump
 clean
 clean-all
 clean-build
@@ -110,9 +109,6 @@ lint-revive
 lint-shell
 lint-staticcheck
 lint-vuln
-publish
-publish-all
-release
 run-aws
 run-clean
 run-clean-aws
@@ -194,3 +190,7 @@ update/go.mod?
 update/revive.toml
 update/revive.toml?
 update?
+version-bump
+version-publish
+version-publish-all
+version-release
