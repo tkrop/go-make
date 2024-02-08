@@ -9,7 +9,7 @@ TAB := $(NULL)	$(NULL)
 
 # Setup colored message templates for output.
 # Finding: \$\((call )?[cm]*(info|error|warning|failure|success)
-minfo = $(strip \033[1;97minfo:\033[0m $(1))
+minfo = $(strip \033[1;96minfo:\033[0m $(1))
 merror = $(strip \033[1;91merror:\033[0m $(1))
 mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
 mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
@@ -57,7 +57,7 @@ export GOBIN ?= $(GOPATH)/bin
 # Export private repositories that do not need to be downloaded.
 export GOPRIVATE ?= github.bus.zalan.do
 # Setup go to use desired and consistent go versions.
-GOVERSION := $(shell $(GO) version | sed -E "s/.*go([0-9.]+).*/\1/")
+GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
 # Function for checking and wanring about go and package version mismatches.
 go-check-version = \
 	if [ -f "$(GOBIN)/$(1)" ]; then \
@@ -65,7 +65,7 @@ go-check-version = \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
 	    echo -e "$(call mwarning,$(1) build [$${CHECK}]: \
-	      run 'make update-go' or install matching compiler version)" \
+	      run 'make update-$(1)' or install matching compiler version)" \
 	      > /dev/stderr; \
 	  fi; \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.51
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.52
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -208,6 +208,7 @@ FILE_CONTAINER ?= Dockerfile
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery.yaml) $(wildcard .github/workflows/*.yaml))
 DELIVERY_REGEX ?= (cdp-runtime\/go-|go-version: \^?)[0-9.]*
+GOMOD_REGEX ?= ^(go )[0-9.]*$$
 
 # Setup default git command and repository information.
 GIT ?= git
@@ -632,7 +633,7 @@ init:: $(TARGETS_INIT)
 #@ initialize the go module and package dependencies.
 init-go:: go.sum
 go.sum: go.mod
-	$(GO) mod tidy -go=$(GOVERSION) && touch go.sum &&	$(GO) mod download;
+	$(GO) mod tidy && touch go.sum && $(GO) mod download;
 go.mod:
 	$(GO) mod init "$(GITREPO)";
 
@@ -1458,35 +1459,42 @@ update-all:: $(TARGETS_UPDATE_ALL)
 update-all?:: $(TARGETS_UPDATE_ALL?)
 
 # Function to determine the latest go version.
-update-go-version = \
+update-go-latest = \
 	$$(ARCH="$$($(GO) env GOOS)-$$($(GO) env GOARCH)" && \
 	  curl --silent --header "Accept-Encoding: gzip" "https://go.dev/dl/" | \
 	    gunzip | grep -o "go[0-9.]*$${ARCH}\.tar\.gz" | head -n 1 | \
 	    sed "s/go\(.*\)\.$${ARCH}\.tar\.gz/\1/")
 
-#@ <version> # update go to latest or given version.
+#@ <version> # update go to given, current, or latest version.
 update-go::
-	@if [[ "$(RUNARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(RUNARGS)"; \
-	else VERSION="$(update-go-version)"; fi; \
-	echo "update: golang version to $${VERSION}"; \
-	$(GO) get go@$${VERSION}; $(GO) mod tidy -go=$${VERSION}; \
+	@if [ "$(RUNARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
+	elif [[ "$(RUNARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(RUNARGS)"; \
+	else VERSION="$(GOVERSION)"; fi; \
+	echo -e "$(call minfo,update golang version [$${VERSION}])"; \
+	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
+	  $(GO) mod tidy -go=$${VERSION}; $(GO) get go@$${VERSION}; \
+	  sed -E -i -e "/^toolchain.*$$/d;" go.mod; \
+	fi; \
+	if [[ "$${VERSION}" < "1.21" ]]; then \
+	  sed -E -i -e "s/$(GOMOD_REGEX)/\1$${VERSION%\.*}/;" go.mod; \
+	  go mod tidy -go=$${VERSION%\.*}; \
+	fi; \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
 	    sed -E -i -e "s/$(DELIVERY_REGEX)/\1$${VERSION}/" "$${FILE}"; \
 	  fi; \
 	done; \
-	if ! [[ "$${VERSION}" =~ ^$(GOVERSION)[0-9.]*$$ ]]; then \
+	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  echo -e "$(call mwarning, current compiler is using \
 	    [$(GOVERSION) => $${VERSION}])" >/dev/stderr; \
 	fi; \
 
-#@ check whether a new go version exists.
+#@ check whether a new latest go version exists.
 update-go?::
-	@VERSION="$(update-go-version)"; \
-	if ! [[ "$${VERSION}" =~ ^$(GOVERSION)[0-9.]*$$ ]]; then \
-	  echo -e "$(call minfo,new golang version available [$${VERSION}]: \
-	    run 'make update-go' to update the project!)"; \
-	  exit -1; \
+	@VERSION="$(update-go-latest)"; \
+	if ! [ "$${VERSION}" == "$(GOVERSION)" ]; then \
+	  echo -e "$(call merror,new golang version available [$${VERSION}]: \
+	    run 'make update-go' to update the project!)"; exit 1; \
 	fi; \
 
 # Functions to create the list of updates (not sure whether go list is contributing).
@@ -1532,7 +1540,7 @@ update/go.mod:: install-gomajor
 	ROOT=$$(pwd); \
 	for DIR in $(MODULES); do \
 	  echo "update: $${DIR}"; cd $${ROOT}/$${DIR##./} && \
-	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit -1; \
+	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1; \
 	done; \
 
 #@ check for major and minor updates to latest versions.
