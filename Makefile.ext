@@ -22,15 +22,12 @@ sync::
 	  fi; \
 	done;
 
-git-test-message:: git-test-message-fix
-$(addprefix git-test-message-,$(COMMIT_CONVENTION)):: git-test-message-%:
+test-git-message:: test-git-message-fix
+$(addprefix test-git-message-,$(COMMIT_CONVENTION)):: test-git-message-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
 
 test-check-version::
 	@$(call go-check-version,go-make,$(RUNARGS),)
-
-test-update-go-latest::
-	@echo $(update-go-latest) $(GOVERSION);
 
 test-args::
 	@$(call test-args,$(RUNARGS))

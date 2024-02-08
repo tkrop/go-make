@@ -4,3 +4,9 @@ Validation of commit messages checks whether the commit message follows
 conventional commit standards and whether commits are signed by the author.
 
 Signed-off-by: John Doe <john.doe@zalando.de>
+
+# Multi-line comment and empty lines after signed-off-by like in editor.
+
+# feat(wrong): all is somehow wrong (org#1)
+#
+# Signed-off-by: Alice Doe <alice.doe@zalando.de>

@@ -381,7 +381,7 @@ TARGETS_RUN_IMAGE := $(addprefix run-image-, $(COMMANDS))
 TARGETS_RUN_CLEAN := $(addprefix run-clean-, $(COMMANDS) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
 TARGETS_CLEAN_RUN := $(addprefix clean-run-, $(COMMANDS) db aws)
-TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO) go-make)
+TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
 TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
@@ -504,7 +504,7 @@ git-clean = \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(RUNARGS)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
-	  else echo -e "$(call minfo,keeping $${BRANCH})" > /dev/stderr; \
+	  else echo -e "$(call minfo,keeping branch [$${BRANCH}])" > /dev/stderr; \
 	  fi; \
 	done; $(GITPRUNE)
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
@@ -522,6 +522,7 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	  re_signed_author = "^" signed_by " +" author "$$"; \
 	} \
 	function verify() { \
+	  msg = gensub("((:?\\n)\#[^\\n]*|\\n)*$$", "", "g", msg); \
 	  title = (i = index(msg,"\n")) ? substr(msg, 0, i - 1) : msg; \
 	  if (title !~ re_type_missing) { \
 	    printf("$(call merror,commit type missing [title=%s])\n", title); errors++ \
@@ -1485,7 +1486,7 @@ update-go::
 	  fi; \
 	done; \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
-	  echo -e "$(call mwarning, current compiler is using \
+	  echo -e "$(call mwarning, current compiler differs \
 	    [$(GOVERSION) => $${VERSION}])" >/dev/stderr; \
 	fi; \
 
