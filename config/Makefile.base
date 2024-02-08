@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.53
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.54
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -311,8 +311,8 @@ COMMANDS := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
 COMMANDS_PKG := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
 	sed -E "s/^(.*\/([^/]*))\/main.go$$/\2=\1/; s|$(CURDIR)|.|")
 COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
-COMMANDS_GO := $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,)
-COMMANDS_SH := $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,)
+COMMANDS_GO := $(sort $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,))
+COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
 
 
 # Setup of runtime arguments for commands that support arguments.
@@ -381,7 +381,7 @@ TARGETS_RUN_IMAGE := $(addprefix run-image-, $(COMMANDS))
 TARGETS_RUN_CLEAN := $(addprefix run-clean-, $(COMMANDS) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
 TARGETS_CLEAN_RUN := $(addprefix clean-run-, $(COMMANDS) db aws)
-TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
+TARGETS_UPDATE_GO := $(addprefix update-,$(sort $(COMMANDS_GO) go-make))
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
 TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
@@ -1287,7 +1287,7 @@ bump::
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
 	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
-	echo "Bumped version to $${VERSION} for auto release!"; \
+	echo -e "$(call msuccess, bumped version [$${VERSION}])"; \
 
 
 #@ <version> # release a fixed version of the software as library.
