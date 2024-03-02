@@ -133,12 +133,12 @@ GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
-	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 \
+	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.56.2 \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
 	github.com/uudashr/gocognit/cmd/gocognit \
 	github.com/fzipp/gocyclo/cmd/gocyclo \
-	github.com/mgechev/revive@v1.2.3 \
+	github.com/mgechev/revive@v1.3.3 \
 	github.com/securego/gosec/v2/cmd/gosec \
 	github.com/tsenart/deadcode \
 	honnef.co/go/tools/cmd/staticcheck \
@@ -250,6 +250,9 @@ CODACY_PROJECT ?= $(GITREPONAME)
 CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
 CODACY_CLIENTS ?= aligncheck deadcode
 CODACY_BINARIES ?= gosec staticcheck
+ifeq (CODACY_API_BASE_URL,$(CODACY_API_BASE_URL))
+	CODACY_REPORTER_VERSION ?= 13.12.3
+endif
 CODACY_GOSEC_VERSION ?= 0.4.5
 CODACY_STATICCHECK_VERSION ?= 3.0.12
 CODACY_PROJECT_TOKEN ?=
@@ -324,14 +327,12 @@ CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 	  for (p in seps) { if ($$i ~ "^"seps[p] ) { found = 1; } } } \
 	} END { print line }' <<<"$(MAKECMDGOALS)")
 ifdef CMDARGS
-  RUNARGS ?=
-  RUNARGS := $(strip $(CMDARGS) $(RUNARGS))
-  $(shell if [ -n "$(RUNARGS)" ]; then \
-    echo -e "$(call minfo,captured arguments [$(RUNARGS)])" >/dev/stderr; \
+  ARGS := $(strip $(CMDARGS) $(ARGS))
+  $(shell if [ -n "$(ARGS)" ]; then \
+    echo -e "$(call minfo,captured arguments [$(ARGS)])" >/dev/stderr; \
   fi)
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
-
 
 # Setup optimized golang mock setup environment.
 MOCK_MATCH_DST := ^(.*)/(.*)://go:generate.*-destination=([^ ]*).*$$
@@ -502,7 +503,7 @@ git-clean = \
 	  TIP="$$($(GITLOGFMT):"%T" "$${BRANCH}")"; \
 	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
-	  elif [ "$(RUNARGS)" == "all" ]; then \
+	  elif [ "$(ARGS)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
 	  else echo -e "$(call minfo,keeping branch [$${BRANCH}])" > /dev/stderr; \
 	  fi; \
@@ -557,10 +558,10 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	(mode != "message") { if (msg) { verify(); } } \
 	END { \
 	  if (mode == "message" || msg) { verify(); } if (errors) { \
-	    printf("$(call mfailure,git-verify $(RUNARGS) [errors=%d])\n", \
+	    printf("$(call mfailure,git-verify $(ARGS) [errors=%d])\n", \
 		  errors); exit 1 \
 	  } \
-	  printf("$(call msuccess,git-verify $(RUNARGS) [errors=%d])\n", errors) \
+	  printf("$(call msuccess,git-verify $(ARGS) [errors=%d])\n", errors) \
 	}'
 
 GITFORMAT ?= "%Cred%h %t %Cgreen%ad%Creset | %s %C(bold blue)[%an]%Creset%C(yellow)%d%Creset"
@@ -585,9 +586,9 @@ git-reset::
 	fi || exit 1; $(call git-clean,$${MAIN});
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
 git-verify::
-	@MODE="$(firstword $(RUNARGS))"; case "$${MODE}" in \
-	( "log" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))";; \
-	( "message" ) cat "$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))";; \
+	@MODE="$(firstword $(ARGS))"; case "$${MODE}" in \
+	( "log" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
+	( "message" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
 	( "pull" | * ) MAIN="$(git-main)" && $(GIT) fetch origin "$${MAIN}" --verbose && \
 	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
@@ -597,30 +598,31 @@ git-verify::
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
 $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
-	@BRANCH="$(firstword $(RUNARGS))"; \
-	MESSAGE="$(wordlist 2,$(words $(RUNARGS)),$(RUNARGS))"; \
+	@BRANCH="$(firstword $(ARGS))"; \
+	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	$(call git-message,$*,1); \
 	$(GIT) checkout -B "$${BRANCH}" && \
-	$(GIT) commit --signoff --message "$${MESSAGE}" && \
+	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" || \
 	$(GIT) checkout $${BRANCH}; exit;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,0); \
-	$(GIT) commit --signoff --message "$${MESSAGE}"; exit;
+	@MESSAGE="$(ARGS)"; $(call git-message,$*,0); \
+	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 git-fix::
 	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
-	if [[ "$(RUNARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
-	if [[ "$(RUNARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
-	if [[ "$(RUNARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
-	if [[ "$(RUNARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
+	if [[ "$(ARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
+	if [[ "$(ARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
+	if [[ "$(ARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
+	if [[ "$(ARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
 	for KEY in "$${!GITFIX[@]}"; do \
 	  if [ "$${GITFIX[$${KEY}]}" == "" ]; then unset GITFIX[$${KEY}]; fi; \
 	done; \
-	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
+	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; \
+	ARGS="" "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@$(GIT) push --set-upstream origin \
@@ -801,7 +803,7 @@ test-args = \
 
 TESTFLAGS ?=
 TEST_FLAGS ?= $(strip -mod=readonly -count=1 -race $(TESTFLAGS))
-TEST_ARGS ?= $(shell $(call test-args,$(RUNARGS)))
+TEST_ARGS ?= $(shell $(call test-args,$(ARGS)))
 TEST_DEPS ?=
 
 # actuall targets for testing.
@@ -873,9 +875,9 @@ LINT_ALL := --enable $(LINT_EXPERT),$(LINT_DISABLED) --disable-all
 LINT_FLAGS ?= --allow-serial-runners --sort-results --color always
 LINT_CMD ?= $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
 LINT_CMD_CONFIG := $(MAKE) lint-config
-ifeq ($(RUNARGS),linters)
+ifeq ($(ARGS),linters)
   LINT_CMD := $(GOBIN)/golangci-lint linters $(LINT_CONFIG) $(LINT_FLAGS)
-else ifeq ($(RUNARGS),config)
+else ifeq ($(ARGS),config)
   LINT_CMD := @
   LINT_MIN := LINT_ENABLED=$(LINT_MINIMUM) \
     LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
@@ -885,15 +887,15 @@ else ifeq ($(RUNARGS),config)
     LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
   LINT_MAX := LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
   LINT_ALL := LINT_ENABLED=$(LINT_EXPERT),$(LINT_DISABLED) $(LINT_CMD_CONFIG)
-else ifeq ($(RUNARGS),fix)
+else ifeq ($(ARGS),fix)
   LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS) --fix
-else ifneq ($(RUNARGS),)
+else ifneq ($(ARGS),)
   LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
-  LINT_MIN := --disable-all --enable $(RUNARGS)
-  LINT_BASE := --disable-all --enable $(RUNARGS)
-  LINT_PLUS := --disable-all --enable $(RUNARGS)
-  LINT_MAX := --disable-all --enable $(RUNARGS)
-  LINT_ALL := --disable-all --enable $(RUNARGS)
+  LINT_MIN := --disable-all --enable $(ARGS)
+  LINT_BASE := --disable-all --enable $(ARGS)
+  LINT_PLUS := --disable-all --enable $(ARGS)
+  LINT_MAX := --disable-all --enable $(ARGS)
+  LINT_ALL := --disable-all --enable $(ARGS)
 endif
 
 
@@ -1052,7 +1054,7 @@ lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 #@ execute shellcheck to find potential shell script issues (sh-files).
 lint-shell:: init-sources
 	@mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
-	if [ -n "$(RUNARGS)" ]; then ARGS=(${ARGS} $(RUNARGS)); fi; \
+	if [ -n "$(ARGS)" ]; then ARGS=(${ARGS} $(ARGS)); fi; \
 	if  [ -n "$${FILES}" ]; then \
 	  if command -v shellcheck &> /dev/null; then \
 	    shellcheck "$${ARGS[@]}" "$${FILES[@]}"; \
@@ -1073,13 +1075,13 @@ lint-vuln:: install-govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
 lint-gocyclo lint-gocognit:: lint-%: install-%
-	@RUNARGS=($(RUNARGS)); MODS="0"; \
-	while [ "$${#RUNARGS[@]}" != "0" ]; do \
-	  if [ "$${RUNARGS[0]}" == "top" ]; then ARGS+=(-$${RUNARGS[0]}); MODS="1"; \
-	  elif [ "$${RUNARGS[0]}" == "over" ]; then ARGS+=(-$${RUNARGS[0]}); MODS="1"; \
-	  elif [ "$${RUNARGS[0]}" == "avg" ]; then ARGS+=(-$${RUNARGS[0]}); MODS="0"; \
-	  else ARGS+=($${RUNARGS[0]}); MODS=$$((MODS-1)); fi; \
-	  RUNARGS=("$${RUNARGS[@]:1}"); \
+	@ARGS=($(ARGS)); MODS="0"; \
+	while [ "$${#ARGS[@]}" != "0" ]; do \
+	  if [ "$${ARGS[0]}" == "top" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
+	  elif [ "$${ARGS[0]}" == "over" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
+	  elif [ "$${ARGS[0]}" == "avg" ]; then ARGS+=(-$${ARGS[0]}); MODS="0"; \
+	  else ARGS+=($${ARGS[0]}); MODS=$$((MODS-1)); fi; \
+	  ARGS=("$${ARGS[@]:1}"); \
 	done; \
 	if [[ "$${MODS}" == "0" ]]; then ARGS+=($(MODULES)); fi; \
 	$* "$${ARGS[@]}";
@@ -1092,9 +1094,9 @@ lint-apis:: install-zally
 	fi; \
 	ARGS=("--linter-service" "$${LINTER}"); \
 	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
-	if [ -z "$(filter %.yaml,$(RUNARGS))" ]; then \
+	if [ -z "$(filter %.yaml,$(ARGS))" ]; then \
 	   FILES="$$(find zalando-apis -name "*.yaml" 2>/dev/null)"; \
-	else FILES="$(filter %.yaml,$(RUNARGS))"; fi; \
+	else FILES="$(filter %.yaml,$(ARGS))"; fi; \
 	for APISPEC in $${FILES}; do \
 	  echo "check API: zally \"$${APISPEC}\""; \
 	  zally "$${ARGS[@]}" lint "$${APISPEC}" || exit 1; \
@@ -1212,9 +1214,9 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-	@$(call go-check-version,$*,$(RUNARGS))
+	@$(call go-check-version,$*,$(ARGS))
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(RUNARGS));
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(ARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1280,7 +1282,7 @@ version-bump = \
 
 #@ <version|major|minor|patch>[+-]{}? # update version and prepare release of the software.
 version-bump::
-	@if [ -z "$(RUNARGS)" ]; then ARGS="patch"; else ARGS="$(RUNARGS)"; fi; \
+	@if [ -z "$(ARGS)" ]; then ARGS="patch"; else ARGS="$(ARGS)"; fi; \
 	if [ ! -e VERSION ]; then echo "0.0.0" >VERSION; fi; \
 	if [[ "$${ARGS}" =~ ^(major|minor|patch|)[+-]*$$ ]]; then \
 	  VERSION="$(call version-bump,$${ARGS},VERSION)"; \
@@ -1293,8 +1295,8 @@ version-bump::
 #@ <version> # release a fixed version of the software as library.
 version-release::
 	@if [ -f VERSION ]; then VERSION="$$(cat VERSION)"; fi; \
-	if [[ "$(RUNARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
-	  VERSION="$(RUNARGS)"; \
+	if [[ "$(ARGS)" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
+	  VERSION="$(ARGS)"; \
 	fi; $(GIT) fetch --verbose --tags; \
 	if [ -n "$${VERSION}" -a -z "$$($(GIT) tag --list "v$${VERSION}")" ]; then \
 	  ( $(GIT) gh-release "v$${VERSION}" ) || ( \
@@ -1355,7 +1357,7 @@ run-db:: $(DIR_RUN)
 	    -c 'shared_preload_libraries=pg_stat_statements' \
         -c 'pg_stat_statements.max=10000' \
         -c 'pg_stat_statements.track=all' \
-	  $(RUNARGS) 2>&1 & \
+	  $(ARGS) 2>&1 & \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
 	do echo "waiting for db container" >/dev/stderr; sleep 1; done && \
@@ -1376,7 +1378,7 @@ run-aws:: $(DIR_RUN)
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-aws \
 	  --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
-	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(RUNARGS) 2>&1 && \
+	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
 	do echo "waiting for aws container" >/dev/stderr; sleep 1; done && \
@@ -1389,14 +1391,14 @@ run-aws:: $(DIR_RUN)
 #@ run-*: start the matched command using the native binary.
 $(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(DIR_BUILD)/$* $(RUNARGS) 2>&1 | \
+	  $(DIR_BUILD)/$* $(ARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-go-*: start the matched command using go run.
 $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(GO) run cmd/$*/main.go $(RUNARGS) 2>&1 | \
+	  $(GO) run cmd/$*/main.go $(ARGS) 2>&1 | \
 	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
@@ -1410,7 +1412,7 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	$(IMAGE_CMD) run --name $(IMAGE_ARTIFACT)-$* --network=host \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
 	  $(call run-vars,--env) $(call run-vars-image,--env) \
-	  ${IMAGE} /$* $(RUNARGS) 2>&1 | \
+	  ${IMAGE} /$* $(ARGS) 2>&1 | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
@@ -1473,8 +1475,8 @@ update-go-latest = \
 
 #@ <version> # update go to given, current, or latest version.
 update-go::
-	@if [ "$(RUNARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
-	elif [[ "$(RUNARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(RUNARGS)"; \
+	@if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
+	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
 	echo -e "$(call minfo,update golang version [$${VERSION}])"; \
 	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
@@ -1526,8 +1528,8 @@ update-config = \
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
 update/go.mod:: install-gomajor
-	@if [ -n "$(RUNARGS)" ]; then $(call update-args,$(RUNARGS)); \
-	  if [[ " $(RUNARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
+	@if [ -n "$(ARGS)" ]; then $(call update-args,$(ARGS)); \
+	  if [[ " $(ARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
 	  readarray -t UPDATES < <($(call update-list,$${ARGS},$${PACKAGES})); \
 	  for UPDATE in "$${UPDATES[@]}"; do ARGS=($${UPDATE}); \
 	    SMAJOR="$${ARGS[1]%%.*}"; TMAJOR="$${ARGS[3]%%.*}"; \
@@ -1552,17 +1554,17 @@ update/go.mod:: install-gomajor
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
 update/go.mod?:: install-gomajor
-	@$(call update-args,$(RUNARGS)); cp go.sum go.sum.~save~; \
+	@$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 update/go-make::
-	@$(call update-config,$(RUNARGS),download) || \
+	@$(call update-config,$(ARGS),download) || \
 	  ( echo "error: downloading $${GOMAKE}" >/dev/stderr && exit 1 )
 
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
+	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
@@ -1578,7 +1580,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(RUNARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
+	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
@@ -1594,7 +1596,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(RUNARGS));
+	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(ARGS));
 
 
 ## Custom: custom extension targets.

@@ -28,7 +28,7 @@ func NewExecutor() Executor {
 func (*defaultExecutor) Exec(
 	stdout, stderr io.Writer, dir string, env []string, args ...string,
 ) error {
-	//#nosec G204 -- caller ensures safe commands
+	// #nosec G204 -- caller ensures safe commands
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir, cmd.Env = dir, os.Environ()
 	cmd.Env = append(cmd.Env, env...)
