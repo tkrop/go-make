@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/tkrop/go-make/internal/cmd"
@@ -191,8 +192,20 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 	return nil
 }
 
+// CmdArgRegex is the regular expression that match commands with arguments
+// that will be transformed into a `ARGS` variable.
+var CmdArgRegex = regexp.MustCompile(
+	`^(show|git-|test-|lint|run-|version-|update).*$`)
+
 // makeTargets executes the provided make targets.
 func (gm *GoMake) makeTargets(args ...string) error {
+	for index, arg := range args {
+		if CmdArgRegex.MatchString(arg) && index < len(args)-1 {
+			return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir,
+				append(gm.Env, "ARGS="+strings.Join(args[index+1:], " ")),
+				CmdMakeTargets(gm.Makefile, args[0:index+1]...)...)
+		}
+	}
 	return gm.exec(gm.Stdout, gm.Stderr, gm.WorkDir, gm.Env,
 		CmdMakeTargets(gm.Makefile, args...)...)
 }
