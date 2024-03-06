@@ -552,7 +552,7 @@ func TestMakeExec(t *testing.T) {
 			info := infoBase
 			stdout := &strings.Builder{}
 			stderr := &strings.Builder{}
-			// Filter out make environment variables in general. The primary
+			// Filter out make environment variables in general. This primary
 			// is to prevent the parent options to influence the test results
 			// - in particular the '--trace' flag.
 			env := param.env

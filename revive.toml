@@ -39,10 +39,6 @@ enableAllRules = true
 [rule.dot-imports]
   disabled = true
 
-# Fails to exclude nolint directives from reporting.
-[rule.comment-spacings]
-  disabled = true
-
 # Fails to disable writers that actually cannot return errors.
 [rule.unhandled-error]
   disabled = true
