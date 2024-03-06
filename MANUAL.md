@@ -656,3 +656,11 @@ restriction is automatically applied to the first argument.
 In MacOS we need to use `readlink -f` instead of `realpath`, since there may
 not even be a simplified fallback of this command available. This is not the
 preferred command in Linux, but for compatibility would be still acceptable.
+
+
+### `gensub` in `awk` not supported
+
+Some build systems are not providing a recent `gawk` version, but provide
+`mawk`as alternative, which is know to miss support for `gensub`. We have
+substituted the usage of `gensub` in some essential functions that would
+else fail.
