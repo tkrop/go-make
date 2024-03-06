@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.60
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.61
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -334,21 +334,31 @@ ifdef CMDARGS
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
 
-# Setup optimized golang mock setup environment.
-MOCK_MATCH_DST := ^(.*)/(.*)://go:generate.*-destination=([^ ]*).*$$
-MOCK_MATCH_SRC := ^(.*)/(.*)://go:generate.*-source=([^ ]*).*$$
-MOCK_TARGETS := $(shell if [ -n "$(SOURCES)" ]; then \
-      grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
-	  sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_DST)|\1/\3=\1/\2|" | \
-	  sort --unique; \
-	fi)
-MOCK_SOURCES := $(shell if [ -n "$(SOURCES)" ]; then \
-      grep "//go:generate[[:space:]]*mockgen.*-source=" $(SOURCES) | \
-	  sed -E "s|^(.*)|./\1|; s|$(MOCK_MATCH_SRC)|\1/\3|" | sort --unique | \
-	  xargs -r readlink -f | sed "s|$(PWD)/||g"; \
-	fi)
-MOCKS := $(shell for TARGET in $(MOCK_TARGETS); \
-	do echo "$${TARGET%%=*}"; done | sort --unique)
+# Setup optimized golang generate mocks execution.
+MOCKS := $(shell \
+	grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
+	awk '{ \
+	  source = "_"; target = "_"; package = "_"; \
+	  origin = substr($$1, 0, index($$1, "://go:generate") - 1); \
+	  path = gensub("/[^/]*$$", "", "g", origin); \
+	  for (i = 1; i <= NF; i++) { \
+		if ($$i ~ "^-source=") { \
+		  cmd = "readlink -f \"" path "/" substr($$i, 9) "\""; \
+		  cmd | getline source; close(cmd) \
+		} else if ($$i ~ "^-destination=") { \
+		  cmd = "readlink -f \"" path "/" substr($$i, 14) "\""; \
+		  cmd | getline target; close(cmd) \
+		} \
+	  } \
+	  if (source == "_") { package = $$(NF-1) } \
+	  print target "|" source "|" package "|" origin \
+	}' | sort --unique)
+MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
+	awk 'BEGIN {FS="|"; RS=" "} ($$1 != "_") { print $$1 }' | sort --unique)
+MOCKS_SOURCES := $(shell echo "$(MOCKS)" | \
+	awk 'BEGIN {FS="|"; RS=" "} ($$2 != "_") { print $$2 }' | sort --unique)
+MOCKS_ORIGINS := $(shell echo "$(MOCKS)" | \
+	awk 'BEGIN {FS="|"; RS=" "} ($$4 != "_") { print $$4 }' | sort --unique)
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
@@ -663,10 +673,18 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	fi;
 
 #@ initialize the generated sources.
-init-sources:: $(MOCKS)
-$(MOCKS):: go.sum $(MOCK_SOURCES) install-mockgen install-mock
-	$(GO) generate "$(shell echo $(MOCK_TARGETS) | \
-	  sed -E "s|.*$@=([^ ]*).*$$|\1|")";
+init-sources:: $(MOCKS_TARGETS)
+$(MOCKS_TARGETS):: go.sum $(MOCKS_SOURCES) install-mockgen install-mock
+	@MOCK=($(subst |,$(SPACE),$(firstword $(filter $@|%,$(MOCKS))))); \
+	TARGET="$${MOCK[0]}"; SOURCE="$${MOCK[1]}"; \
+	PACKAGE="$${MOCK[2]}"; ORIGIN="$${MOCK[3]}"; \
+	if [ ! -f "$${TARGET}" ]; then \
+	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
+	elif [ "$${SOURCE}" != "_" -a "$${TARGET}" -ot "$${SOURCE}" ]; then \
+	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
+	elif [ "$${PACKAGE}" != "_" -a "$${TARGET}" -ot "go.sum" ]; then \
+	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
+	fi; \
 
 #@ initialize the codacy support - if enabled.
 init-codacy:: $(TARGETS_INIT_CODACY)
@@ -814,7 +832,7 @@ $(TEST_UNIT):: $(SOURCES) init-sources $(DIR_BUILD)
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short $(TEST_ARGS);
 $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
-	$(GO) test $(TEST_FLAGS) -benchtime=8s \
+	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
 
 #@ execute a kind of self-test running the main targets.

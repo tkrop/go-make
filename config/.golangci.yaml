@@ -154,9 +154,6 @@ linters-settings:
       # Exluding '.'-import makes test package separation unnecessary difficult.
       - name: dot-imports
         disabled: true
-      # Fails to exclude nolint directives from reporting.
-      - name: comment-spacings
-        disabled: true
       # Fails to disable writers that actually cannot return errors.
       - name: unhandled-error
         disabled: true

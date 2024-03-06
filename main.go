@@ -1,5 +1,3 @@
-//go:build !test
-
 // Main entry point of the go-make command.
 package main
 
