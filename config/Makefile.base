@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.61
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.62
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -340,7 +340,7 @@ MOCKS := $(shell \
 	awk '{ \
 	  source = "_"; target = "_"; package = "_"; \
 	  origin = substr($$1, 0, index($$1, "://go:generate") - 1); \
-	  path = gensub("/[^/]*$$", "", "g", origin); \
+	  path = substr(origin, 0, match(origin, "/[^/]*$$")); \
 	  for (i = 1; i <= NF; i++) { \
 		if ($$i ~ "^-source=") { \
 		  cmd = "readlink -f \"" path "/" substr($$i, 9) "\""; \
@@ -1582,7 +1582,8 @@ update/go-make::
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
+	if [ -z "$(ARGS)" ]; then  CONFIG="$(GOMAKE_CONFIG)"; \
+	else $(call update-config,$(ARGS),run); fi; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
