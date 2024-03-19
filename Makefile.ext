@@ -51,3 +51,21 @@ test-compat::
 	COMPAT="$$(BASH_COMPAT=3.2 make --makefile=$(GOMAKE_MAKEFILE) test-self 2>&1)" && \
 	DIFF="$$(diff <(echo "$${ACTUAL}") <(echo "$${COMPAT}"))" && \
 	echo "info: test-compat finished successful!!" || echo "$${DIFF}";
+
+CI_IMAGE_VERSION ?= latest
+CI_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CI_IMAGE_VERSION}
+#@ test build in continuous integration container.
+test-cdp:
+	@if tty -s; then TTY="--tty"; fi; ( \
+	  echo "machine github.bus.zalan.do"; \
+	  echo "login $${USER}"; \
+      echo "password $${GITOKEN}" \
+	) > $(DIR_RUN)/.netrc; \
+	docker run --interactive $${TTY} --rm --privileged \
+	  --workdir="/workspace" --volume=$${PWD}:/workspace \
+	  --volume=/var/run/docker.sock:/var/run/docker.sock \
+	  --volume=$${HOME}/.gitconfig:/root/.gitconfig \
+      --volume=$(DIR_RUN).netrc:/root/.netrc \
+	  ${CI_IMAGE} /bin/bash
+
+#	  --volume=$${HOME}/.ssh:/root/.ssh \

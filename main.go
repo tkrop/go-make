@@ -35,7 +35,7 @@ func NewInfo() *info.Info {
 
 // main is the main entry point of the go-make command.
 func main() {
-	os.Exit(make.Make(os.Stdout, os.Stderr, NewInfo(),
+	os.Exit(make.Make(os.Stdin, os.Stdout, os.Stderr, NewInfo(),
 		make.GetEnvDefault(make.EnvGoMakeConfig, Config),
 		".", nil, os.Args...))
 }
