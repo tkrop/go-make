@@ -73,16 +73,16 @@ var testExecParams = map[string]ExecParams{
 		expectString: "exec: arg1 arg2 []\n",
 	},
 
-	"empty args with dir": {
+	"dir empty args": {
 		dir:          "dir",
 		expectString: "exec: [dir]\n",
 	},
-	"single arg with dir": {
+	"dir single arg": {
 		dir:          "dir",
 		args:         []string{"arg"},
 		expectString: "exec: arg [dir]\n",
 	},
-	"multiple args with dir": {
+	"dir multiple args": {
 		dir:          "dir",
 		args:         []string{"arg1", "arg2"},
 		expectString: "exec: arg1 arg2 [dir]\n",

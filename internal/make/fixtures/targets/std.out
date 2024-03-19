@@ -4,6 +4,7 @@ build
 build-image
 build-linux
 build-native
+call
 clean
 clean-all
 clean-build

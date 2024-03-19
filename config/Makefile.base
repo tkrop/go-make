@@ -15,7 +15,7 @@ mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
 mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
 msuccess = $(strip \033[1;92msuccess:\033[0m $(1))
 
-cerror = $(error $(shell echo -e "$(call merror,"$(1)")" >/dev/stderr))
+cerror = $(error $(shell echo -e "$(call merror,"$(1)")" > /dev/stderr))
 
 # Finding: \$\((call )?(topic|cmd|arg)
 topic = \033[1;97m$(1)\033[0m
@@ -30,7 +30,7 @@ endif
 # Check whether bash is running in minmal compatibility mode for testing.
 ifdef BASH_COMPAT
   $(shell echo -e "$(call minfo,bash compatibility mode set \
-    [$(BASH_COMPAT)])" >/dev/stderr)
+    [$(BASH_COMPAT)])" > /dev/stderr)
 endif
 
 # Setup default makeflags create consistent behavior.
@@ -319,7 +319,7 @@ COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
 
 
 # Setup of runtime arguments for commands that support arguments.
-CMDWORDS ?= show git- test- lint run- version- update
+CMDWORDS ?= call show git- test- lint run- version- update
 CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 	  for (i = 1; i <= NF; i++) { if (found) { \
 	    line = ((line) ? line " " $$i : $$i); continue \
@@ -329,7 +329,7 @@ CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 ifdef CMDARGS
   ARGS := $(strip $(CMDARGS) $(ARGS))
   $(shell if [ -n "$(ARGS)" ]; then \
-    echo -e "$(call minfo,captured arguments [$(ARGS)])" >/dev/stderr; \
+    echo -e "$(call minfo,captured arguments [$(ARGS)])" > /dev/stderr; \
   fi)
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
@@ -409,6 +409,9 @@ all:: $(TARGETS_ALL)
 all-clean:: clean clean-run all
 #@ executes the pre-commit check targets.
 commit:: $(TARGETS_COMMIT)
+##@ executes the given arguments as commands (for testing).
+call::;	@$(ARGS)
+
 
 $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
@@ -602,7 +605,7 @@ git-verify::
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
 	( "pull" | * ) MAIN="$(git-main)" && $(GIT) fetch origin "$${MAIN}" --verbose && \
 	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
-	esac | $(call git-verify,$${MODE}) >/dev/stderr
+	esac | $(call git-verify,$${MODE}) > /dev/stderr
 
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
@@ -654,12 +657,12 @@ go.mod:
 #@ initialize git pre-commit and commit-message hooks.
 init-hooks:: $(GITHOOKS:%=.git/hooks/%)
 git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
-	echo "make git-verify message $${1}" >/dev/stderr;\n\
+	echo "make git-verify message $${1}" > /dev/stderr;\n\
 	command -v $(GOBIN)/go-make >/dev/null || \\\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make git-verify message $${1};\n' | sed 's/^ *//g'
 git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
-	echo "make commit" >/dev/stderr;\n\
+	echo "make commit" > /dev/stderr;\n\
 	command -v $(GOBIN)/go-make >/dev/null || \\\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
@@ -838,6 +841,7 @@ $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
 #@ execute a kind of self-test running the main targets.
 test-self:: update-all? update-all clean-all all-clean install-all
 	@echo -e "$(call msuccess,test-self finished successfully!)";
+
 
 # disabled (deprecated): deadcode golint interfacer ifshort maligned musttag
 #   nosnakecase rowserrcheck scopelint structcheck varcheck wastedassign
@@ -1378,10 +1382,10 @@ run-db:: $(DIR_RUN)
 	  $(ARGS) 2>&1 & \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
-	do echo "waiting for db container" >/dev/stderr; sleep 1; done && \
+	do echo "waiting for db container" > /dev/stderr; sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
-	do echo "waiting for db service" >/dev/stderr; sleep 1; done) |\
+	do echo "waiting for db service" > /dev/stderr; sleep 1; done) |\
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-db;
 
 #@ start an AWS localstack instance for testing.
@@ -1399,10 +1403,10 @@ run-aws:: $(DIR_RUN)
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
-	do echo "waiting for aws container" >/dev/stderr; sleep 1; done && \
+	do echo "waiting for aws container" > /dev/stderr; sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-aws \
 	  curl --silent http://$(HOST):4566; \
-	do echo "waiting for aws service" >/dev/stderr; sleep 1; done && \
+	do echo "waiting for aws service" > /dev/stderr; sleep 1; done && \
 	$(call run-setup-aws) || exit 1) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log;
 
@@ -1426,10 +1430,10 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	trap "$(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* >/dev/null" INT TERM; \
 	if [ -n "$(filter %$*,$(TARGETS_IMAGE))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed -e "s/:/-$*:/")"; \
-	else IMAGE="$(IMAGE)" fi; $(call run-setup) && \
-	$(IMAGE_CMD) run --name $(IMAGE_ARTIFACT)-$* --network=host \
+	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
+	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $(IMAGE_ARTIFACT)-$* \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
-	  $(call run-vars,--env) $(call run-vars-image,--env) \
+	  --network=host $(call run-vars,--env) $(call run-vars-image,--env) \
 	  ${IMAGE} /$* $(ARGS) 2>&1 | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
 	exit $${PIPESTATUS[0]};
@@ -1512,7 +1516,7 @@ update-go::
 	done; \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  echo -e "$(call mwarning, current compiler differs \
-	    [$(GOVERSION) => $${VERSION}])" >/dev/stderr; \
+	    [$(GOVERSION) => $${VERSION}])" > /dev/stderr; \
 	fi; \
 
 #@ check whether a new latest go version exists.
@@ -1576,7 +1580,7 @@ update/go.mod?:: install-gomajor
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 update/go-make::
 	@$(call update-config,$(ARGS),download) || \
-	  ( echo "error: downloading $${GOMAKE}" >/dev/stderr && exit 1 )
+	  ( echo "error: downloading $${GOMAKE}" > /dev/stderr && exit 1 )
 
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
