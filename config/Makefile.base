@@ -127,7 +127,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.63
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.64
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -335,7 +335,7 @@ ifdef CMDARGS
 endif
 
 # Setup optimized golang generate mocks execution.
-MOCKS := $(shell \
+MOCKS := $(shell if [ -n "$(SOURCES)" ]; then \
 	grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
 	awk '{ \
 	  source = "_"; target = "_"; package = "_"; \
@@ -352,7 +352,7 @@ MOCKS := $(shell \
 	  } \
 	  if (source == "_") { package = $$(NF-1) } \
 	  print target "|" source "|" package "|" origin \
-	}' | sort --unique)
+	}' | sort --unique; fi)
 MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
 	awk 'BEGIN {FS="|"; RS=" "} ($$1 != "_") { print $$1 }' | sort --unique)
 MOCKS_SOURCES := $(shell echo "$(MOCKS)" | \
