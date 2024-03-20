@@ -16,7 +16,6 @@ jobs:
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         LANG: en_US.UTF-8
-      # using --trace has a side effect on the the test output.
       run: make --file=config/Makefile.base --trace all
 
     - name: Send coverage report

@@ -10,19 +10,23 @@ TAB := $(NULL)	$(NULL)
 # Setup colored message templates for output.
 # Finding: \$\((call )?[cm]*(info|error|warning|failure|success)
 minfo = $(strip \033[1;96minfo:\033[0m $(1))
+mdebug = $(strip \033[1;94mdebug:\033[0m $(1))
 merror = $(strip \033[1;91merror:\033[0m $(1))
 mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
 mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
 msuccess = $(strip \033[1;92msuccess:\033[0m $(1))
 
 cerror = $(error $(shell echo -e "$(call merror,"$(1)")" > /dev/stderr))
+cdebug = $(shell if [[ "$${MAKEFLAGS}" =~ --(trace|debug=.*) ]]; then \
+  echo -e "$(call mdebug,$(1))"; fi > /dev/stderr)
 
 # Finding: \$\((call )?(topic|cmd|arg)
 topic = \033[1;97m$(1)\033[0m
 cmd = \033[1;96m$(1)\033[0m
 arg = \033[0;96m$(1)\033[0m
 
-
+# Log execution environment for debugging.
+$(call cdebug,$(shell uname --all))
 # Check whether bash version is higher or equal version 3.2 to be compatible.
 ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
   $(call cerror,bash version incompatible [$${BASH_VERSION}])
@@ -127,9 +131,10 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.64
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.65
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
+
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
