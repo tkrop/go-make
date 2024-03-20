@@ -3,6 +3,7 @@ LDFLAGS := -X main.Config=$(CURDIR)/config
 clean::
 	find -name "__debug_bin*" -exec rm -vrf {} \;;
 
+bump:: version-bump
 version-bump version-bump-reset::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \

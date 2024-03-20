@@ -130,7 +130,7 @@ RUN_DEPS := run-db
 AWS_SERVICES := s3,sqs
 
 # Setup custom delivery files scanned for updating go versions
-# (default: delivery*.yaml/.github/workflows/*.yaml).
+# (default: delivery*.yaml|.github/workflows/*.yaml).
 #DELIVERY := delivery.yaml
 
 # Setup custom local build targets (default: init test lint build).
