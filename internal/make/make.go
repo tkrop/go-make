@@ -149,7 +149,7 @@ func NewGoMake( //revive:disable-line:argument-limit // kiss.
 // executed.
 func (gm *GoMake) setupWorkDir() error {
 	buffer := &strings.Builder{}
-	if err := gm.exec(gm.Stdin, buffer, gm.Stderr,
+	if err := gm.exec(nil, buffer, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdGitTop()...); err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (gm *GoMake) setupConfig() error {
 	}
 
 	path := AbsPath(gm.Config)
-	if err := gm.exec(gm.Stdin, gm.Stderr, gm.Stderr,
+	if err := gm.exec(nil, gm.Stderr, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdTestDir(path)...); err != nil {
 		return gm.ensureConfig(gm.Config,
 			GoMakePath(gm.Info.Path, gm.Config))
@@ -185,9 +185,9 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 		return nil
 	}
 
-	if err := gm.exec(gm.Stdin, gm.Stderr, gm.Stderr,
+	if err := gm.exec(nil, gm.Stderr, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdTestDir(gm.ConfigDir)...); err != nil {
-		if err := gm.exec(gm.Stdin, gm.Stderr, gm.Stderr, gm.WorkDir,
+		if err := gm.exec(nil, gm.Stderr, gm.Stderr, gm.WorkDir,
 			gm.Env, CmdGoInstall(gm.Info.Path, gm.ConfigVersion)...); err != nil {
 			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
 		}
