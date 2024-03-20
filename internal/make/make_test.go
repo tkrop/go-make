@@ -512,7 +512,8 @@ var testMakeExecParams = map[string]MakeExecParams{
 		expectStderr: ReadFile(fixtures, "fixtures/targets/trace.err"),
 	},
 
-	// TODO: find out why test it not working as expected! Real world works:
+	// TODO: find out why test it not working as expected in the build!
+	// Real world works as expected:
 	// echo "Hello, World!" | go-make call cat /dev/stdin
 	"go-make call stdin": {
 		info:         infoBase,
