@@ -53,20 +53,25 @@ test-compat::
 	DIFF="$$(diff <(echo "$${ACTUAL}") <(echo "$${COMPAT}"))" && \
 	echo "info: test-compat finished successful!!" || echo "$${DIFF}";
 
+
 CI_IMAGE_VERSION ?= latest
 CI_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CI_IMAGE_VERSION}
 #@ test build in continuous integration container.
 test-cdp:
-	@if tty -s; then TTY="--tty"; fi; ( \
-	  echo "machine github.bus.zalan.do"; \
-	  echo "login $${USER}"; \
-      echo "password $${GITOKEN}" \
-	) > $(DIR_RUN)/.netrc; \
-	docker run --interactive $${TTY} --rm --privileged \
-	  --workdir="/workspace" --volume=$${PWD}:/workspace \
+	@if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
+	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
+	( cat $${HOME}/.gitconfig; \
+	  echo -e '[safe]\n\tdirectory = /workspace' \
+	) >> $${DIR}/.gitconfig; \
+	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
+	sudo chown --recursive root:root $${DIR}; \
+	trap "sudo rm -rf $${DIR}" EXIT INT TERM; \
+	$(IMAGE_CMD) run $${TTY} --interactive --rm \
+	  --privileged --network host --workdir="/workspace" \
+	  --env SSH_AUTH_SOCK=/ssh-agent \
+	  --mount type=bind,source=$${SSH_AUTH_SOCK},target=/ssh-agent \
 	  --volume=/var/run/docker.sock:/var/run/docker.sock \
-	  --volume=$${HOME}/.gitconfig:/root/.gitconfig \
-      --volume=$(DIR_RUN).netrc:/root/.netrc \
-	  ${CI_IMAGE} /bin/bash
-
-#	  --volume=$${HOME}/.ssh:/root/.ssh \
+	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
+	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
+	  --volume=$${PWD}:/workspace \
+	  ${CI_IMAGE} /bin/bash $(ARGS);

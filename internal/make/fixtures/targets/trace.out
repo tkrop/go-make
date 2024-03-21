@@ -124,7 +124,6 @@ show-make
 show-raw
 show-targets
 show-vars
-targets
 test
 test-all
 test-bench
