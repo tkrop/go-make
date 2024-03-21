@@ -7,23 +7,25 @@ COMMA := ,
 SPACE := $(NULL) $(NULL)
 TAB := $(NULL)	$(NULL)
 
-# Setup colored message templates for output.
-# Finding: \$\((call )?[cm]*(info|error|warning|failure|success)
-minfo = $(strip \033[1;96minfo:\033[0m $(1))
-mdebug = $(strip \033[1;94mdebug:\033[0m $(1))
-merror = $(strip \033[1;91merror:\033[0m $(1))
-mwarning = $(strip \033[1;93mwarning:\033[0m $(1))
-mfailure = $(strip \033[1;91mfailure:\033[0m $(1))
-msuccess = $(strip \033[1;92msuccess:\033[0m $(1))
+# Setup colored message templates.
+COLOR-info := 1;96
+COLOR-debug := 1;94
+COLOR-error := 1;91
+COLOR-warning := 1;93
+COLOR-failure := 1;91
+COLOR-success := 1;92
+COLOR-topic := 1;97
+COLOR-cmd := 1;95
+COLOR-target := 1;96
 
-cerror = $(error $(shell echo -e "$(call merror,"$(1)")" > /dev/stderr))
+# Finding: \$\(call *[ce]*msg
+msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
+cmsg = $(call msg,$(1),$(1):,$(2))
+emsg = echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr
+
+cerror = $(error $(shell $(call emsg,error,"$(1)")))
 cdebug = $(shell if [[ "$${MAKEFLAGS}" =~ --(trace|debug=.*) ]]; then \
-  echo -e "$(call mdebug,$(1))"; fi > /dev/stderr)
-
-# Finding: \$\((call )?(topic|cmd|arg)
-topic = \033[1;97m$(1)\033[0m
-cmd = \033[1;96m$(1)\033[0m
-arg = \033[0;96m$(1)\033[0m
+  $(call emsg,debug,$(1)); fi)
 
 # Log execution environment for debugging.
 $(call cdebug,$(shell uname --all))
@@ -33,8 +35,7 @@ ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
 endif
 # Check whether bash is running in minmal compatibility mode for testing.
 ifdef BASH_COMPAT
-  $(shell echo -e "$(call minfo,bash compatibility mode set \
-    [$(BASH_COMPAT)])" > /dev/stderr)
+  $(shell $(call emsg,info,bash compatibility mode set [$(BASH_COMPAT)]))
 endif
 
 # Setup default makeflags create consistent behavior.
@@ -68,9 +69,8 @@ go-check-version = \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
-	    echo -e "$(call mwarning,$(1) build [$${CHECK}]: \
-	      run 'make update-$(1)' or install matching compiler version)" \
-	      > /dev/stderr; \
+	    $(call emsg,warning,$(1) build [$${CHECK}]: \
+	      run 'make update-$(1)' or install matching compiler version); \
 	  fi; \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
@@ -78,9 +78,8 @@ go-check-version = \
 	      grep -E "^\s*(mod|dep)\s*$${MODULE%%@*}" | cut -f 4)"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
-	      echo -e "$(call mwarning,$(1) version [$${CHECK}]: \
-	        run 'make update-$(1)' to sync with project version)" \
-	        > /dev/stderr; \
+	      $(call emsg,warning,$(1) version [$${CHECK}]: \
+	        run 'make update-$(1)' to sync with project version); \
 	    fi; \
 	  fi; \
 	fi
@@ -89,9 +88,26 @@ VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
 go-download-version = \
 	$(GO) mod download --json $(1) 2>/dev/null | \
 	  sed --regexp-extended --null-data $(VERSION_REGEX)
+# Function to ensure compatibility of gawk and mawk.
+ifneq ($(shell echo "false" | awk '{ print gensub("false","true","g") }'),true)
+  awk-gensub := function gensub(r, s, h, t) { \
+	  if (t == "") { t = $$0 } \
+	  if (h ~ "^[gG]") { gsub(r, s, t) } \
+	  else if (int(h) != 0) { \
+	    for (i = 1; i <= int(h); i++) { \
+	      if (match(t, r)) { \
+			 t = substr(t, 1, RSTART-1) s substr(t, RSTART+RLENGTH) \
+		  } \
+	    } \
+	  } \
+	  return t \
+	}
+else
+  awk-gensub :=
+endif
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
-      -v not="$(4)" -v version="$(5)" ' \
+      -v not="$(4)" -v version="$(5)" ' $(awk-gensub) \
 	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } \
 	function package(vindex) { \
 	  if (vindex) { \
@@ -131,7 +147,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.67
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.68
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -334,7 +350,7 @@ CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 ifdef CMDARGS
   ARGS := $(strip $(CMDARGS) $(ARGS))
   $(shell if [ -n "$(ARGS)" ]; then \
-    echo -e "$(call minfo,captured arguments [$(ARGS)])" > /dev/stderr; \
+    $(call emsg,info,captured arguments [$(ARGS)]); \
   fi)
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
@@ -414,6 +430,8 @@ all:: $(TARGETS_ALL)
 all-clean:: clean clean-run all
 #@ executes the pre-commit check targets.
 commit:: $(TARGETS_COMMIT)
+#@ show short cut for show-help.
+help:: show-help
 ##@ executes the given arguments as commands (for testing).
 call::;	@$(ARGS)
 
@@ -425,19 +443,20 @@ $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 ## Make-Support: targets to support user understanding.
 show-help = awk ' \
 	BEGIN { \
-	  printf("\n$(call topic,Usage:) $(call cmd,$(MAKE)) $(call arg,<target>)\n") \
+	  printf("\n$(call msg,topic,Usage:,) $(call msg,cmd,(go-)make, \
+		) $(call msg,target,<target>,)\n") \
 	} \
 	/^\#\# .*/ { \
 	  if (i = index($$0, ":")) { \
-	    printf("\n$(call topic,%s)%s\n", \
+	    printf("\n$(call msg,topic,%s,)%s\n", \
 	      substr($$0, 4, i - 4), substr($$0, i)) \
 	  } else { \
-	    printf("\n$(call topic,%s)\n", substr($$0, 4)) \
+	    printf("\n$(call msg,topic,%s,)\n", substr($$0, 4)) \
 	  } next \
 	} \
 	/^\#@ / { \
 	  if (i = index($$0, ":")) { \
-	    printf("  $(call cmd,%-25s) %s\n", \
+	    printf("  $(call msg,target,%-25s,) %s\n", \
 	      substr($$0, 4, i - 4), substr($$0, i + 2)) \
 	  } else { line = substr($$0, 4) } next \
 	} \
@@ -448,7 +467,7 @@ show-help = awk ' \
 	      target = target " " substr(line, 1, i - 1); \
 	      line = substr(line, i + 3) \
 	    } \
-	    printf("  $(call cmd,%-25s) %s\n", target, line); \
+	    printf("  $(call msg,target,%-25s,) %s\n", target, line); \
 	    line = "" \
 	  } \
 	}'
@@ -470,12 +489,7 @@ show-targets = awk -v RS= -F: ' \
 	}' | LC_ALL=C sort --unique | \
 	egrep --invert-match --regexp='^[^[:alnum:]]'
 
-#@ shows this help (deprecated, TODO: remove).
-help:: show-help
-#@ shows targets (deprecated, TODO: remove).
-targets:: show-targets
-
-#@ shows this short extracted help about main targets (families).
+#@ shows this short extracted help about main target families.
 show-help::
 	@cat $(MAKEFILE_LIST) | $(show-help) || true;
 #@ shows all supported (customizable) variable (with defaults).
@@ -523,10 +537,10 @@ git-clean = \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(ARGS)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
-	  else echo -e "$(call minfo,keeping branch [$${BRANCH}])" > /dev/stderr; \
+	  else $(call emsg,info,keeping branch [$${BRANCH}]); \
 	  fi; \
 	done; $(GITPRUNE)
-git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
+git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
 	BEGIN { \
 	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
 	  re_type_missing = "^([a-z]+)" re_type_suffix; \
@@ -544,22 +558,28 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	  msg = gensub("((:?\\n)\#[^\\n]*|\\n)*$$", "", "g", msg); \
 	  title = (i = index(msg,"\n")) ? substr(msg, 0, i - 1) : msg; \
 	  if (title !~ re_type_missing) { \
-	    printf("$(call merror,commit type missing [title=%s])\n", title); errors++ \
+	    printf("$(call cmsg,error,commit type missing \
+		  [title=%s])\n", title); errors++ \
 	  } else if (title !~ re_type_invalid) { \
-	    printf("$(call merror,commit type invalid [title=%s])\n", title); errors++ \
+	    printf("$(call cmsg,error,commit type invalid \
+		  [title=%s])\n", title); errors++ \
 	  } \
 	  if (title !~ re_issue_missing) { \
-	    printf("$(call merror,issue missing [titel=%s])\n", title); errors++ \
+	    printf("$(call cmsg,error,issue missing \
+		  [titel=%s])\n", title); errors++ \
 	  } else if (title !~ re_issue_invalid) { \
-	    printf("$(call merror,issue invalid [titel=%s])\n", title); errors++ \
+	    printf("$(call cmsg,error,issue invalid \
+		  [titel=%s])\n", title); errors++ \
 	  } \
 	  sign = (i = index(msg, signed_by)) ? substr(msg, i) : ""; \
 	  if (sign !~ re_signed_missing) { \
-	    printf("$(call merror,signed-off-by missing [msg=%s])\n", msg); errors++ \
+	    printf("$(call cmsg,error,signed-off-by missing \
+		  [msg=%s])\n", msg); errors++ \
 	  } else if (sign !~ "^" re_signed_missing) { \
-		printf("$(call merror,signed-off-by by to many [sign=%s])\n", sign); errors++ \
+		printf("$(call cmsg,error,signed-off-by by to many \
+		  [sign=%s])\n", sign); errors++ \
 	  } else if (mode == "message" && sign !~ re_signed_author) { \
-		printf("$(call merror,signed-off-by not the author \
+		printf("$(call cmsg,error,signed-off-by not the author \
 		  [sign=%s; author=%s])\n", sign, author); errors++ \
 	  } msg = "" \
 	} \
@@ -576,10 +596,11 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' \
 	(mode != "message") { if (msg) { verify(); } } \
 	END { \
 	  if (mode == "message" || msg) { verify(); } if (errors) { \
-	    printf("$(call mfailure,git-verify $(ARGS) [errors=%d])\n", \
-		  errors); exit 1 \
+	    printf("$(call cmsg,failure,git-verify $(ARGS) \
+		  [errors=%d])\n", errors); exit 1 \
 	  } \
-	  printf("$(call msuccess,git-verify $(ARGS) [errors=%d])\n", errors) \
+	  printf("$(call cmsg,success,git-verify $(ARGS) \
+	    [errors=%d])\n", errors) \
 	}'
 
 GITFORMAT ?= "%Cred%h %t %Cgreen%ad%Creset | %s %C(bold blue)[%an]%Creset%C(yellow)%d%Creset"
@@ -711,11 +732,13 @@ $(TARGETS_INIT_CODACY):: init-%:
 #@ <version> # initialize project by copying config files from template.
 init-make:: $(TARGETS_INIT_MAKE)
 $(TARGETS_INIT_ALL):: init/%:
-	@DIR="$$(pwd)"; FILE="$*"; #FILE="$${FILE##$${DIR}/}"; \
-	if [ ! -f "$${DIR}/$${FILE}" ]; then \
+	@DIR="$${PWD}"; FILE="$*"; #FILE="$${FILE##$${DIR}/}"; \
+	if [ ! -f "$${DIR}/$${FILE}" -o "$(ARGS)" == "current" ]; then \
 	  echo "install: $${FILE} (installed)"; \
 	  cp "$(GOMAKE_CONFIG)/$${FILE}" "$${DIR}/$${FILE}"; \
-	else echo "install: $${FILE} (blocked)"; fi; \
+	else \
+	  $(call emsg,warning,install: $${FILE} (blocked)); \
+	fi; \
 
 #@ <version> # initialize project by copying Makefile.base from template.
 init-make!::
@@ -777,9 +800,9 @@ test-go = \
 	    else \
 	      GOCHANGE="downgrade"; CHANGE="upgrade"; \
 	    fi; \
-	    echo -e "$(call merror, go version [$(1): $${VERSION} => $(GOVERSION)]: \
+	    $(call emsg,error,go version [$(1): $${VERSION} => $(GOVERSION)]: \
 	      run 'make update-go $${VERSION}' to adjust the project or \
-	      $${GOCHANGE} your local go compiler version to $${VERSION}!)"; \
+	      $${GOCHANGE} your local go compiler version to $${VERSION}!); \
 	  fi; \
 	done
 
@@ -823,7 +846,7 @@ test-args = \
 	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
 	  echo "$${TEST_CASES}"; \
 	else \
-	  echo -e "$(call mwarning,invalid test parameters [$${ARGS[@]}])"; \
+	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
 	fi; \
   else echo "./..."; fi
 
@@ -845,7 +868,7 @@ $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
 
 #@ execute a kind of self-test running the main targets.
 test-self:: update-all? update-all clean-all all-clean install-all
-	@echo -e "$(call msuccess,test-self finished successfully!)";
+	@$(call emsg,success,test-self finished successfully!);
 
 
 # disabled (deprecated): deadcode golint interfacer ifshort maligned musttag
@@ -959,7 +982,7 @@ lint-config::
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
 	echo; sed -ne $${LINT_STOP}',$$p' $(FILE_GOLANGCI)) | \
-	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} ' \
+	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} ' $(awk-gensub) \
 	  ((start == 2) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
 	    if (enabled && disabled) { \
@@ -1026,7 +1049,7 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-sources
 	  codacy/codacy-analysis-cli analyze "$${LARGS[@]}" --tool $*"""; \
 	$(IMAGE_CMD) run --rm=true --env CODACY_CODE="/code" \
 	  --volume /var/run/docker.sock:/var/run/docker.sock \
-	  --volume /tmp:/tmp --volume "$$(pwd):/code" \
+	  --volume /tmp:/tmp --volume "$${PWD}:/code" \
 	  codacy/codacy-analysis-cli analyze "$${LARGS[@]}" --tool $* || \
 	    $(CODACY_CONTINUE); \
 
@@ -1072,10 +1095,10 @@ lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 	@echo "markdownlint --config .markdownlint.yaml ."; \
 	if command -v markdownlint &> /dev/null; then \
 	  markdownlint --config .markdownlint.yaml .; \
-	else $(IMAGE_CMD) run --tty --volume $$(pwd):/src:ro \
+	else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
 	  container-registry.zalando.net/library/node-18-alpine:latest \
 	  /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
-	    cd /src && markdownlint --config .markdownlint.yaml ."; \
+	    markdownlint --config .markdownlint.yaml /src"; \
 	fi; \
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
@@ -1117,7 +1140,7 @@ lint-gocyclo lint-gocognit:: lint-%: install-%
 lint-apis:: install-zally
 	@LINTER="https://infrastructure-api-linter.zalandoapis.com"; \
 	if ! curl --silent $${LINTER}; then \
-	  echo -e "$(call mwarning,API linter not available)"; exit 0; \
+	  $(call emsg,warning,API linter not available); exit 0; \
 	fi; \
 	ARGS=("--linter-service" "$${LINTER}"); \
 	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
@@ -1316,7 +1339,7 @@ version-bump::
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
 	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
-	echo -e "$(call msuccess, bumped version [$${VERSION}])"; \
+	$(call emsg,success, bumped version [$${VERSION}]); \
 
 
 #@ <version> # release a fixed version of the software as library.
@@ -1331,8 +1354,8 @@ version-release::
 	    $(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
 	    $(GIT) tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
 	    $(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
-	  ) && echo -e "$(call msuccess, release version [v$${VERSION}])" || \
-	  echo -e "$(call mfailure, release version [v$${VERSION}])"; \
+	  ) && $(call emsg,success, release version [v$${VERSION}]) || \
+	  $(call emsg,failure, release version [v$${VERSION}]); \
 	fi; \
 
 #@ publish the current version by enforcing a registry lookup (experimental).
@@ -1348,17 +1371,17 @@ $(TARGETS_PUBLISH): version-publish-%:
 	TARGET="$(GITREPO)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
-	    echo -e "$(call minfo,publish via curl [$${TARGET}])"; \
+	    $(call emsg,info,publish via curl [$${TARGET}]); \
 	    curl  --silent --show-error --fail --location \
 	      https://sum.golang.org/lookup/$${TARGET} && \
-	    echo -e "$(call success,publish via curl [$${TARGET}])" || \
-	    echo -e "$(call failure,publish via curl [$${TARGET}])"; \
+	    $(call emsg,success,publish via curl [$${TARGET}]) || \
+	    $(call emsg,failure,publish via curl [$${TARGET}]); \
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
-	    echo -e "$(call minfo,publish go install [$${TARGET}])"; \
+	    $(call emsg,info,publish go install [$${TARGET}]); \
 	    $(GO) install $(INSTALL_FLAGS) $${TARGET}; \
-	    echo -e "$(call success,publish go install [$${TARGET}])" || \
-	    echo -e "$(call failure,publish go install [$${TARGET}])"; \
+	    $(call emsg,success,publish go install [$${TARGET}]) || \
+	    $(call emsg,failure,publish go install [$${TARGET}]); \
 	  fi; \
 	fi;
 
@@ -1370,9 +1393,9 @@ RUN_DEPS ?=
 #@ start a postgres database instance for testing.
 run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
-	echo -e "$(call minfo,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT))"; \
+	$(call emsg,info,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)); \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
-	  echo -e "$(call minfo,port allocated - use existing db container!)"; exit 0; \
+	  $(call emsg,info,port allocated - use existing db container!); exit 0; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty \
@@ -1396,10 +1419,10 @@ run-db:: $(DIR_RUN)
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
-	echo -e "$(call minfo,ensure $(AWS_IMAGE) is running on $(HOST):4566/4571)" && \
+	$(call emsg,info,ensure $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
 	if [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
-	  echo -e "$(call minfo,ports allocated - use existing aws container!))"; \
+	  $(call emsg,info,ports allocated - use existing aws container!); \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
@@ -1505,7 +1528,7 @@ update-go::
 	@if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
-	echo -e "$(call minfo,update golang version [$${VERSION}])"; \
+	$(call emsg,info,update golang version [$${VERSION}]); \
 	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
 	  $(GO) mod tidy -go=$${VERSION}; $(GO) get go@$${VERSION}; \
 	  sed -E -i -e "/^toolchain.*$$/d;" go.mod; \
@@ -1520,16 +1543,16 @@ update-go::
 	  fi; \
 	done; \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
-	  echo -e "$(call mwarning, current compiler differs \
-	    [$(GOVERSION) => $${VERSION}])" > /dev/stderr; \
+	  $(call emsg,warning, current compiler differs \
+	    [$(GOVERSION) => $${VERSION}]); \
 	fi; \
 
 #@ check whether a new latest go version exists.
 update-go?::
 	@VERSION="$(update-go-latest)"; \
 	if ! [ "$${VERSION}" == "$(GOVERSION)" ]; then \
-	  echo -e "$(call merror,new golang version available [$${VERSION}]: \
-	    run 'make update-go' to update the project!)"; exit 1; \
+	  $(call emsg,error,new golang version available [$${VERSION}]: \
+	    run 'make update-go' to update the project!); exit 1; \
 	fi; \
 
 # Functions to create the list of updates (not sure whether go list is contributing).
@@ -1572,7 +1595,7 @@ update/go.mod:: install-gomajor
 	    fi; \
 	  done; \
 	else $(GO) get -u ./...; fi; \
-	ROOT=$$(pwd); \
+	ROOT=$${PWD}; \
 	for DIR in $(MODULES); do \
 	  echo "update: $${DIR}"; cd $${ROOT}/$${DIR##./} && \
 	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1; \
@@ -1590,15 +1613,16 @@ update/go-make::
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
-	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
+	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
 	if [ -z "$(ARGS)" ]; then  CONFIG="$(GOMAKE_CONFIG)"; \
 	else $(call update-config,$(ARGS),run); fi; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (skipped)"; \
-	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ]; then \
-	  echo "update: $${FILE} (blocked)"; \
+	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
+	     "$(ARGS)" != "current" ]; then \
+	  $(call emsg,warning,update: $${FILE} (blocked)); \
 	else \
 	  echo "update: $${FILE} (updated)"; \
 	  cp "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}"; \
@@ -1607,14 +1631,15 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 #@ <version> # check whether updates for build environment exist.
 update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?:
-	@DIR="$$(pwd)"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
+	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
 	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  echo "update: $${FILE} (untracked)"; \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  echo "update: $${FILE} (unchanged)"; \
-	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ]; then \
-	  echo "update: $${FILE} (blocked)"; \
+	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
+	     "$(ARGS)" != "current" ]; then \
+	  $(call emsg,warning,update: $${FILE} (blocked)); \
 	else echo "update: $${FILE} (updated)"; fi; \
 
 #@ update all tools required by the project.
