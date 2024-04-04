@@ -148,7 +148,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.70
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.71
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -1102,7 +1102,7 @@ lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 	@echo "markdownlint --config .markdownlint.yaml ."; \
 	if command -v markdownlint &> /dev/null; then \
 	  markdownlint --config .markdownlint.yaml .; \
-	else $(IMAGE_CMD) run --interactive --tty --volume=$${PWD}:/src:ro \
+	else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
 	  container-registry.zalando.net/library/node-18-alpine:latest \
 	  /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
 	    cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
