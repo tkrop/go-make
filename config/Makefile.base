@@ -89,7 +89,8 @@ go-download-version = \
 	$(GO) mod download --json $(1) 2>/dev/null | \
 	  sed --regexp-extended --null-data $(VERSION_REGEX)
 # Function to ensure compatibility of gawk and mawk.
-ifneq ($(shell echo "false" | awk '{ print gensub("false","true","g") }'),true)
+ifneq ($(shell echo "false" | \
+	awk '{ print gensub("false","true","g") }' 2>/dev/null),true)
   awk-gensub := function gensub(r, s, h, t) { \
 	  if (t == "") { t = $$0 } \
 	  if (h ~ "^[gG]") { gsub(r, s, t) } \
@@ -147,7 +148,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.68
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.69
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
@@ -212,8 +213,14 @@ IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
-# Function to search default config files.
-search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1)))
+
+# Ensure that we can find default config files.
+ifeq ($(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/),)
+  $(shell $(GO) install $(GOMAKE_DEP) >/dev/null 2>&1)
+endif
+# Function to search for default config files.
+search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
+	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
 # Setup default config files to be used.
 FILE_MAKE ?= $(call search-default,Makefile)
@@ -1095,10 +1102,10 @@ lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 	@echo "markdownlint --config .markdownlint.yaml ."; \
 	if command -v markdownlint &> /dev/null; then \
 	  markdownlint --config .markdownlint.yaml .; \
-	else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
+	else $(IMAGE_CMD) run --interactive --tty --volume=$${PWD}:/src:ro \
 	  container-registry.zalando.net/library/node-18-alpine:latest \
 	  /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
-	    markdownlint --config .markdownlint.yaml /src"; \
+	    cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
 	fi; \
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
