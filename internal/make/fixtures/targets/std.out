@@ -15,6 +15,7 @@ clean-run
 clean-run-aws
 clean-run-db
 commit
+gen-kube-apis
 git-clean
 git-commit
 git-commit-build
@@ -72,7 +73,10 @@ init/Makefile.vars
 init/revive.toml
 install
 install-all
+install-client-gen
+install-controller-gen
 install-deadcode
+install-deepcopy-gen
 install-gitleaks
 install-go-make
 install-gocognit
@@ -82,6 +86,9 @@ install-gomajor
 install-gosec
 install-govulncheck
 install-grype
+install-informer-gen
+install-kind
+install-lister-gen
 install-markdownlint
 install-mock
 install-mockgen
@@ -131,9 +138,12 @@ test-unit
 test-upload
 uninstall
 uninstall-all
+uninstall-client-gen
 uninstall-codacy-gosec
 uninstall-codacy-staticcheck
+uninstall-controller-gen
 uninstall-deadcode
+uninstall-deepcopy-gen
 uninstall-gitleaks
 uninstall-go-make
 uninstall-gocognit
@@ -143,6 +153,9 @@ uninstall-gomajor
 uninstall-gosec
 uninstall-govulncheck
 uninstall-grype
+uninstall-informer-gen
+uninstall-kind
+uninstall-lister-gen
 uninstall-markdownlint
 uninstall-mock
 uninstall-mockgen
@@ -153,7 +166,10 @@ uninstall-zally
 update
 update-all
 update-all?
+update-client-gen
+update-controller-gen
 update-deadcode
+update-deepcopy-gen
 update-deps
 update-deps?
 update-gitleaks
@@ -166,6 +182,9 @@ update-golangci-lint
 update-gomajor
 update-gosec
 update-govulncheck
+update-informer-gen
+update-kind
+update-lister-gen
 update-make
 update-make?
 update-mock
