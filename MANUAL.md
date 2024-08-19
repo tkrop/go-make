@@ -622,16 +622,16 @@ described by the [GitHub Development Convention][github-commit].
 | ✨ `feat`     | Features      | Adds a new feature. |
 | ⌛ `deprecate`| Deprecation   | Deprecates an existing feature. |
 | ❌ `remove`   | Removal       | Removes an existing feature. |
-| 📚 `docs`     | Documentation | Updates documentation only. |
 | 🗑 `revert`   | Reverts       | Reverts a previous commit. |
 | 🪲 `fix`      | Bug Fix       | Fixes a bug in a feature. |
+| ♻️ `chore`     | Chores        | Regular update for maintenance. |
+| 📚 `docs`     | Documentation | Updates documentation only. |
 | 💎 `style`    | Style Change  | Changes the code style only.  |
-| 🛠 `refactor` | Code Refactoring | Improves code quality by refactoring. |
+| 🛠 `refactor` | Refactoring   | Improves code quality by refactoring. |
 | 🚀 `perf`     | Performance   | Improves the performance of a feature. |
 | 🚗 `test`     | Tests         | Adds a missing or corrects an existing test. |
 | 📦 `build`    | Builds        | Changes the product delivery. |
 | 🏗️ `ci`       | Integrations  | Improves the build process. |
-| ♻️ `chore`     | Chores        | Regular update for maintenance. |
 
 [github-commit]: https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md
 

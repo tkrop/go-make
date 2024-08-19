@@ -75,3 +75,15 @@ test-cdp:
 	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
 	  --volume=$${PWD}:/workspace \
 	  ${CI_IMAGE} /bin/bash $(ARGS);
+
+
+.PHONY: debug
+debug::
+	@echo 'IMAGE $(IMAGE)'; \
+	echo 'GEN_DIRS $(GEN_DIRS)'; \
+	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
+	echo 'SOURCES $(SOURCES)'; \
+	echo 'MOCKS $(MOCKS)'; \
+	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
+	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
+	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)'; \

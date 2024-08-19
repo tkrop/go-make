@@ -518,7 +518,7 @@ var testMakeExecParams = map[string]MakeExecParams{
 		args:         []string{"go-make", "call", "cat"},
 		stdin:        "Hello, World!",
 		expectStdout: "Hello, World!",
-		expectStderr: "\x1b[1;96minfo:\x1b[0m captured arguments [cat]\n",
+		expectStderr: ReadFile(fixtures, "fixtures/targets/cat.err"),
 	},
 
 	"go-make git-verify log": {

@@ -14,7 +14,7 @@ COLOR-error := 1;91
 COLOR-warning := 1;93
 COLOR-failure := 1;91
 COLOR-success := 1;92
-COLOR-topic := 1;97
+COLOR-topic := 1;94
 COLOR-cmd := 1;95
 COLOR-target := 1;96
 
@@ -38,6 +38,15 @@ ifdef BASH_COMPAT
   $(shell $(call emsg,info,bash compatibility mode set [$(BASH_COMPAT)]))
 endif
 
+# Helper function to find and remove source files.
+find-all = find $(1) ! -path "./run/*" ! -path "./build/*" $(2) 2>/dev/null | sed -e "s|^./||g"
+find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
+clean-file = $(call find-all,$(1),-type f $(2) -exec rm -vf {} \;)
+clean-dir = $(call find-all,$(1),-type d $(2) -exec rm -rvf {} \;)
+# Helper function for conversion of variables name.
+upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
+
+
 # Setup default makeflags create consistent behavior.
 MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
@@ -50,8 +59,10 @@ DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
 DIR_BUILD := $(CURDIR)/build
 
-ifneq ("$(wildcard Makefile.vars)","")
+ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
   include Makefile.vars
+else
+  $(shell $(call emsg,warning,please customize variables in $(CURDIR)/Makefile.vars))
 endif
 
 
@@ -148,19 +159,30 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.72
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.73
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
+# Ensure that we can find default config files.
+ifeq ($(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/),)
+  $(shell $(GO) install $(GOMAKE_DEP) >/dev/null 2>&1)
+endif
+# Function to search for default config files.
+search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
+	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
+
+TOOL_VERSION_K8S ?= v0.30.3
+TOOL_VERSION_GOLANGCI ?= v1.56.2
+TOOL_VERSION_REVIVE ?= v1.3.3
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
-	github.com/golangci/golangci-lint/cmd/golangci-lint@v1.56.2 \
+	github.com/golangci/golangci-lint/cmd/golangci-lint@$(TOOL_VERSION_GOLANGCI) \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
 	github.com/uudashr/gocognit/cmd/gocognit \
 	github.com/fzipp/gocyclo/cmd/gocyclo \
-	github.com/mgechev/revive@v1.3.3 \
+	github.com/mgechev/revive@$(TOOL_VERSION_REVIVE) \
 	github.com/securego/gosec/v2/cmd/gosec \
 	github.com/tsenart/deadcode \
 	honnef.co/go/tools/cmd/staticcheck \
@@ -168,6 +190,12 @@ TOOLS_GO += \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
+	k8s.io/code-generator/cmd/deepcopy-gen@$(TOOL_VERSION_K8S) \
+	k8s.io/code-generator/cmd/client-gen@$(TOOL_VERSION_K8S) \
+	k8s.io/code-generator/cmd/lister-gen@$(TOOL_VERSION_K8S) \
+	k8s.io/code-generator/cmd/informer-gen@$(TOOL_VERSION_K8S) \
+	sigs.k8s.io/controller-tools/cmd/controller-gen \
+	sigs.k8s.io/kind \
 	$(GOMAKE_DEP)
 TOOLS_SH += \
 	github.com/anchore/syft \
@@ -175,6 +203,7 @@ TOOLS_SH += \
 TOOLS_NPM += \
 	markdownlint-cli
 NVM_BIN ?=
+
 
 # Check for the actually used go-make version.
 $(shell $(call go-check-version,go-make,))
@@ -188,39 +217,12 @@ ifeq ($(wildcard VERSION),VERSION)
 else
   BUILD_VERSION ?= $(VERSION)
 endif
-IMAGE_VERSION ?= $(VERSION)
-
-# Setup container image command (supports: docker or podman).
-IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
-# Setup default container image name and host.
-ifdef IMAGE_NAME
-  ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
-    $(call cerror,invalid image name [$(IMAGE_NAME)] \
-      - image name format is repo/team/name!)
-  endif
-  IMAGE_HOST ?= $(word 1,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_TEAM ?= $(word 2,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_ARTIFACT ?= $(word 3,$(subst /, ,$(IMAGE_NAME)))
-else
-  IMAGE_HOST ?= pierone.stups.zalan.do
-  IMAGE_TEAM ?= $(TEAM)
-  IMAGE_ARTIFACT ?= $(GITREPONAME)
-endif
-IMAGE ?= $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
 
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
-
-# Ensure that we can find default config files.
-ifeq ($(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/),)
-  $(shell $(GO) install $(GOMAKE_DEP) >/dev/null 2>&1)
-endif
-# Function to search for default config files.
-search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
-	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
 # Setup default config files to be used.
 FILE_MAKE ?= $(call search-default,Makefile)
@@ -232,6 +234,8 @@ FILE_REVIVE ?= $(call search-default,revive.toml)
 FILE_CODACY ?= $(call search-default,.codacy.yaml)
 
 FILE_CONTAINER ?= Dockerfile
+FILE_DEEPCOPY ?= zz_generated.deepcopy.go
+FILE_GO_HEADER ?=
 
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
@@ -242,14 +246,39 @@ GOMOD_REGEX ?= ^(go )[0-9.]*$$
 GIT ?= git
 GITHOOKS ?= pre-commit # commit-msg
 GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get user.email)>")
-GITREPO ?= $(shell $(GIT) remote get-url origin 2>/dev/null | \
+GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
+GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/:/\//")
-GITHOSTNAME ?= $(word 1,$(subst /, ,$(GITREPO)))
-GITORGNAME ?= $(word 2,$(subst /, ,$(GITREPO)))
-GITREPONAME ?= $(word 3,$(subst /, ,$(GITREPO)))
+GITHUB_HOST := $(word 1,$(subst /, ,$(GITURL)))
+GITHUB_ORG := $(word 2,$(subst /, ,$(GITURL)))
+GITHUB_REPO := $(word 3,$(subst /, ,$(GITURL)))
+$(call cdebug,using repository [$(GITURL)])
 
-TEAM ?= $(shell cat .zappr.yaml | grep "X-Zalando-Team" | \
-	sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/")
+TEAM ?= $(shell \
+	if [ -f ".zappr.yaml" ]; then \
+	  grep "X-Zalando-Team:" .zappr.yaml | \
+	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
+	else echo "${GITHUB_ORG}"; fi)
+
+# Setup container image command (supports: docker or podman).
+IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
+# Setup default container image name and host.
+IMAGE_VERSION ?= $(VERSION)
+ifdef IMAGE_NAME
+  ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
+    $(call cerror,invalid base image name [$(IMAGE_NAME)] \
+      - image name format is repo/team/name!)
+  endif
+  IMAGE_HOST := $(word 1,$(subst /, ,$(IMAGE_NAME)))
+  IMAGE_TEAM := $(word 2,$(subst /, ,$(IMAGE_NAME)))
+  IMAGE_ARTIFACT := $(word 3,$(subst /, ,$(IMAGE_NAME)))
+else
+  IMAGE_HOST ?= pierone.stups.zalan.do
+  IMAGE_TEAM ?= $(TEAM)
+  IMAGE_ARTIFACT ?= $(GITHUB_REPO)
+endif
+IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
+$(call cdebug,using base image [$(IMAGE)])
 
 # Setup default database connection.
 DB_HOST ?= 127.0.0.1
@@ -273,8 +302,8 @@ else
   CODACY_CONTINUE ?= true
 endif
 CODACY_PROVIDER ?= ghe
-CODACY_USER ?= $(GITORGNAME)
-CODACY_PROJECT ?= $(GITREPONAME)
+CODACY_USER ?= $(GITHUB_ORG)
+CODACY_PROJECT ?= $(GITHUB_REPO)
 CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
 CODACY_CLIENTS ?= aligncheck deadcode
 CODACY_BINARIES ?= gosec staticcheck
@@ -286,8 +315,11 @@ CODACY_STATICCHECK_VERSION ?= 3.0.12
 CODACY_PROJECT_TOKEN ?=
 CODACY_API_TOKEN ?=
 
-# Function for conversion of variables name.
-upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
+KUBE_APIS ?= $(shell \
+	FILES="$$($(call find-go,.,-path "*/apis/*/*/*.go"))"; \
+	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" $${FILES} | \
+	  sed "s#apis/[^/]*/[^/]*/[^/]*.go:.*#apis#" | sort --unique; \
+	fi)
 
 
 # Default target list for all and pipeline builds.
@@ -299,6 +331,8 @@ TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdo
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
+TARGETS_GENAPI := $(GOBIN)/deepcopy-gen $(GOBIN)/client-gen \
+	$(GOBIN)/lister-gen $(GOBIN)/informer-gen $(GOBIN)/controller-gen
 
 INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS) $(FILE_MARKDOWN) \
     $(FILE_CODACY) $(FILE_REVIVE))
@@ -333,14 +367,24 @@ run-token-link = \
 
 
 # Setup default environment variables.
-FIND := find . ! -path "./run/*" ! -path "./build/*"
-FILTER := sed "s|^./||" | grep -E "^[a-z0-9/_-]*\.go$$"
-SOURCES := $(shell $(FIND) -name "*.go" ! -name "mock_*_test.go" | $(FILTER))
+GEN_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
+$(call cdebug,using generated directories [$(GEN_DIRS)])
+GEN_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
+		-name "mock_*.go" -o -name "zz_generated.*.go")) \
+	$(shell if [ -n "$(GEN_DIRS)" ]; then $(call find-go,$(GEN_DIRS),); fi))
+SOURCES := $(filter-out $(GEN_SOURCES),$(shell $(call find-go,.,)))
 MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
-COMMANDS := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
-	sed -E "s/^.*\/([^/]*)\/main.go$$/\1/" | sort --unique)
-COMMANDS_PKG := $(shell $(FIND) -name "main.go" | xargs -r readlink -f | \
-	sed -E "s/^(.*\/([^/]*))\/main.go$$/\2=\1/; s|$(CURDIR)|.|")
+COMMANDS := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
+	awk -F '/' '{ for ( field = NF-1; field > 0; field--) { \
+	  if ($$field != "cmd") { print $$field; break; } \
+	} }' | sort --unique)
+COMMANDS_PKG := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
+	awk -F '/' '$(awk-gensub) { for ( field = NF-1; field > 0; field--) { \
+	  if ($$field != "cmd") { \
+		target = gensub("/main.go", "", "1", gensub("$(CURDIR)", ".", "1")); \
+	    print $$field "=" target; break; \
+	  } \
+	} }')
 COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
 COMMANDS_GO := $(sort $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,))
 COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
@@ -396,7 +440,7 @@ TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
-TARGETS_IMAGE := $(shell $(FIND) -type f -name "$(FILE_CONTAINER)*" | sed 's|^./||')
+TARGETS_IMAGE := $(shell $(call find-all,.,-type f -name "$(FILE_CONTAINER)*"))
 TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(TARGETS_IMAGE))
 TARGETS_IMAGE_PUSH := $(addprefix image-push/, $(TARGETS_IMAGE))
 TARGETS_BUILD := $(addprefix build-, $(COMMANDS))
@@ -427,7 +471,6 @@ TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
 TARGETS_UPDATE_ALL? := update-go? update-deps? update-make?
 TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 	$(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_MAKE?))
-
 
 ## Standard: default targets to test, lint, and build.
 
@@ -684,7 +727,7 @@ init-go:: go.sum
 go.sum: go.mod
 	$(GO) mod tidy && touch go.sum && $(GO) mod download;
 go.mod:
-	$(GO) mod init "$(GITREPO)";
+	$(GO) mod init "$(GITURL)";
 
 
 #@ initialize git pre-commit and commit-message hooks.
@@ -709,7 +752,7 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	fi;
 
 #@ initialize the generated sources.
-init-sources:: $(MOCKS_TARGETS)
+init-sources:: $(MOCKS_TARGETS) gen-kube-apis
 $(MOCKS_TARGETS):: go.sum $(MOCKS_SOURCES) install-mockgen install-mock
 	@MOCK=($(subst |,$(SPACE),$(firstword $(filter $@|%,$(MOCKS))))); \
 	TARGET="$${MOCK[0]}"; SOURCE="$${MOCK[1]}"; \
@@ -750,6 +793,48 @@ $(TARGETS_INIT_ALL):: init/%:
 #@ <version> # initialize project by copying Makefile.base from template.
 init-make!::
 	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile"; \
+
+
+## Generate: targets to generate code and documentation.
+
+#@ generate kubernetes api clients and manifests.
+gen-kube-apis:: $(TARGETS_GENAPI)
+	@HEADER="$(FILE_GO_HEADER)"; \
+	for BPKG in $(KUBE_APIS); do BPKG="$${BPKG%/apis}"; \
+	  if [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
+	      ! -name $(FILE_DEEPCOPY) -printf '%T@ %p\n' 2>/dev/null | \
+	      sort -rn | head -1 | grep "/apis/")" ]; then \
+	    $(call emsg,info,generate apis skipped [$${BPKG}]); continue; \
+	  else $(call emsg,info,generate apis [$${BPKG}]); fi; \
+	  \
+	  for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
+	    MANDIR="$${BPKG}/manifests"; \
+	    APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
+	    CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
+	    $(call emsg,info,generate manifests [$${APKG}]); \
+	    $(GOBIN)/controller-gen crd:crdVersions=v1 paths=./$${BPKG}/apis/... \
+	      "output:crd:dir=$${MANDIR}"; \
+	    $(call emsg,info,generate deepcopy [$${APKG}]); \
+	    $(GOBIN)/deepcopy-gen --go-header-file "$${HEADER}" \
+	      --output-file $(FILE_DEEPCOPY) --bounding-dirs "$${APIBPKG}" \
+		  "$${APIPKG}"; \
+	    $(call emsg,info,generate clients [$${APKG}:clientsets]); \
+	    $(GOBIN)/client-gen --go-header-file "$${HEADER}" \
+	      --clientset-name versioned --input-base "" --input "$${APIPKG}" \
+	      --output-pkg "$${CLIPKG}/clientset" --output-dir "$${CLIDIR}/clientset"; \
+	    $(call emsg,info,generate clients [$${APKG}:listeners]); \
+	    $(GOBIN)/lister-gen --go-header-file "$${HEADER}" \
+	      --output-pkg "$${CLIPKG}/listers" --output-dir "$${CLIDIR}/listers" \
+		  "$${APIPKG}"; \
+	    $(call emsg,info,generate clients [$${APKG}:informers]); \
+	    $(GOBIN)/informer-gen --go-header-file "$${HEADER}" \
+	      --versioned-clientset-package "$${CLIPKG}/clientset/versioned" \
+	      --output-pkg "$${CLIPKG}/informers" --output-dir "$${CLIDIR}/informers" \
+	      --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
+	  done; \
+	  $(call emsg,info,update packages [$${BPKG}]); \
+	  $(GO) get -u ./$${BPKG}/clients/...; \
+	done;
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -1100,12 +1185,14 @@ lint-revive:: init-sources install-revive
 #@ execute markdown linter (md-files).
 lint-markdown:: init-sources $(NVM_BIN)/markdownlint
 	@echo "markdownlint --config .markdownlint.yaml ."; \
-	if command -v markdownlint &> /dev/null; then \
-	  markdownlint --config .markdownlint.yaml .; \
-	else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
-	  container-registry.zalando.net/library/node-18-alpine:latest \
-	  /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
-	    cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
+	if  [ -n "$$(find -name "*.md")" ]; then \
+	  if command -v markdownlint &> /dev/null; then \
+	    markdownlint --config .markdownlint.yaml .; \
+	  else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
+	    container-registry.zalando.net/library/node-18-alpine:latest \
+	    /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
+	      cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
+	  fi; \
 	fi; \
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
@@ -1161,7 +1248,7 @@ lint-apis:: install-zally
 
 
 # Variables for setting up container specific build flags.
-BUILDFLAGS ?=
+BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
 BUILD_OS ?= $(shell $(GO) env GOOS)
 BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 IMAGE_OS ?= ${shell grep "^FROM [^ ]*$$" $(FILE_CONTAINER) 2>/dev/null | \
@@ -1186,7 +1273,7 @@ ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 	$(call ld-flag,Build=$(shell date --iso-8601=seconds)) \
 	$(call ld-flag,Commit=$(shell $(GIT) log -1 --date=iso8601-strict --format=%cd)) \
 	$(call ld-flag,Dirty=$(shell $(GIT) diff --quiet && echo false || echo true)) \
-	$(call ld-flag,Path=$(GITREPO)$(patsubst .%,%,$(1))) \
+	$(call ld-flag,Path=$(GITURL)$(patsubst .%,%,$(1))) \
 	$(call ld-flag,GitHash=$(shell $(GIT) rev-parse --short HEAD))
 
 
@@ -1236,14 +1323,15 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	fi; \
 	REVISION=$$($(GIT) rev-parse HEAD 2>/dev/null); \
 	BASE=$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2); \
+	$(call emsg,info,building image [$${IMAGE}] from [$${FILE}]); \
 	$(IMAGE_CMD) build --tag $${IMAGE} --file=$${FILE} . \
 	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
 	  --label=org.opencontainers.image.vendor=zalando/$(TEAM) \
-	  --label=org.opencontainers.image.source=$(GITREPO) \
+	  --label=org.opencontainers.image.source=$(GITURL) \
 	  --label=org.opencontainers.image.version=$${IMAGE##*:} \
 	  --label=org.opencontainers.image.revision=$${REVISION} \
 	  --label=org.opencontainers.image.base.name=$${BASE} \
-	  --label=org.opencontainers.image.ref.name=$${IMAGE}; \
+	  --label=org.opencontainers.image.ref.name=$${IMAGE};
 
 #@ push contianer images - if setup and allowed.
 image-push:: $(TARGETS_IMAGE_PUSH)
@@ -1375,8 +1463,8 @@ $(TARGETS_PUBLISH): version-publish-%:
 	  VERSION="$$(TZ=UTC0 $(GIT) show --quiet --date='format-local:%Y%m%d%H%M%S' \
 	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
 	fi; \
-	TARGET="$(GITREPO)$${CMD}@v$${VERSION}"; \
-	if [ "$(GITHOSTNAME)" == "github.com" ]; then \
+	TARGET="$(GITURL)$${CMD}@v$${VERSION}"; \
+	if [ "$(GITHUB_HOST)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
 	    $(call emsg,info,publish via curl [$${TARGET}]); \
 	    curl  --silent --show-error --fail --location \
@@ -1497,10 +1585,12 @@ clean-all:: $(TARGETS_CLEAN_ALL)
 #@ clean up all resources created by initialization.
 clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
-clean-hooks::; @rm -vf .git/hooks/pre-commit;
+clean-hooks::
+	@rm -vf .git/hooks/pre-commit;
 #@ clean up all resources created by building and testing.
-clean-build::; @rm -vrf $(DIR_BUILD) $(DIR_RUN);
-	$(FIND) -name "mock_*_test.go" -exec rm -vf {} \;;
+clean-build::
+	@rm -vrf $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
+	$(call clean-file,.,-name "mock_*_test.go" -o -name "zz_generated.*.go");
 #@ clean up all package dependencies by removing packages.
 clean-deps::
 	for PACKAGE in $$(cat go.sum | cut -d ' ' -f 1 | sort --unique); do \
