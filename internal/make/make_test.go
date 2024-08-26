@@ -4,7 +4,9 @@ import (
 	"embed"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -38,6 +40,9 @@ var (
 	dirWork = "."
 	// dirRoot contains an arbitrary root directory (use go-make root).
 	dirRoot = filepath.Dir(filepath.Dir(make.AbsPath(dirWork)))
+	// dirConfig contains the user directory where config is stored.
+	dirConfig = path.Join(os.Getenv("HOME"), ".config", "go-make",
+		strings.TrimPrefix(make.AbsPath("../.."), os.Getenv("HOME")))
 	// infoBase with version and revision.
 	infoBase = info.NewInfo(goMakePath,
 		"v0.0.25",
@@ -436,9 +441,14 @@ var (
 	regexMakeCall = regexp.MustCompile(`(?m)(make)\[[0-9]*\](: [^\n]*\n)`)
 	// regexGoMakeWarning is the regular expression that is used to remove the
 	// go-make version mismatch warning that happens after bumping the version.
-	regexGoMakeWarning = regexp.MustCompile(
-		`(?m).*warning:.*go-make version.*\n`)
-	// regexGoMakeMakePath is the regular expression used to remove the go-make
+	regexGoMakeWarning = regexp.MustCompile(`(?m).*warning:.*go-make version.*\n`)
+	// regexGoMakeDebug is the regular expression that is used to remove all
+	// go-make debug information.
+	regexGoMakeDebug = regexp.MustCompile(`(?m).*debug:.*\n`)
+	// regexGoMakeConfig is the regular expression used to remove the go-make
+	// config specific path information.
+	regexGoMakeConfig = regexp.MustCompile(`(?m)` + make.AbsPath(dirConfig))
+	// regexGoMakeSource is the regular expression used to remove the go-make
 	// source specific path information.
 	regexGoMakeSource = regexp.MustCompile(`(?m)` + make.AbsPath(dirRoot))
 	// regexMakeTrace is the regular expression used to match the make trace
@@ -457,7 +467,9 @@ var (
 func FilterMakeOutput(str string) string {
 	str = regexMakeCall.ReplaceAllString(str, "$1$2")
 	str = regexGoMakeWarning.ReplaceAllString(str, "")
+	str = regexGoMakeDebug.ReplaceAllString(str, "")
 	str = regexGoMakeSource.ReplaceAllString(str, "go-make")
+	str = regexGoMakeConfig.ReplaceAllString(str, "go-make/config")
 	str = regexMakeTrace.ReplaceAllString(str, "$1")
 	return str
 }
@@ -565,7 +577,12 @@ func TestMakeExec(t *testing.T) {
 	assert.NoError(t, cmd.Run())
 
 	test.Map(t, testMakeExecParams).
-		Run(func(t test.Test, param MakeExecParams) {
+		RunSeq(func(t test.Test, param MakeExecParams) {
+			// Remove common cache config directory.
+			cmd = exec.Command("rm", "--recursive", "--force",
+				filepath.Join(dirConfig, "run"))
+			assert.NoError(t, cmd.Run())
+
 			// Given
 			info := infoBase
 			stdin := strings.NewReader(param.stdin)
