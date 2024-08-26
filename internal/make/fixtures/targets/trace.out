@@ -1,7 +1,12 @@
-go-make/config/Makefile.base: target 'show-targets' does not exist
+go-make/config/Makefile.base: target 'go-make/config/run' does not exist
+if [ ! -d "go-make/config/run" ]; then mkdir -p go-make/config/run; fi;
+go-make/config/Makefile.base: update target 'go-make/config/run/targets' due to: go-make/config/run go-make/config/Makefile.base
+echo -e "\033[1;96minfo:\033[0m updating targets [go-make/config/run/targets]" > /dev/stderr; \
 make --no-builtin-rules --no-builtin-variables --print-data-base \
-  --question --makefile=go-make/config/Makefile.base  2>/dev/null | \
-  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort --unique | egrep --invert-match --regexp='^[^[:alnum:]]' || true;
+  --question --makefile="go-make/config/Makefile.base"  2>/dev/null | \
+  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort --unique | egrep --invert-match --regexp='^[^[:alnum:]]' > "go-make/config/run/targets";
+go-make/config/Makefile.base: update target 'show-targets' due to: go-make/config/run/targets
+cat go-make/config/run/targets || true;
 all
 all-clean
 build

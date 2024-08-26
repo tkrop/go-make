@@ -24,11 +24,11 @@ issues:
       linters: [ lll, revive ]
     # Exclude magic number in time setups and bit shifting.
     - source: "[0-9]+ ?\\* ?time\\.|(<<|>>) ?[0-9]+|[0-9]+ ?(<<|>>)"
-      linters: [ gomnd ]
+      linters: [ mnd ]
     # Exclude certain standards from being applied in test.
     - path: "_test\\.go"
       linters: [ bodyclose, contextcheck, dupl, funlen, goconst, gosec, noctx,
-        goerr113, wrapcheck ]
+        err113, wrapcheck ]
 
     # Exclude error return value check because of too many false positives.
     - text: 'Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*print(f|ln)?|os\.(Un)?Setenv). is not checked'
@@ -111,6 +111,10 @@ linters-settings:
         # Whether to skip (*x).method() calls where x is a pointer receiver.
         # Default: true
         skipRecvDeref: false
+      ifElseChain:
+        # Min number of if-else blocks that makes the warning trigger.
+        # Default: 2
+        minThreshold: 4
 
   tenv:
     # The option `all` will run the linter on the whole test files regardless

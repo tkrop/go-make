@@ -22,10 +22,11 @@ COLOR-target := 1;96
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 cmsg = $(call msg,$(1),$(1):,$(2))
 emsg = echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr
+dmsg = if [[ "$(MAKEFLAGS)" =~ --(trace|debug.*) ]]; then \
+	$(call emsg,$(1),$(2)); fi
 
 cerror = $(error $(shell $(call emsg,error,"$(1)")))
-cdebug = $(shell if [[ "$${MAKEFLAGS}" =~ --(trace|debug=.*) ]]; then \
-  $(call emsg,debug,$(1)); fi)
+cdebug = $(shell $(call dmsg,debug,$(1)))
 
 # Log execution environment for debugging.
 $(call cdebug,$(shell uname --all))
@@ -41,8 +42,8 @@ endif
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./run/*" ! -path "./build/*" $(2) 2>/dev/null | sed -e "s|^./||g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
-clean-file = $(call find-all,$(1),-type f $(2) -exec rm -vf {} \;)
-clean-dir = $(call find-all,$(1),-type d $(2) -exec rm -rvf {} \;)
+clean-file = $(call find-all,$(1),-type f $(2) -exec rm --verbose --force {} \;)
+clean-dir = $(call find-all,$(1),-type d $(2) -exec rm --verbose --force --recursive {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 
@@ -55,9 +56,11 @@ MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
+DIR_CONFIG := $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%)
+DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
-DIR_BUILD := $(CURDIR)/build
+$(call cdebug,using config directory [$(DIR_CONFIG)])
 
 ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
   include Makefile.vars
@@ -85,8 +88,9 @@ go-check-version = \
 	  fi; \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
+	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
 	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
-	      grep -E "^\s*(mod|dep)\s*$${MODULE%%@*}" | cut -f 4)"; \
+	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
 	      $(call emsg,warning,$(1) version [$${CHECK}]: \
@@ -159,8 +163,10 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.73
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.74
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
+GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
+	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 
 # Ensure that we can find default config files.
@@ -171,8 +177,8 @@ endif
 search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
 	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
-TOOL_VERSION_K8S ?= v0.30.3
-TOOL_VERSION_GOLANGCI ?= v1.56.2
+TOOL_VERSION_K8S ?= v0.31.0
+TOOL_VERSION_GOLANGCI ?= v1.60.3
 TOOL_VERSION_REVIVE ?= v1.3.3
 
 # Setup default tool command versions to be installed.
@@ -315,11 +321,14 @@ CODACY_STATICCHECK_VERSION ?= 3.0.12
 CODACY_PROJECT_TOKEN ?=
 CODACY_API_TOKEN ?=
 
-KUBE_APIS ?= $(shell \
-	FILES="$$($(call find-go,.,-path "*/apis/*/*/*.go"))"; \
-	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" $${FILES} | \
-	  sed "s#apis/[^/]*/[^/]*/[^/]*.go:.*#apis#" | sort --unique; \
+KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
+	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
+	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
 	fi)
+GEN_KUBE_APIS ?= $(KUBE_APIS:%=gen-kube-apis/%)
+$(call cdebug,using kubernetes apis [$(GEN_KUBE_APIS)])
+GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
+	install-lister-gen install-informer-gen install-controller-gen
 
 
 # Default target list for all and pipeline builds.
@@ -331,8 +340,6 @@ TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdo
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
-TARGETS_GENAPI := $(GOBIN)/deepcopy-gen $(GOBIN)/client-gen \
-	$(GOBIN)/lister-gen $(GOBIN)/informer-gen $(GOBIN)/controller-gen
 
 INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS) $(FILE_MARKDOWN) \
     $(FILE_CODACY) $(FILE_REVIVE))
@@ -486,7 +493,7 @@ help:: show-help
 call::;	@$(ARGS)
 
 
-$(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
+$(DIR_CONFIG) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
 
@@ -539,24 +546,28 @@ show-targets = awk -v RS= -F: ' \
 	}' | LC_ALL=C sort --unique | \
 	egrep --invert-match --regexp='^[^[:alnum:]]'
 
+$(DIR_CONFIG)/targets: $(DIR_CONFIG) $(GOMAKE_MAKEFILES)
+	@$(call emsg,info,updating targets [$(DIR_CONFIG)/targets]); \
+	$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
+	  --question --makefile="$(GOMAKE_MAKEFILE)"  2>/dev/null | \
+	  $(show-targets) > "$(DIR_CONFIG)/targets";
+
 #@ shows this short extracted help about main target families.
 show-help::
 	@cat $(MAKEFILE_LIST) | $(show-help) || true;
 #@ shows all supported (customizable) variable (with defaults).
 show-vars:
-	@cat $(firstword $(MAKEFILE_LIST)) | $(show-vars) || true;
+	@cat $(GOMAKE_MAKEFILE) | $(show-vars) || true;
 #@ shows all supported targets (without prerequesites).
-show-targets:
-	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile=$(firstword $(MAKEFILE_LIST))  2>/dev/null | \
-	  $(show-targets) || true;
+show-targets: $(DIR_CONFIG)/targets
+	@cat $(DIR_CONFIG)/targets || true;
 #@ shows the raw base makefile as implemented.
 show-raw:
-	@cat $(firstword $(MAKEFILE_LIST)) || true;
+	@cat $(GOMAKE_MAKEFILE) || true;
 #@ shows the effective makefile as evaluated by make.
 show-make:
 	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile=$(firstword $(MAKEFILE_LIST)) 2>/dev/null || true;
+	  --question --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null || true;
 
 
 ## Git-Support: targets for standard git commands (experimental).
@@ -590,6 +601,9 @@ git-clean = \
 	  else $(call emsg,info,keeping branch [$${BRANCH}]); \
 	  fi; \
 	done; $(GITPRUNE)
+git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
+	BEGIN { \
+	  re_type_suffix = "(\\[[a-z]+\\])
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
 	BEGIN { \
 	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
@@ -694,12 +708,12 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	$(GIT) checkout -B "$${BRANCH}" && \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" || \
-	$(GIT) checkout $${BRANCH}; exit;
+	$(GIT) checkout $${BRANCH}; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	@MESSAGE="$(ARGS)"; $(call git-message,$*,0); \
-	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit;
+	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 git-fix::
 	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
@@ -711,7 +725,7 @@ git-fix::
 	  if [ "$${GITFIX[$${KEY}]}" == "" ]; then unset GITFIX[$${KEY}]; fi; \
 	done; \
 	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; \
-	ARGS="" "$${GITFIX[@]}" && $${GITPUSH[@]}; exit;
+	ARGS="" "$${GITFIX[@]}" && $${GITPUSH[@]}; exit 0;
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@$(GIT) push --set-upstream origin \
@@ -743,11 +757,11 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
 .git/hooks/commit-msg: $(MAKEFILE_LIST)
-	@if ! diff <(cat $@) <($(git-hooks-commit-msg)) >/dev/null; then \
+	@if ! diff <(cat $@ 2>/dev/null) <($(git-hooks-commit-msg)) >/dev/null; then \
 	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
 	fi;
 .git/hooks/pre-commit: $(MAKEFILE_LIST)
-	@if ! diff <(cat $@) <($(git-hooks-pre-commit)) >/dev/null; then \
+	@if ! diff <(cat $@ 2>/dev/null) <($(git-hooks-pre-commit)) >/dev/null; then \
 	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
 	fi;
 
@@ -798,43 +812,43 @@ init-make!::
 ## Generate: targets to generate code and documentation.
 
 #@ generate kubernetes api clients and manifests.
-gen-kube-apis:: $(TARGETS_GENAPI)
-	@HEADER="$(FILE_GO_HEADER)"; \
-	for BPKG in $(KUBE_APIS); do BPKG="$${BPKG%/apis}"; \
-	  if [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
-	      ! -name $(FILE_DEEPCOPY) -printf '%T@ %p\n' 2>/dev/null | \
-	      sort -rn | head -1 | grep "/apis/")" ]; then \
-	    $(call emsg,info,generate apis skipped [$${BPKG}]); continue; \
-	  else $(call emsg,info,generate apis [$${BPKG}]); fi; \
-	  \
-	  for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
-	    MANDIR="$${BPKG}/manifests"; \
-	    APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
-	    CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
-	    $(call emsg,info,generate manifests [$${APKG}]); \
-	    $(GOBIN)/controller-gen crd:crdVersions=v1 paths=./$${BPKG}/apis/... \
-	      "output:crd:dir=$${MANDIR}"; \
-	    $(call emsg,info,generate deepcopy [$${APKG}]); \
-	    $(GOBIN)/deepcopy-gen --go-header-file "$${HEADER}" \
-	      --output-file $(FILE_DEEPCOPY) --bounding-dirs "$${APIBPKG}" \
-		  "$${APIPKG}"; \
-	    $(call emsg,info,generate clients [$${APKG}:clientsets]); \
-	    $(GOBIN)/client-gen --go-header-file "$${HEADER}" \
-	      --clientset-name versioned --input-base "" --input "$${APIPKG}" \
-	      --output-pkg "$${CLIPKG}/clientset" --output-dir "$${CLIDIR}/clientset"; \
-	    $(call emsg,info,generate clients [$${APKG}:listeners]); \
-	    $(GOBIN)/lister-gen --go-header-file "$${HEADER}" \
-	      --output-pkg "$${CLIPKG}/listers" --output-dir "$${CLIDIR}/listers" \
-		  "$${APIPKG}"; \
-	    $(call emsg,info,generate clients [$${APKG}:informers]); \
-	    $(GOBIN)/informer-gen --go-header-file "$${HEADER}" \
-	      --versioned-clientset-package "$${CLIPKG}/clientset/versioned" \
-	      --output-pkg "$${CLIPKG}/informers" --output-dir "$${CLIDIR}/informers" \
-	      --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
-	  done; \
-	  $(call emsg,info,update packages [$${BPKG}]); \
-	  $(GO) get -u ./$${BPKG}/clients/...; \
-	done;
+gen-kube-apis:: $(GEN_KUBE_APIS)
+$(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
+	@HEADER="$(FILE_GO_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
+	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
+	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
+	    ! -name $(FILE_DEEPCOPY) -printf '%T@ %p\n' 2>/dev/null | \
+	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
+	  $(call emsg,info,generate apis skipped [$${BPKG}]); exit 0; \
+	else $(call emsg,info,generate apis [$${BPKG}]); fi; \
+	\
+	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
+	  MANDIR="$${BPKG}/manifests"; \
+	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
+	  CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
+	  $(call emsg,info,generate manifests [$${APKG}]); \
+	  $(GOBIN)/controller-gen crd:crdVersions=v1 paths=./$${BPKG}/apis/... \
+	    "output:crd:dir=$${MANDIR}"; \
+	  $(call emsg,info,generate deepcopy [$${APKG}]); \
+	  $(GOBIN)/deepcopy-gen --go-header-file "$${HEADER}" \
+	    --output-file $(FILE_DEEPCOPY) --bounding-dirs "$${APIBPKG}" \
+	    "$${APIPKG}"; \
+	  $(call emsg,info,generate clients [$${APKG}:clientsets]); \
+	  $(GOBIN)/client-gen --go-header-file "$${HEADER}" \
+	    --clientset-name versioned --input-base "" --input "$${APIPKG}" \
+	    --output-pkg "$${CLIPKG}/clientset" --output-dir "$${CLIDIR}/clientset"; \
+	  $(call emsg,info,generate clients [$${APKG}:listeners]); \
+	  $(GOBIN)/lister-gen --go-header-file "$${HEADER}" \
+	    --output-pkg "$${CLIPKG}/listers" --output-dir "$${CLIDIR}/listers" \
+	    "$${APIPKG}"; \
+	  $(call emsg,info,generate clients [$${APKG}:informers]); \
+	  $(GOBIN)/informer-gen --go-header-file "$${HEADER}" \
+	    --versioned-clientset-package "$${CLIPKG}/clientset/versioned" \
+	    --output-pkg "$${CLIPKG}/informers" --output-dir "$${CLIDIR}/informers" \
+	    --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
+	done; \
+	$(call emsg,info,update packages [$${BPKG}]); \
+	$(GO) get -u ./$${BPKG}/clients/...; \
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -853,9 +867,9 @@ test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
 
 # remove all coverage files of test and benchmarks.
 test-clean::
-	@if [ -f "$(TEST_ALL)" ]; then rm -vf $(TEST_ALL); fi; \
-	if [ -f "$(TEST_UNIT)" ]; then rm -vf $(TEST_UNIT); fi; \
-	if [ -f "$(TEST_BENCH)" ]; then rm -vf $(TEST_BENCH); fi; \
+	@if [ -f "$(TEST_ALL)" ]; then rm --verbose --force $(TEST_ALL); fi; \
+	if [ -f "$(TEST_UNIT)" ]; then rm --verbose --force $(TEST_UNIT); fi; \
+	if [ -f "$(TEST_BENCH)" ]; then rm --verbose --force $(TEST_BENCH); fi; \
 
 #@ start the test coverage report.
 test-cover::
@@ -973,24 +987,22 @@ test-self:: update-all? update-all clean-all all-clean install-all
 LINTERS_CUSTOM ?=
 LINTERS_DISABLED ?=
 LINTERS_DISCOURAGED ?= \
-	deadcode exhaustivestruct exhaustruct gci gochecknoglobals gochecknoinits \
-	godox golint ifshort interfacer ireturn maligned musttag nlreturn \
-	nonamedreturns nosnakecase paralleltest rowserrcheck scopelint structcheck \
-	tagliatelle varcheck varnamelen wastedassign
+	execinquery exhaustruct exportloopref gci gochecknoglobals gochecknoinits \
+	godox ireturn musttag nlreturn nonamedreturns paralleltest rowserrcheck \
+	tagliatelle varnamelen wastedassign
 LINTERS_MINIMUM ?= \
 	asasalint asciicheck bidichk bodyclose dogsled dupl dupword durationcheck \
-	errchkjson execinquery exportloopref funlen gocognit goconst gocyclo \
-	godot gofmt gofumpt goimports gosimple govet importas ineffassign maintidx \
-	makezero misspell nestif nilerr prealloc predeclared promlinter reassign \
-	sqlclosecheck staticcheck typecheck unconvert unparam unused \
-	usestdlibvars whitespace
+	errchkjson funlen gocognit goconst gocyclo godot gofmt gofumpt goimports \
+	gosimple govet importas ineffassign maintidx makezero misspell nestif \
+	nilerr prealloc predeclared promlinter reassign sqlclosecheck staticcheck \
+	typecheck unconvert unparam unused usestdlibvars whitespace
 LINTERS_BASELINE ?= \
 	containedctx contextcheck cyclop decorder errname forbidigo ginkgolinter \
 	gocheckcompilerdirectives goheader gomodguard goprintffuncname gosec \
 	grouper interfacebloat lll loggercheck nakedret nilnil noctx nolintlint \
 	nosprintfhostport
 LINTERS_EXPERT ?= \
-	errcheck errorlint exhaustive gocritic goerr113 gomnd gomoddirectives \
+	errcheck errorlint exhaustive gocritic err113 mnd gomoddirectives \
 	revive stylecheck tenv testableexamples testpackage thelper tparallel \
 	wrapcheck
 
@@ -1391,10 +1403,10 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@rm -vf $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 # uninstall tools providing an install.sh tool.
 $(TARGETS_UNINSTALL_SH):: uninstall-%:
-	@rm -vf $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@if command -v npm &> /dev/null; then \
@@ -1404,10 +1416,10 @@ $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 # uninstall codacy tools used by the project.
 $(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	rm -vf $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
+	rm --verbose --force $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
 # uninstall software command or service created by the project.
 $(TARGETS_UNINSTALL):: uninstall-%:
-	@rm -vf $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 
 
 ## Release: targets to support release process.
@@ -1586,10 +1598,10 @@ clean-all:: $(TARGETS_CLEAN_ALL)
 clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
 clean-hooks::
-	@rm -vf .git/hooks/pre-commit;
+	@rm --verbose --force .git/hooks/pre-commit;
 #@ clean up all resources created by building and testing.
 clean-build::
-	@rm -vrf $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
+	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
 	$(call clean-file,.,-name "mock_*_test.go" -o -name "zz_generated.*.go");
 #@ clean up all package dependencies by removing packages.
 clean-deps::

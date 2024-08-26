@@ -76,8 +76,6 @@ test-cdp:
 	  --volume=$${PWD}:/workspace \
 	  ${CI_IMAGE} /bin/bash $(ARGS);
 
-
-.PHONY: debug
 debug::
 	@echo 'IMAGE $(IMAGE)'; \
 	echo 'GEN_DIRS $(GEN_DIRS)'; \
