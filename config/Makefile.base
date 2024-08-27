@@ -28,8 +28,6 @@ dmsg = if [[ "$(MAKEFLAGS)" =~ --(trace|debug.*) ]]; then \
 cerror = $(error $(shell $(call emsg,error,"$(1)")))
 cdebug = $(shell $(call dmsg,debug,$(1)))
 
-# Log execution environment for debugging.
-$(call cdebug,$(shell uname --all))
 # Check whether bash version is higher or equal version 3.2 to be compatible.
 ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
   $(call cerror,bash version incompatible [$${BASH_VERSION}])
@@ -39,11 +37,26 @@ ifdef BASH_COMPAT
   $(shell $(call emsg,info,bash compatibility mode set [$(BASH_COMPAT)]))
 endif
 
+# System depdendent helper functions.
+ifeq ("$(shell uname)","Linux")
+  uname-all := uname --all
+  rm-verbose-force := rm --verbose --force
+  rm-verbose-force-recursive := rm --verbose --force --recursive
+else ifeq ($(shell uname),Darwin)
+  uname-all := uname -a
+  rm-verbose-force := rm -vf
+  rm-verbose-force-recursive := rm -vrf
+else
+  $(call cerror,unsupported operating system [$(shell $(uname-all))])
+endif
+# Log execution environment for debugging.
+$(call cdebug,$(shell $(uname-all)))
+
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./run/*" ! -path "./build/*" $(2) 2>/dev/null | sed -e "s|^./||g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
-clean-file = $(call find-all,$(1),-type f $(2) -exec rm --verbose --force {} \;)
-clean-dir = $(call find-all,$(1),-type d $(2) -exec rm --verbose --force --recursive {} \;)
+clean-file = $(call find-all,$(1),-type f $(2) -exec $(rm-verbose-force) {} \;)
+clean-dir = $(call find-all,$(1),-type d $(2) -exec $(rm-verbose-force-recursive) {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 
@@ -82,7 +95,7 @@ go-check-version = \
 	if [ -f "$(GOBIN)/$(1)" ]; then \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
-	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
+	    CHECK="$${GOVERSION} => $(GOVERSION)"; ((RESULT++)); \
 	    $(call emsg,warning,$(1) build [$${CHECK}]: \
 	      run 'make update-$(1)' or install matching compiler version); \
 	  fi; \
@@ -92,12 +105,12 @@ go-check-version = \
 	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
 	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
-	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
+	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; ((RESULT++)); \
 	      $(call emsg,warning,$(1) version [$${CHECK}]: \
 	        run 'make update-$(1)' to sync with project version); \
 	    fi; \
 	  fi; \
-	fi
+	fi; [ -z "$${RESULT}" ]
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
 go-download-version = \
@@ -163,7 +176,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.74
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.75
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -405,6 +418,7 @@ CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 	  } \
 	  for (p in seps) { if ($$i ~ "^"seps[p] ) { found = 1; } } } \
 	} END { print line }' <<<"$(MAKECMDGOALS)")
+ARGS ?=
 ifdef CMDARGS
   ARGS := $(strip $(CMDARGS) $(ARGS))
   $(shell if [ -n "$(ARGS)" ]; then \
@@ -603,9 +617,6 @@ git-clean = \
 	done; $(GITPRUNE)
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
 	BEGIN { \
-	  re_type_suffix = "(\\[[a-z]+\\])
-git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
-	BEGIN { \
 	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
 	  re_type_missing = "^([a-z]+)" re_type_suffix; \
 	  re_type_invalid = "^(" gensub(" ", "|", "g", \
@@ -689,7 +700,8 @@ git-reset::
 	fi || exit 1; $(call git-clean,$${MAIN});
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
 git-verify::
-	@MODE="$(firstword $(ARGS))"; case "$${MODE}" in \
+	@$(call dmsg,info,git-verify); MODE="$(firstword $(ARGS))"; \
+	case "$${MODE}" in \
 	( "log" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "message" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
@@ -867,9 +879,9 @@ test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
 
 # remove all coverage files of test and benchmarks.
 test-clean::
-	@if [ -f "$(TEST_ALL)" ]; then rm --verbose --force $(TEST_ALL); fi; \
-	if [ -f "$(TEST_UNIT)" ]; then rm --verbose --force $(TEST_UNIT); fi; \
-	if [ -f "$(TEST_BENCH)" ]; then rm --verbose --force $(TEST_BENCH); fi; \
+	@if [ -f "$(TEST_ALL)" ]; then $(rm-verbose-force) $(TEST_ALL); fi; \
+	if [ -f "$(TEST_UNIT)" ]; then $(rm-verbose-force) $(TEST_UNIT); fi; \
+	if [ -f "$(TEST_BENCH)" ]; then $(rm-verbose-force) $(TEST_BENCH); fi; \
 
 #@ start the test coverage report.
 test-cover::
@@ -1371,7 +1383,7 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-	@$(call go-check-version,$*,$(ARGS))
+	@$(call go-check-version,$*,$(ARGS)) || true;
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
 	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(ARGS));
 # install go tools providing an install.sh script.
@@ -1403,10 +1415,10 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
 # uninstall tools providing an install.sh tool.
 $(TARGETS_UNINSTALL_SH):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@if command -v npm &> /dev/null; then \
@@ -1416,10 +1428,10 @@ $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 # uninstall codacy tools used by the project.
 $(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	rm --verbose --force $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
+	$(rm-verbose-force) $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
 # uninstall software command or service created by the project.
 $(TARGETS_UNINSTALL):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
 
 
 ## Release: targets to support release process.
@@ -1598,10 +1610,10 @@ clean-all:: $(TARGETS_CLEAN_ALL)
 clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
 clean-hooks::
-	@rm --verbose --force .git/hooks/pre-commit;
+	@$(rm-verbose-force) .git/hooks/pre-commit;
 #@ clean up all resources created by building and testing.
 clean-build::
-	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
+	@$(rm-verbose-force-recursive) $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
 	$(call clean-file,.,-name "mock_*_test.go" -o -name "zz_generated.*.go");
 #@ clean up all package dependencies by removing packages.
 clean-deps::

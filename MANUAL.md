@@ -644,6 +644,14 @@ is usually a couple of years behind in applying the GNU standard tools, we
 document the restrictions this creates here.
 
 
+### Long command argument version
+
+Most MacOS standard tools do not support long argument versions that should be
+used to increase the readability of the [Makefile](config/Makefile.base). To
+counter this we introduced alias variables for often use commands using the
+long form.
+
+
 ### `sed` in place substitution
 
 In MacOS we need to add `-e '<cmd>'` after `sed -i` since else the command
