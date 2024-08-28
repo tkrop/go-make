@@ -177,7 +177,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.76
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.77
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1274,17 +1274,9 @@ lint-apis:: install-zally
 
 # Variables for setting up container specific build flags.
 BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
+BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto -trimpath $(BUILDFLAGS))
 BUILD_OS ?= $(shell $(GO) env GOOS)
 BUILD_ARCH ?= $(shell $(GO) env GOARCH)
-IMAGE_OS ?= ${shell grep "^FROM [^ ]*$$" $(FILE_CONTAINER) 2>/dev/null | \
-	grep -v " as " | sed "s/.*\(alpine\|ubuntu\).*/\1/g"}
-ifeq ($(IMAGE_OS),alpine)
-  BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(BUILDFLAGS))
-  GOCGO := 0
-else
-  BUILD_FLAGS ?=  $(strip -mod=readonly -buildvcs=auto -race $(BUILDFLAGS))
-  GOCGO := 1
-endif
 
 # Function to select right main package of command.
 main-pkg = $(patsubst $(1)=%,%,$(firstword $(filter $(1)=%,$(COMMANDS_PKG))))
@@ -1312,12 +1304,12 @@ $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
 $(DIR_BUILD)/%:: init-hooks $(SOURCES) $(DIR_BUILD)
 	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
-	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go;
+	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go;
 
 #@ build linux platform executables using default (system) architecture.
 build-linux:: $(TARGETS_BUILD_LINUX)
 $(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-hooks $(SOURCES) $(DIR_BUILD)
-	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=$(GOCGO) $(GO) build \
+	GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
 	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go;
 
