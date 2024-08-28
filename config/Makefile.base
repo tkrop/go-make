@@ -197,7 +197,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.80
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.81
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -483,7 +483,7 @@ MOCKS_ORIGINS := $(shell echo "$(MOCKS)" | \
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
-TARGETS_TEST_INIT := test-clean init-sources init-hooks
+TARGETS_TEST_INIT := test-clean init-sources
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
@@ -806,7 +806,7 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	fi;
 
 #@ initialize the generated sources.
-init-sources:: $(MOCKS_TARGETS) gen-kube-apis
+init-sources:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
 $(MOCKS_TARGETS): go.sum $(MOCKS_SOURCES) install-mockgen install-mock
 	@MOCK=($(subst |,$(SPACE),$(firstword $(filter $@|%,$(MOCKS))))); \
 	TARGET="$${MOCK[0]}"; SOURCE="$${MOCK[1]}"; \
@@ -1328,14 +1328,14 @@ build:: build-native
 #@ build native platform executables using system architecture.
 build-native:: $(TARGETS_BUILD)
 $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
-$(DIR_BUILD)/%:: init-hooks $(SOURCES) $(DIR_BUILD)
+$(DIR_BUILD)/%:: init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
 	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build linux platform executables using default (system) architecture.
-build-linux:: $(TARGETS_BUILD_LINUX)
-$(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-hooks $(SOURCES) $(DIR_BUILD)
+build-linux:: init-sources $(TARGETS_BUILD_LINUX)
+$(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
 	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go);
