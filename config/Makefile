@@ -12,7 +12,7 @@ export GOPATH ?= $(shell $(GO) env GOPATH)
 export GOBIN ?= $(GOPATH)/bin
 
 # Setup go-make version to use desired build and config scripts.
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.79
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.80
 INSTALL_FLAGS ?= -mod=readonly -buildvcs=auto
 # Request targets from go-make targets target.
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
@@ -23,6 +23,6 @@ TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 
 # Delegate all targets to go-make in a single stubbing call.
 GOAL := $(firstword $(MAKECMDGOALS) all)
-$(eval $(GOAL)::;@:)
+$(eval $(MAKECMDGOALS)::;@:)
 $(GOAL):: $(GOBIN)/go-make
 	@$(GOBIN)/go-make $(MAKECMDGOALS);
