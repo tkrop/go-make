@@ -53,10 +53,11 @@ endif
 $(call cdebug,$(shell $(uname-all)))
 
 # Helper function to find and remove source files.
-find-all = find $(1) ! -path "./run/*" ! -path "./build/*" $(2) 2>/dev/null | sed -e "s|^./||g"
+find-all = find $(1) ! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
+	sed -e "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
-clean-file = $(call find-all,$(1),-type f $(2) -exec $(rm-verbose-force) {} \;)
-clean-dir = $(call find-all,$(1),-type d $(2) -exec $(rm-verbose-force-recursive) {} \;)
+clean-file = $(call find-all,$(1),-type f \( $(2) \) -exec $(rm-verbose-force) {} \;)
+clean-dir = $(call find-all,$(1),-type d \( $(2) \) -exec $(rm-verbose-force-recursive) {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 
@@ -176,7 +177,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.75
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.76
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
