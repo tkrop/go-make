@@ -197,7 +197,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.82
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.83
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -779,8 +779,11 @@ init:: $(TARGETS_INIT)
 #@ initialize the go module and package dependencies.
 init-go:: go.sum
 go.sum: go.mod
-	$(GO) mod tidy && touch go.sum && $(GO) mod download;
+	@$(call emsg,info,updating [go.sum]);
+	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
+	  touch go.sum && $(GO) mod download;
 go.mod:
+	@$(call emsg,info,updating [go.mod]);
 	$(GO) mod init "$(GITURL)";
 
 
@@ -862,6 +865,7 @@ $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
 	  $(call emsg,info,generate apis skipped [$${BPKG}]); exit 0; \
 	else $(call emsg,info,generate apis [$${BPKG}]); fi; \
 	\
+	go get k8s.io/api/core/v1; \
 	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
 	  MANDIR="$${BPKG}/manifests"; \
 	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
@@ -907,9 +911,7 @@ test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
 
 # remove all coverage files of test and benchmarks.
 test-clean::
-	@if [ -f "$(TEST_ALL)" ]; then $(rm-verbose-force) $(TEST_ALL); fi; \
-	if [ -f "$(TEST_UNIT)" ]; then $(rm-verbose-force) $(TEST_UNIT); fi; \
-	if [ -f "$(TEST_BENCH)" ]; then $(rm-verbose-force) $(TEST_BENCH); fi; \
+	@$(rm-verbose-force) $(TEST_ALL) $(TEST_UNIT) $(TEST_BENCH);
 
 #@ start the test coverage report.
 test-cover::
@@ -1736,11 +1738,7 @@ update/go.mod:: install-gomajor
 	    fi; \
 	  done; \
 	else $(GO) get -u ./...; fi; \
-	ROOT=$${PWD}; \
-	for DIR in $(MODULES); do \
-	  echo "update: $${DIR}"; cd $${ROOT}/$${DIR##./} && \
-	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1; \
-	done; \
+	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1; \
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
