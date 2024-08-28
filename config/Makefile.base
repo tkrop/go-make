@@ -6,6 +6,10 @@ NULL :=
 COMMA := ,
 SPACE := $(NULL) $(NULL)
 TAB := $(NULL)	$(NULL)
+define NEWLINE
+
+
+endef
 
 # Setup colored message templates.
 COLOR-info := 1;96
@@ -83,40 +87,6 @@ else
 endif
 
 
-# Setup default go compiler environment.
-export GO ?= go
-export GOPATH ?= $(shell $(GO) env GOPATH)
-export GOBIN ?= $(GOPATH)/bin
-# Export private repositories that do not need to be downloaded.
-export GOPRIVATE ?= github.bus.zalan.do
-# Setup go to use desired and consistent go versions.
-GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
-# Function for checking and wanring about go and package version mismatches.
-go-check-version = \
-	if [ -f "$(GOBIN)/$(1)" ]; then \
-	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
-	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
-	    CHECK="$${GOVERSION} => $(GOVERSION)"; ((RESULT++)); \
-	    $(call emsg,warning,$(1) build [$${CHECK}]: \
-	      run 'make update-$(1)' or install matching compiler version); \
-	  fi; \
-	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
-	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
-	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
-	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
-	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
-	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
-	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; ((RESULT++)); \
-	      $(call emsg,warning,$(1) version [$${CHECK}]: \
-	        run 'make update-$(1)' to sync with project version); \
-	    fi; \
-	  fi; \
-	fi; [ -z "$${RESULT}" ]
-# Function for determining the actual version of a go package from downloading.
-VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
-go-download-version = \
-	$(GO) mod download --json $(1) 2>/dev/null | \
-	  sed --regexp-extended --null-data $(VERSION_REGEX)
 # Function to ensure compatibility of gawk and mawk.
 ifneq ($(shell echo "false" | \
 	awk '{ print gensub("false","true","g") }' 2>/dev/null),true)
@@ -135,6 +105,55 @@ ifneq ($(shell echo "false" | \
 else
   awk-gensub :=
 endif
+
+
+# Setup default go compiler environment.
+export GO ?= go
+export GOPATH ?= $(shell $(GO) env GOPATH)
+export GOBIN ?= $(GOPATH)/bin
+# Export private repositories that do not need to be downloaded.
+export GOPRIVATE ?= github.bus.zalan.do
+# Setup go to use desired and consistent go versions.
+GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
+# Function for checking and wanring about go and package version mismatches.
+go-check-version = \
+	if [ -f "$(GOBIN)/$(1)" ]; then \
+	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
+	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
+	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
+		$(call go-update,$(1),$(2),$${GOVERSION},build [$${CHECK}], \
+		  or install matching compiler version); \
+	  fi; \
+	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
+	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
+	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
+	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
+	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
+	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
+	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
+	      $(call go-update,$(1),$(2),$${MVERSION},version [$${CHECK}], \
+	        to sync with project version); \
+	    fi; \
+	  fi; \
+	fi
+# Funtion to warn about automated updating of go packages.
+TOOLS_GO_AUTO_SYNC ?= true
+go-update = \
+	if [ "$(TOOLS_GO_AUTO_SYNC)" == "true" ] && [ "$(3)" != "(devel)" ]; then \
+	  $(call emsg,warning,$(1) $(4): updating now!); \
+	  echo '$(call go-install,$(1),$(2))'; $(call go-install,$(1),$(2)); \
+	else \
+	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
+	fi
+# Function to install go programs from package the go tooling list.
+go-install = \
+  $(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2))
+
+# Function for determining the actual version of a go package from downloading.
+VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
+go-download-version = \
+	$(GO) mod download --json $(1) 2>/dev/null | \
+	  sed --regexp-extended --null-data $(VERSION_REGEX)
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
       -v not="$(4)" -v version="$(5)" ' $(awk-gensub) \
@@ -176,8 +195,9 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	  } \
 	}' <<<"$(1)")
 
+
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.79
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.80
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1309,16 +1329,16 @@ build:: build-native
 build-native:: $(TARGETS_BUILD)
 $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
 $(DIR_BUILD)/%:: init-hooks $(SOURCES) $(DIR_BUILD)
-	GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
+	$(strip GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
-	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go;
+	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build linux platform executables using default (system) architecture.
 build-linux:: $(TARGETS_BUILD_LINUX)
 $(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-hooks $(SOURCES) $(DIR_BUILD)
-	GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
+	$(strip GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
-	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go;
+	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build container image (alias for image-build).
 build-image:: image-build
@@ -1383,9 +1403,9 @@ install-all:: $(TARGETS_INSTALL_ALL)
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-	@$(call go-check-version,$*,$(ARGS)) || true;
+	@$(call go-check-version,$*,$(ARGS));
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(ARGS));
+	$(call go-install,$*,$(ARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1770,7 +1790,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	$(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$*$$,,$(ARGS));
+	$(call go-install,$*,$(ARGS));
 
 
 ## Custom: custom extension targets.
