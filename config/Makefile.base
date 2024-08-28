@@ -74,7 +74,7 @@ DIR_CONFIG := $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%)
 DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
-$(call cdebug,using config directory [$(DIR_CONFIG)])
+$(call cdebug,using DIR_CONFIG [$(DIR_CONFIG)])
 
 ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
   include Makefile.vars
@@ -177,7 +177,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	}' <<<"$(1)")
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.78
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.79
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -272,7 +272,7 @@ GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
 GITHUB_HOST := $(word 1,$(subst /, ,$(GITURL)))
 GITHUB_ORG := $(word 2,$(subst /, ,$(GITURL)))
 GITHUB_REPO := $(word 3,$(subst /, ,$(GITURL)))
-$(call cdebug,using repository [$(GITURL)])
+$(call cdebug,using GITURL [$(GITURL)])
 
 TEAM ?= $(shell \
 	if [ -f ".zappr.yaml" ]; then \
@@ -298,7 +298,7 @@ else
   IMAGE_ARTIFACT ?= $(GITHUB_REPO)
 endif
 IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
-$(call cdebug,using base image [$(IMAGE)])
+$(call cdebug,using IMAGE [$(IMAGE)])
 
 # Setup default database connection.
 DB_HOST ?= 127.0.0.1
@@ -340,7 +340,7 @@ KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
 	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
 	fi)
 GEN_KUBE_APIS ?= $(KUBE_APIS:%=gen-kube-apis/%)
-$(call cdebug,using kubernetes apis [$(GEN_KUBE_APIS)])
+$(call cdebug,using GEN_KUBE_APIS [$(GEN_KUBE_APIS)])
 GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 	install-lister-gen install-informer-gen install-controller-gen
 
@@ -389,7 +389,7 @@ run-token-link = \
 
 # Setup default environment variables.
 GEN_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
-$(call cdebug,using generated directories [$(GEN_DIRS)])
+$(call cdebug,using GEN_DIRS [$(GEN_DIRS)])
 GEN_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
 		-name "mock_*.go" -o -name "zz_generated.*.go")) \
 	$(shell if [ -n "$(GEN_DIRS)" ]; then $(call find-go,$(GEN_DIRS),); fi))
@@ -428,9 +428,14 @@ ifdef CMDARGS
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
 
-# Setup optimized golang generate mocks execution.
-MOCKS := $(shell if [ -n "$(SOURCES)" ]; then \
-	grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
+
+# Optimized generation of mocks.
+gen-mocks = \
+	if [ -n "$(SOURCES)" ]; then \
+	  grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
+	    $(gen-mocks-awk) | sort --unique; \
+	fi
+gen-mocks-awk = \
 	awk '{ \
 	  source = "_"; target = "_"; package = "_"; \
 	  origin = substr($$1, 0, index($$1, "://go:generate") - 1); \
@@ -446,7 +451,9 @@ MOCKS := $(shell if [ -n "$(SOURCES)" ]; then \
 	  } \
 	  if (source == "_") { package = $$(NF-1) } \
 	  print target "|" source "|" package "|" origin \
-	}' | sort --unique; fi)
+	}'
+
+MOCKS := $(shell $(gen-mocks))
 MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
 	awk 'BEGIN {FS="|"; RS=" "} ($$1 != "_") { print $$1 }' | sort --unique)
 MOCKS_SOURCES := $(shell echo "$(MOCKS)" | \
@@ -780,7 +787,7 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 
 #@ initialize the generated sources.
 init-sources:: $(MOCKS_TARGETS) gen-kube-apis
-$(MOCKS_TARGETS):: go.sum $(MOCKS_SOURCES) install-mockgen install-mock
+$(MOCKS_TARGETS): go.sum $(MOCKS_SOURCES) install-mockgen install-mock
 	@MOCK=($(subst |,$(SPACE),$(firstword $(filter $@|%,$(MOCKS))))); \
 	TARGET="$${MOCK[0]}"; SOURCE="$${MOCK[1]}"; \
 	PACKAGE="$${MOCK[2]}"; ORIGIN="$${MOCK[3]}"; \
