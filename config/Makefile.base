@@ -197,7 +197,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.83
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.84
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -289,16 +289,16 @@ GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get use
 GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
 GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/:/\//")
-GITHUB_HOST := $(word 1,$(subst /, ,$(GITURL)))
-GITHUB_ORG := $(word 2,$(subst /, ,$(GITURL)))
-GITHUB_REPO := $(word 3,$(subst /, ,$(GITURL)))
+GITHOST := $(word 1,$(subst /, ,$(GITURL)))
+GITOWNER := $(word 2,$(subst /, ,$(GITURL)))
+GITREPO := $(word 3,$(subst /, ,$(GITURL)))
 $(call cdebug,using GITURL [$(GITURL)])
 
 TEAM ?= $(shell \
 	if [ -f ".zappr.yaml" ]; then \
 	  grep "X-Zalando-Team:" .zappr.yaml | \
 	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
-	else echo "${GITHUB_ORG}"; fi)
+	else echo "${GITOWNER}"; fi)
 
 # Setup container image command (supports: docker or podman).
 IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
@@ -315,7 +315,7 @@ ifdef IMAGE_NAME
 else
   IMAGE_HOST ?= pierone.stups.zalan.do
   IMAGE_TEAM ?= $(TEAM)
-  IMAGE_ARTIFACT ?= $(GITHUB_REPO)
+  IMAGE_ARTIFACT ?= $(GITREPO)
 endif
 IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
 $(call cdebug,using IMAGE [$(IMAGE)])
@@ -342,8 +342,8 @@ else
   CODACY_CONTINUE ?= true
 endif
 CODACY_PROVIDER ?= ghe
-CODACY_USER ?= $(GITHUB_ORG)
-CODACY_PROJECT ?= $(GITHUB_REPO)
+CODACY_USER ?= $(GITOWNER)
+CODACY_PROJECT ?= $(GITREPO)
 CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
 CODACY_CLIENTS ?= aligncheck deadcode
 CODACY_BINARIES ?= gosec staticcheck
@@ -1510,7 +1510,7 @@ $(TARGETS_PUBLISH): version-publish-%:
 	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
 	fi; \
 	TARGET="$(GITURL)$${CMD}@v$${VERSION}"; \
-	if [ "$(GITHUB_HOST)" == "github.com" ]; then \
+	if [ "$(GITHOST)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
 	    $(call emsg,info,publish via curl [$${TARGET}]); \
 	    curl  --silent --show-error --fail --location \
