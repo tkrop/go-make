@@ -196,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.86
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.87
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -982,9 +982,8 @@ test-go = \
 
 #@ test whether project is using the latest go-version.
 test-go::
-	@if [ ! -f go.mod ];  then \
-	  $(call test-go,go.mod,$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' ')); \
-	fi; \
+	@if [ ! -f "go.mod" ];  then exit 0; fi; \
+	$(call test-go,go.mod,$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' ')); \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
 	    $(call test-go,$${FILE},$$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
@@ -1689,7 +1688,8 @@ update-go-latest = \
 
 #@ <version> # update go to given, current, or latest version.
 update-go::
-	@if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
+	@if [ ! -f "go.mod" ]; then exit 0; fi; \
+	if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
 	$(call emsg,info,update golang version [$${VERSION}]); \
@@ -1709,7 +1709,7 @@ update-go::
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  $(call emsg,warning, current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
-	fi; \
+	fi
 
 #@ check whether a new latest go version exists.
 update-go?::
@@ -1717,7 +1717,7 @@ update-go?::
 	if ! [ "$${VERSION}" == "$(GOVERSION)" ]; then \
 	  $(call emsg,error,new golang version available [$${VERSION}]: \
 	    run 'make update-go' to update the project!); exit 1; \
-	fi; \
+	fi
 
 # Functions to create the list of updates (not sure whether go list is contributing).
 update-args = \
@@ -1742,7 +1742,8 @@ update-config = \
 #@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
 update/go.mod:: install-gomajor
-	@if [ -n "$(ARGS)" ]; then $(call update-args,$(ARGS)); \
+	@if [ ! -f "go.mod" ]; then exit 0; fi; \
+	if [ -n "$(ARGS)" ]; then $(call update-args,$(ARGS)); \
 	  if [[ " $(ARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
 	  readarray -t UPDATES < <($(call update-list,$${ARGS},$${PACKAGES})); \
 	  for UPDATE in "$${UPDATES[@]}"; do ARGS=($${UPDATE}); \
@@ -1764,8 +1765,10 @@ update/go.mod:: install-gomajor
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
 update/go.mod?:: install-gomajor
-	@$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
-	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
+	@if [ ! -f "go.mod" ]; then exit 0; fi \
+	$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
+	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum
+
 update/go-make::
 	@$(call update-config,$(ARGS),download) || \
 	  ( echo "error: downloading $${GOMAKE}" > /dev/stderr && exit 1 )
