@@ -155,7 +155,7 @@ go-download-version = \
 	  sed --regexp-extended --null-data $(VERSION_REGEX)
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
-      -v not="$(4)" -v version="$(5)" ' $(awk-gensub) \
+      -v not="$(4)" -v version="$(5)" '$(awk-gensub) \
 	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } \
 	function package(vindex) { \
 	  if (vindex) { \
@@ -196,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.87
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.88
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -641,7 +641,7 @@ git-clean = \
 	  else $(call emsg,info,keeping branch [$${BRANCH}]); \
 	  fi; \
 	done; $(GITPRUNE)
-git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" ' $(awk-gensub) \
+git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	BEGIN { \
 	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
 	  re_type_missing = "^([a-z]+)" re_type_suffix; \
@@ -946,10 +946,10 @@ test-build::
 	} cmds[$$1] = $$2 } END { exit failures }';
 
 # Function to determine the image name from the image file name.
-image-name = echo -e "$(1)" | \
-	awk 'BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
+image-name = echo -e "$(1)" | awk '$(awk-gensub) \
+	BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-		infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
+	    infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
 	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
 	  else { infix = ""; } \
 	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
@@ -1156,7 +1156,7 @@ lint-config::
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
 	echo; sed -ne $${LINT_STOP}',$$p' $(FILE_GOLANGCI)) | \
-	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} ' $(awk-gensub) \
+	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} '$(awk-gensub) \
 	  ((start == 2) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
 	    if (enabled && disabled) { \
