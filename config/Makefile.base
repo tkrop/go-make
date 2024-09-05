@@ -196,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.88
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.89
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -941,13 +941,13 @@ test-upload::
 test-build::
 	@echo -e "$(COMMANDS_PKG)" | awk 'BEGIN{ RS="\\s"; FS="="; \
 	  fmt = "$(call cmsg,error,program conflict) [%s && %s => %s]\n" \
-	} { if ($$1 in cmds) { \
-	    printf(fmt, cmds[$$1], $$2, $$1); failures++ \
+	} { if ($$1 in cmds) { failures++; \
+	    printf(fmt, cmds[$$1], $$2 "/main.go", $$1 "/main.go") \
 	} cmds[$$1] = $$2 } END { exit failures }';
 
 # Function to determine the image name from the image file name.
 image-name = echo -e "$(1)" | awk '$(awk-gensub) \
-	BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
+	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") } { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
 	    infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
 	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
@@ -959,10 +959,10 @@ image-name = echo -e "$(1)" | awk '$(awk-gensub) \
 
 #@ test whether project creates conflicting container image names.
 test-image::
-	@$(call image-name,$(IMAGES)) | awk 'BEGIN{ RS="\\s"; FS="="; \
+	@$(call image-name,$(IMAGES)) | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
 	  fmt = "$(call cmsg,error,image conflict) [%s && %s => %s]\n" \
-	} { if ($$1 in imgs) { \
-	  printf(fmt, imgs[$$1], $$2, $$1); failures++ \
+	} { if ($$1 in imgs) { failures++; \
+	  printf(fmt, imgs[$$1], $$2, $$1) \
 	} imgs[$$1] = $$2 } END { exit failures }';
 
 # Function to test go versions.
@@ -994,7 +994,7 @@ test-go::
 # process test arguments.
 test-args = \
   if [ -n "$(1)" ]; then ARGS=($(1)); \
-	if [[ "$${ARGS[0]}" =~ ^scope:([^\\s]*)$$ ]]; then \
+	if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
 	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
 	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
 	  else echo "-coverpkg=./..."; fi; \
