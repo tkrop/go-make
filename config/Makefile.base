@@ -196,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.85
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.86
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -428,33 +428,7 @@ COMMANDS_PKG := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f
 	    print $$field "=" target; break; \
 	  } \
 	} }')
-
-# Stop if multiple programs are expanded to the same build target.
-$(call cerror,$(shell echo -e "$(COMMANDS_PKG)" | \
-	awk 'BEGIN{ RS="\\s"; FS="=" } { if ($$1 in cmds) { \
-	  printf("programs conflict [%s && %s => %s]", cmds[$$1], $$2, $$1); \
-	}; cmds[$$1] = $$2; }'))
-
 IMAGES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
-
-# Function to determine the image name from the image file name.
-image-name = echo -e "$(1)" | \
-	awk 'BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
-	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-		infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
-	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
-	  else { infix = ""; } \
-	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
-	  add = (file != 0) ? "=" $$0: ""; \
-	  print gensub(":", "-" infix ":", "1", "$(IMAGE)" add); \
-	}'
-
-# Stop if multiple images are expanded to the same build target.
-$(call cerror,$(shell $(call image-name,$(IMAGES)) | \
-	awk 'BEGIN{ RS="\\s"; FS="=" } { if ($$1 in imgs) { \
-	  printf("images conflict [%s && %s => %s]", imgs[$$1], $$2, $$1); \
-	}; imgs[$$1] = $$2; }'))
-
 
 # Setup of runtime arguments for commands that support arguments.
 CMDWORDS ?= call show git- test- lint run- version- update
@@ -963,7 +937,35 @@ test-upload::
 	    --force-coverage-parser go --coverage-reports "$${FILE}"; \
 	fi; \
 
-# Function to test versions.
+#@ test whether project creates conflicting program names.
+test-build::
+	@echo -e "$(COMMANDS_PKG)" | awk 'BEGIN{ RS="\\s"; FS="="; \
+	  fmt = "$(call cmsg,error,program conflict) [%s && %s => %s]\n" \
+	} { if ($$1 in cmds) { \
+	    printf(fmt, cmds[$$1], $$2, $$1); failures++ \
+	} cmds[$$1] = $$2 } END { exit failures }';
+
+# Function to determine the image name from the image file name.
+image-name = echo -e "$(1)" | \
+	awk 'BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
+	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
+		infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
+	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
+	  else { infix = ""; } \
+	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
+	  add = (file != 0) ? "=" $$0: ""; \
+	  print gensub(":", "-" infix ":", "1", "$(IMAGE)" add); \
+	}'
+
+#@ test whether project creates conflicting container image names.
+test-image::
+	@$(call image-name,$(IMAGES)) | awk 'BEGIN{ RS="\\s"; FS="="; \
+	  fmt = "$(call cmsg,error,image conflict) [%s && %s => %s]\n" \
+	} { if ($$1 in imgs) { \
+	  printf(fmt, imgs[$$1], $$2, $$1); failures++ \
+	} imgs[$$1] = $$2 } END { exit failures }';
+
+# Function to test go versions.
 test-go = \
 	for VERSION in $(2); do \
 	  if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]* ]]; then \
@@ -1358,13 +1360,13 @@ build:: build-native
 #@ build native platform executables using system architecture.
 build-native:: $(TARGETS_BUILD)
 $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
-$(DIR_BUILD)/%:: init-sources $(SOURCES) $(DIR_BUILD)
+$(DIR_BUILD)/%:: test-build init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
 	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build linux platform executables using default (system) architecture.
-build-linux:: init-sources $(TARGETS_BUILD_LINUX)
+build-linux:: test-build init-sources $(TARGETS_BUILD_LINUX)
 $(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
 	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LD_FLAGS_LINUX)" \
@@ -1379,7 +1381,7 @@ build-image:: image-build
 #@ build and push container images - if setup.
 image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 #@ build container images.
-image-build:: $(TARGETS_IMAGE_BUILD)
+image-build:: test-image $(TARGETS_IMAGE_BUILD)
 
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; \
@@ -1399,7 +1401,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	  --label=org.opencontainers.image.ref.name=$${IMAGE};
 
 #@ push contianer images - if setup and allowed.
-image-push:: $(TARGETS_IMAGE_PUSH)
+image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	@IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \

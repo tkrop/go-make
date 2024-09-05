@@ -324,6 +324,8 @@ make test-self   # executes a self-test of the build scripts
 make test-cover  # opens the test coverage report in the browser
 make test-upload # uploads the test coverage files
 make test-clean  # cleans up the test files
+make test-build  # test conflicts in program names
+make test-image  # test conflicts in container image names
 make test-go     # test go versions
 ```
 
