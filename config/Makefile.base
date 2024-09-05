@@ -25,11 +25,10 @@ COLOR-target := 1;96
 # Finding: \$\(call *[ce]*msg
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 cmsg = $(call msg,$(1),$(1):,$(2))
-emsg = echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr
-dmsg = if [[ "$(MAKEFLAGS)" =~ --(trace|debug.*) ]]; then \
-	$(call emsg,$(1),$(2)); fi
+emsg = $(if $(2),echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr)
+dmsg = if [[ "$(MAKEFLAGS)" =~ --(trace|debug.*) ]]; then $(call emsg,$(1),$(2)); fi
 
-cerror = $(error $(shell $(call emsg,error,"$(1)")))
+cerror = $(if $(1),$(error $(shell $(call emsg,error,$(1)))))
 cdebug = $(shell $(call dmsg,debug,$(1)))
 
 # Check whether bash version is higher or equal version 3.2 to be compatible.
@@ -197,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.84
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.85
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -273,7 +272,7 @@ FILE_GITLEAKS ?= $(call search-default,.gitleaks.toml)
 FILE_REVIVE ?= $(call search-default,revive.toml)
 FILE_CODACY ?= $(call search-default,.codacy.yaml)
 
-FILE_CONTAINER ?= Dockerfile
+FILE_IMAGE ?= Dockerfile
 FILE_DEEPCOPY ?= zz_generated.deepcopy.go
 FILE_GO_HEADER ?=
 
@@ -400,10 +399,10 @@ run-token-link = \
 		test -h "$(DIR_CRED)/$(1)-$(2)" || ln -s type "$(DIR_CRED)/$(1)-$(2)" && \
 		test -h "$(DIR_CRED)/$(1)-$(3)" || ln -s token "$(DIR_CRED)/$(1)-$(3)" \
 	) || test -n "$(1)" && test -n "$(2)" && test -z "$(3)" && ( \
-		test -h "$(DIR_CRED)/$(1)" || ln -s type "$(DIR_CRED)/$(1)" && \
-		test -h "$(DIR_CRED)/$(2)" || ln -s token "$(DIR_CRED)/$(2)" \
+	  test -h "$(DIR_CRED)/$(1)" || ln -s type "$(DIR_CRED)/$(1)" && \
+	  test -h "$(DIR_CRED)/$(2)" || ln -s token "$(DIR_CRED)/$(2)" \
 	) || test -n "$(1)" && test -z "$(2)" && test -z "$(3)" && ( \
-		test -h "$(DIR_CRED)/$(1)" || ln -s token "$(DIR_CRED)/$(1)" \
+	  test -h "$(DIR_CRED)/$(1)" || ln -s token "$(DIR_CRED)/$(1)" \
 	) || true
 
 
@@ -419,6 +418,9 @@ COMMANDS := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
 	awk -F '/' '{ for ( field = NF-1; field > 0; field--) { \
 	  if ($$field != "cmd") { print $$field; break; } \
 	} }' | sort --unique)
+COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
+COMMANDS_GO := $(sort $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,))
+COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
 COMMANDS_PKG := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
 	awk -F '/' '$(awk-gensub) { for ( field = NF-1; field > 0; field--) { \
 	  if ($$field != "cmd") { \
@@ -426,9 +428,32 @@ COMMANDS_PKG := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f
 	    print $$field "=" target; break; \
 	  } \
 	} }')
-COMMANDS_REGEX := $(shell echo "^$(COMMANDS)$$" | tr ' ' '|' )
-COMMANDS_GO := $(sort $(call go-pkg,$(TOOLS_GO),command,$(COMMANDS_REGEX),not,))
-COMMANDS_SH := $(sort $(call go-pkg,$(TOOLS_SH),command,$(COMMANDS_REGEX),not,))
+
+# Stop if multiple programs are expanded to the same build target.
+$(call cerror,$(shell echo -e "$(COMMANDS_PKG)" | \
+	awk 'BEGIN{ RS="\\s"; FS="=" } { if ($$1 in cmds) { \
+	  printf("programs conflict [%s && %s => %s]", cmds[$$1], $$2, $$1); \
+	}; cmds[$$1] = $$2; }'))
+
+IMAGES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
+
+# Function to determine the image name from the image file name.
+image-name = echo -e "$(1)" | \
+	awk 'BEGIN{ RS="\\s"; FS="/"; file=("$(1)" ~ "\\s") } { \
+	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
+		infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
+	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
+	  else { infix = ""; } \
+	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
+	  add = (file != 0) ? "=" $$0: ""; \
+	  print gensub(":", "-" infix ":", "1", "$(IMAGE)" add); \
+	}'
+
+# Stop if multiple images are expanded to the same build target.
+$(call cerror,$(shell $(call image-name,$(IMAGES)) | \
+	awk 'BEGIN{ RS="\\s"; FS="=" } { if ($$1 in imgs) { \
+	  printf("images conflict [%s && %s => %s]", imgs[$$1], $$2, $$1); \
+	}; imgs[$$1] = $$2; }'))
 
 
 # Setup of runtime arguments for commands that support arguments.
@@ -489,9 +514,8 @@ TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
-TARGETS_IMAGE := $(shell $(call find-all,.,-type f -name "$(FILE_CONTAINER)*"))
-TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(TARGETS_IMAGE))
-TARGETS_IMAGE_PUSH := $(addprefix image-push/, $(TARGETS_IMAGE))
+TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(IMAGES))
+TARGETS_IMAGE_PUSH := $(addprefix image-push/, $(IMAGES))
 TARGETS_BUILD := $(addprefix build-, $(COMMANDS))
 TARGETS_BUILD_LINUX := $(addprefix $(DIR_BUILD)/linux/, $(COMMANDS))
 TARGETS_INSTALL := $(addprefix install-, $(COMMANDS))
@@ -780,11 +804,11 @@ init:: $(TARGETS_INIT)
 init-go:: go.sum
 go.sum: go.mod
 	@$(call emsg,info,updating [go.sum]);
-	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
-	  touch go.sum && $(GO) mod download;
+	$(if $(SOURCES),$(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
+	  touch go.sum && $(GO) mod download;)
 go.mod:
 	@$(call emsg,info,updating [go.mod]);
-	$(GO) mod init "$(GITURL)";
+	$(if $(SOURCES),$(GO) mod init "$(GITURL)";)
 
 
 #@ initialize git pre-commit and commit-message hooks.
@@ -1005,14 +1029,17 @@ TEST_DEPS ?=
 
 # actuall targets for testing.
 $(TEST_ALL):: $(SOURCES) init-sources $(TEST_DEPS) $(DIR_BUILD)
+	$(if $(filter %_test.go,$(SOURCES)), \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ $(TEST_ARGS);
+	  -cover -coverprofile $@ $(TEST_ARGS);)
 $(TEST_UNIT):: $(SOURCES) init-sources $(DIR_BUILD)
+	$(if $(filter %_test.go,$(SOURCES)), \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ -short $(TEST_ARGS);
+	  -cover -coverprofile $@ -short $(TEST_ARGS);)
 $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
+	$(if $(filter %_test.go,$(SOURCES)), \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
+	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
 
 #@ execute a kind of self-test running the main targets.
 test-self:: update-all? update-all clean-all all-clean install-all
@@ -1100,15 +1127,15 @@ endif
 #@ <fix|linter> # execute all linters for the custom code quality level.
 lint:: $(TARGETS_LINT)
 #@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
-lint-min:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_MIN)
+lint-min:: init-sources install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_MIN))
 #@ <fix|linter> # execute golangci linters for base code quality level (go-files).
-lint-base:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_BASE)
+lint-base:: init-sources install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_BASE))
 #@ <fix|linter> # execute golangci linters for plus code quality level (go-files).
-lint-plus:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_PLUS)
+lint-plus:: init-sources install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_PLUS))
 #@ <fix|linter> # execute golangci linters for maximal code quality level (go-files).
-lint-max:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_MAX)
+lint-max:: init-sources install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_MAX))
 #@ <fix|linter> # execute all golangci linters for insane code quality level (go-files).
-lint-all:: init-sources install-golangci-lint; $(LINT_CMD) $(LINT_ALL)
+lint-all:: init-sources install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_ALL))
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
@@ -1312,6 +1339,7 @@ main-pkg = $(patsubst $(1)=%,%,$(firstword $(filter $(1)=%,$(COMMANDS_PKG))))
 
 # Functions and variables to propagate versions to build commands.
 LDFLAGS ?=
+LD_FLAGS_LINUX ?= -s -w $(LDFLAGS)
 LD_CONFIG_PATHS ?= main $(shell $(GO) list ./... | grep "config$$")
 ld-flag = $(addprefix -X ,$(addsuffix .$(1),$(LD_CONFIG_PATHS)))
 ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
@@ -1339,7 +1367,7 @@ $(DIR_BUILD)/%:: init-sources $(SOURCES) $(DIR_BUILD)
 build-linux:: init-sources $(TARGETS_BUILD_LINUX)
 $(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
-	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
+	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LD_FLAGS_LINUX)" \
 	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build container image (alias for image-build).
@@ -1353,17 +1381,8 @@ image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 #@ build container images.
 image-build:: $(TARGETS_IMAGE_BUILD)
 
-setup-image-file = \
-	FILE="$*"; IMAGE=$(IMAGE); \
-	PREFIX="$$(basename "$${FILE%$(FILE_CONTAINER)*}")"; \
-	SUFFIX="$$(echo $${FILE\#*$(FILE_CONTAINER)} | sed "s/^[^[:alnum:]]*//")"; \
-	INFIX="$${SUFFIX:-$${PREFIX}}"; \
-	if [ -n "$${INFIX}" ]; then \
-	  IMAGE="$${IMAGE/:/-$${INFIX}:}"; \
-	fi
-
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
-	@$(call setup-image-file,$*); \
+	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never build images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
@@ -1382,7 +1401,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 #@ push contianer images - if setup and allowed.
 image-push:: $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@$(call setup-image-file,$*); VERSION="$${IMAGE##*:}"; \
+	@IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then \
 	  echo "We never push images, aborting [$${IMAGE}]."; exit 0; \
 	elif [ "$${VERSION}" == "snapshot" ]; then \
@@ -1390,7 +1409,7 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	elif [[ "$${VERSION}" =~ ^pr-.*$$ ]] && [ "$(IMAGE_PUSH)" != "pulls" ]; then \
 	  echo "We never push pull request images, aborting [$${IMAGE}]."; exit 0; \
 	fi; \
-	$(IMAGE_CMD) push $${IMAGE}; \
+	$(IMAGE_CMD) push $${IMAGE};
 
 
 ## Install: targets to (un-)install software and tools.
@@ -1597,7 +1616,7 @@ $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@trap "$(IMAGE_CMD) rm $(IMAGE_ARTIFACT)-$* >/dev/null" EXIT; \
 	trap "$(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* >/dev/null" INT TERM; \
-	if [ -n "$(filter %$*,$(TARGETS_IMAGE))" ]; then \
+	if [ -n "$(filter %$*,$(IMAGES))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed -e "s/:/-$*:/")"; \
 	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
 	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $(IMAGE_ARTIFACT)-$* \
