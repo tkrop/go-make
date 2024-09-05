@@ -130,9 +130,11 @@ show-vars
 test
 test-all
 test-bench
+test-build
 test-clean
 test-cover
 test-go
+test-image
 test-self
 test-unit
 test-upload
