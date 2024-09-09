@@ -196,7 +196,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.89
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.90
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -615,7 +615,9 @@ GITFIX ?= $(GIT) commit --amend --no-edit
 GITPUSH ?= $(GIT) push --force-with-lease
 GITBRANCH ?= $(GIT) branch --show-current
 GITPRUNE ?=$(GIT) fetch --all --prune --verbose
-GITLOGFMT ?= $(GIT) log --max-count=1 --pretty=format
+GITTIP ?= $(GIT) log --max-count=1 --pretty=format:"%T"
+GITHASH ?= $(GIT) log --max-count=1 --pretty=format:"%H"
+GITLOG ?= $(GIT) log --pretty=format
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
@@ -623,8 +625,7 @@ git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
-	  COMMIT="$$($(GITLOGFMT):"%s" | \
-	    sed -E 's/^.*\(?([^() ]*\#[0-9]+)\)?.*$$/\1/')"; \
+	  COMMIT="$$($(GITLOG):"%s" | grep -Eo "[^() ]*\#?[0-9]+" | sort -n -u)"; \
 	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
 	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
 	fi
@@ -633,7 +634,7 @@ git-main = \
 git-clean = \
 	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
-	  TIP="$$($(GITLOGFMT):"%T" "$${BRANCH}")"; \
+	  TIP="$$($(GITTIP) "$${BRANCH}")"; \
 	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(ARGS)" == "all" ]; then \
@@ -920,8 +921,7 @@ test-cover::
 #@ upload the test coverage report to codacy.
 test-upload::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
-	  "$(TEST_BENCH)" 2>/dev/null); \
-	COMMIT="$$($(GITLOGFMT):"%H")"; \
+	  "$(TEST_BENCH)" 2>/dev/null); COMMIT="$$($(GITHASH))"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
 	  bash <(curl --silent --location $${SCRIPT}) report \
@@ -1233,7 +1233,7 @@ LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 
 $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-sources init-% install-%
-	@COMMIT=$$($(GITLOGFMT):"%H"); \
+	@COMMIT=$$($(GITHASH)); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
 	  "--header" "Content-type: application/json"); \
