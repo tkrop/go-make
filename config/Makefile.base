@@ -26,8 +26,9 @@ COLOR-target := 1;96
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 cmsg = $(call msg,$(1),$(1):,$(2))
 emsg = $(if $(2),echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr)
-dmsg = if [[ "$(MAKEFLAGS)" =~ --(trace|debug.*) ]]; then $(call emsg,$(1),$(2)); fi
+dmsg = $(if $(findstring --trace,$(MAKEFLAGS)),$(call emsg,$(1),$(2)),echo -n)
 
+escape = $(subst $$,\$$,$(subst ",\",$(subst \",\\",$(1))))
 cerror = $(if $(1),$(error $(shell $(call emsg,error,$(1)))))
 cdebug = $(shell $(call dmsg,debug,$(1)))
 
@@ -71,6 +72,15 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-print-directory
 MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
+
+# Setup default variables for building, linking, and installing.
+LDFLAGS ?=
+LD_FLAGS ?= $(strip $(LDFLAGS))
+LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
+BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
+BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto -trimpath $(BUILDFLAGS))
+INSTALLFLAGS ?=
+INSTALL_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(INSTALLFLAGS))
 
 # Setup default directories of projects.
 DIR_CONFIG := $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%)
@@ -117,36 +127,37 @@ GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\
 # Function for checking and wanring about go and package version mismatches.
 go-check-version = \
 	if [ -f "$(GOBIN)/$(1)" ]; then \
+	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
-		$(call go-update,$(1),$(2),$${GOVERSION},build [$${CHECK}], \
-		  or install matching compiler version); \
+		$(call go-update,$(1),$${MODULE},$${GOVERSION}, \
+		  build [$${CHECK}], or install matching compiler version); \
 	  fi; \
-	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
 	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
 	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
 	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
-	      $(call go-update,$(1),$(2),$${MVERSION},version [$${CHECK}], \
-	        to sync with project version); \
+	      $(call go-update,$(1),$${MODULE},$${MVERSION}, \
+	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
 	fi
 # Funtion to warn about automated updating of go packages.
-TOOLS_GO_AUTO_SYNC ?= true
 go-update = \
-	if [ "$(TOOLS_GO_AUTO_SYNC)" == "true" ] && [ "$(3)" != "(devel)" ]; then \
+	if [ "$(3)" != "(devel)" ]; then \
 	  $(call emsg,warning,$(1) $(4): updating now!); \
-	  echo '$(call go-install,$(1),$(2))'; $(call go-install,$(1),$(2)); \
+	  echo '$(call go-install,$(2))'; $(call go-install,$(2)); \
 	else \
 	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
 	fi
 # Function to install go programs from package the go tooling list.
+go-install-module = \
+  $(call go-install,$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
-  $(GO) install $(INSTALL_FLAGS) $(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2))
+  $(GO) install $(INSTALL_FLAGS) "$(1)"
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -196,7 +207,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.91
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.92
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -245,6 +256,7 @@ NVM_BIN ?=
 
 
 # Check for the actually used go-make version.
+$(call cdebug, go-check-version = $(call escape,$(call go-check-version,go-make,)))
 $(shell $(call go-check-version,go-make,))
 
 # Setup default browser command to open coverage reports.
@@ -949,12 +961,12 @@ test-build::
 image-name = echo -e "$(1)" | awk '$(awk-gensub) \
 	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") } { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-	    infix = substr($$(NF), length("$(FILE_IMAGE)")+2); } \
-	  else if ($$0 ~ "$(FILE_IMAGE)$$") { infix = $$(NF-1); } \
+	    infix = "-" substr($$(NF), length("$(FILE_IMAGE)")+2); } \
+	  else if ($$0 ~ "/$(FILE_IMAGE)$$") { infix = "-" $$(NF-1); } \
 	  else { infix = ""; } \
 	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
 	  add = (file != 0) ? "=" $$0: ""; \
-	  print gensub(":", "-" infix ":", "1", "$(IMAGE)" add); \
+	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
 	}'
 
 #@ test whether project creates conflicting container image names.
@@ -1330,8 +1342,6 @@ lint-apis:: install-zally
 
 
 # Variables for setting up container specific build flags.
-BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
-BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto -trimpath $(BUILDFLAGS))
 BUILD_OS ?= $(shell $(GO) env GOOS)
 BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 
@@ -1339,8 +1349,6 @@ BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 main-pkg = $(patsubst $(1)=%,%,$(firstword $(filter $(1)=%,$(COMMANDS_PKG))))
 
 # Functions and variables to propagate versions to build commands.
-LDFLAGS ?=
-LD_FLAGS_LINUX ?= -s -w $(LDFLAGS)
 LD_CONFIG_PATHS ?= main $(shell $(GO) list ./... | grep "config$$")
 ld-flag = $(addprefix -X ,$(addsuffix .$(1),$(LD_CONFIG_PATHS)))
 ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
@@ -1361,7 +1369,7 @@ build-native:: $(TARGETS_BUILD)
 $(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
 $(DIR_BUILD)/%:: test-build init-sources $(SOURCES) $(DIR_BUILD)
 	$(strip GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
-	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LDFLAGS)" \
+	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LD_FLAGS)" \
 	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go);
 
 #@ build linux platform executables using default (system) architecture.
@@ -1414,8 +1422,6 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 
 
 ## Install: targets to (un-)install software and tools.
-INSTALLFLAGS ?=
-INSTALL_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(INSTALLFLAGS))
 
 #@ install all software created by the project.
 install:: $(TARGETS_INSTALL)
@@ -1427,7 +1433,7 @@ install-all:: $(TARGETS_INSTALL_ALL)
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 	@$(call go-check-version,$*,$(ARGS));
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(call go-install,$*,$(ARGS));
+	$(call go-install-module,$*,$(ARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1812,7 +1818,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	$(call go-install,$*,$(ARGS));
+	$(call go-install-module,$*,$(ARGS));
 
 
 ## Custom: custom extension targets.
