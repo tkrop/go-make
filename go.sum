@@ -13,8 +13,8 @@ github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU
 github.com/rogpeppe/go-internal v1.12.0/go.mod h1:E+RYuTGaKKdloAfM02xzb0FW3Paa99yedzYV+kq4uf4=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
-github.com/tkrop/go-testing v0.0.10 h1:dwVRlkIt6ftY0Lx9TMftbJtlIAwta4ZUJd93RJAqS1U=
-github.com/tkrop/go-testing v0.0.10/go.mod h1:C+PH118k1VfQz1H6QdkfkPGtiMUzmOmU8ddFYUXW5N4=
+github.com/tkrop/go-testing v0.0.13 h1:AEDmuSzYbY8/XIRd2j8J3EUzpVjJ1GN0zwjX87MHDy0=
+github.com/tkrop/go-testing v0.0.13/go.mod h1:BFsOhvdwOvNKO8nqAEEMAYEeim3nXjvOzREs6lobJ/8=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
