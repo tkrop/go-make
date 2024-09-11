@@ -100,7 +100,7 @@ endif
 ifneq ($(shell echo "false" | \
 	awk '{ print gensub("false","true","g") }' 2>/dev/null),true)
   awk-gensub := function gensub(r, s, h, t) { \
-	  if (t == "") { t = $$0 } \
+	  if (t == 0) { t = $$0 } \
 	  if (h ~ "^[gG]") { gsub(r, s, t) } \
 	  else if (int(h) != 0) { \
 	    for (i = 1; i <= int(h); i++) { \
@@ -207,7 +207,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.93
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.94
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
