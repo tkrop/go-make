@@ -18,5 +18,5 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/tkrop/go-config v0.0.0-20240914095523-1879ab44bb13
+	github.com/tkrop/go-config v0.0.1
 )
