@@ -15,8 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/cmd"
-	"github.com/tkrop/go-make/internal/info"
 	"github.com/tkrop/go-make/internal/log"
 	"github.com/tkrop/go-make/internal/make"
 	"github.com/tkrop/go-testing/mock"
@@ -44,18 +44,18 @@ var (
 	dirConfig = path.Join(os.Getenv("HOME"), ".config", "go-make",
 		strings.TrimPrefix(make.AbsPath("../.."), os.Getenv("HOME")))
 	// infoBase with version and revision.
-	infoBase = info.NewInfo(goMakePath,
+	infoBase = info.New(goMakePath,
 		"v0.0.25",
 		"ba4ff068e795443f256caa06180d976a0fb244e9",
 		"2024-01-09T13:02:46+01:00",
 		"2024-01-10T16:22:54+01:00",
-		true)
+		"true")
 
-	infoNew = info.NewInfo(goMakePath, "latest",
+	infoNew = info.New(goMakePath, "latest",
 		"ba4ff068e795443f256caa06180d976a0fb244e9",
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00",
-		false)
+		"false")
 
 	argsVersion           = []string{"--version"}
 	argsTraceVersion      = []string{"--trace", "--version"}
@@ -436,24 +436,28 @@ func ReadFile(fs embed.FS, name string) string {
 }
 
 var (
-	// regexMakeCall is the regular expression used to remove the nesting level
-	// of the make call when an error is observed.
+	// regexMakeCall is used to remove the nesting level of the make call when
+	// an error is observed (obsoleted by `--no-print-directory` flag).
 	regexMakeCall = regexp.MustCompile(`(?m)(make)\[[0-9]*\](: [^\n]*\n)`)
-	// regexGoMakeWarning is the regular expression that is used to remove the
-	// go-make version mismatch warning that happens after bumping the version.
+	// regexMakeTimestamp is used to remove the constantly changing timestamp
+	// from the make output.
+	regexMakeTimestamp = regexp.MustCompile(
+		`([0-9]{4})(-[0-9]{2}){2} ([0-9]{2}:){2}[0-9]{2}(.[0-9]{3})? `)
+	// regexGoMakeWarning is used to remove the `go-make` version mismatch
+	// warning that happens after bumping the version.
 	regexGoMakeWarning = regexp.MustCompile(`(?m).*warning:.*go-make version.*\n`)
-	// regexGoMakeDebug is the regular expression that is used to remove all
-	// go-make debug information.
+	// regexGoMakeDebug is used to remove all `go-make` platform dependent
+	// debug information.
 	regexGoMakeDebug = regexp.MustCompile(`(?m).*debug:.*\n`)
-	// regexGoMakeConfig is the regular expression used to remove the go-make
-	// config specific path information.
+	// regexGoMakeConfig is used to remove the `go-make` config specific path
+	// information.
 	regexGoMakeConfig = regexp.MustCompile(`(?m)` + make.AbsPath(dirConfig))
-	// regexGoMakeSource is the regular expression used to remove the go-make
-	// source specific path information.
+	// regexGoMakeSource is used to remove the `go-make` source specific path
+	// information.
 	regexGoMakeSource = regexp.MustCompile(`(?m)` + make.AbsPath(dirRoot))
-	// regexMakeTrace is the regular expression used to match the make trace
-	// output and to remove the line number to match resiliently when make
-	// targets are moved around.
+	// regexMakeTrace is used to match the make trace output and to remove the
+	// changing line numbers to resiliently match output when `go-make` targets
+	// are moved around.
 	regexMakeTrace = regexp.MustCompile(
 		`(?m)(go-make/config/Makefile.base:)[0-9]+:`)
 	// replaceFixture replaces the placeholders in the fixture with the values
@@ -466,6 +470,7 @@ var (
 
 func FilterMakeOutput(str string) string {
 	str = regexMakeCall.ReplaceAllString(str, "$1$2")
+	str = regexMakeTimestamp.ReplaceAllString(str, "")
 	str = regexGoMakeWarning.ReplaceAllString(str, "")
 	str = regexGoMakeDebug.ReplaceAllString(str, "")
 	str = regexGoMakeSource.ReplaceAllString(str, "go-make")

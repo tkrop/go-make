@@ -3,9 +3,8 @@ package main
 
 import (
 	"os"
-	"strconv"
 
-	"github.com/tkrop/go-make/internal/info"
+	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/make"
 )
 
@@ -26,16 +25,10 @@ var (
 	Config string
 )
 
-// NewInfo returns the build information of a command or module with
-// default values.
-func NewInfo() *info.Info {
-	dirty, _ := strconv.ParseBool(Dirty)
-	return info.NewInfo(Path, Version, Revision, Build, Commit, dirty)
-}
-
 // main is the main entry point of the go-make command.
 func main() {
-	os.Exit(make.Make(os.Stdin, os.Stdout, os.Stderr, NewInfo(),
+	os.Exit(make.Make(os.Stdin, os.Stdout, os.Stderr,
+		info.New(Path, Version, Revision, Build, Commit, Dirty),
 		make.GetEnvDefault(make.EnvGoMakeConfig, Config),
 		".", nil, os.Args...))
 }
