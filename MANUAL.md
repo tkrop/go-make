@@ -56,11 +56,12 @@ or run `make show targets`. To get a short help on most important targets and
 target families run `make help`. To have a look at the effective targets and
 receipts use `make show all`.
 
-To customize the behavior there exist two extension points at the begin and the
-end of the [Makefile](config/Makefile.base) that can be used to setup additional
-variables, definitions, and targets that modify the behavior and receipts.
+To customize the behavior, there exist two extension points. One at the begin
+and one the end of the [Makefile](config/Makefile.base) that can be used to set
+up additional variables, definitions, and targets that modify the behavior and
+receipts.
 
-* The extension point at the begin is called [Makefile.vars](Makefile.vars) and
+* The extension point at begin is called [Makefile.vars](Makefile.vars) and
   allows to modify the behavior of targets by customizing [variables][make-vars]
   and [functions][make-calls] (see [Modifying variables](#modifying-variables)
   and [Running commands](#running-commands) for more details and examples).
@@ -191,7 +192,7 @@ and environment variables, that can easily derived from the following example:
 AWSOPTS ?= --region=eu-central-1 --endpoint-url=http://localhost:4566
 AWSBUCKET ?= cas-apidocs-test
 
-# Defines a make-fragment to setup all run-targets (default: true)
+# Defines a make-fragment to set up all run-targets (default: true)
 run-setup = \
     cp app/service/jobs.yaml $(DIR_RUN)/jobs.yaml; \
     $(call run-token-create); \
@@ -213,7 +214,7 @@ run-vars-local = \
     $(1) CAS_AUTH_CREDENTIALSDIR="$(DIR_CRED)"
 # Define variables for image run-targets (called with empty and '-env' argument)
 run-vars-image =
-# Define a make-fragment to setup aws localstack (default: true).
+# Define a make-fragment to set up aws localstack (default: true).
 run-setup-aws = \
   if ! aws $(AWSOPTS) s3 ls s3://$(AWSBUCKET) >/dev/null 2>&1; then \
     aws $(AWSOPTS) s3 mb s3://$(AWSBUCKET); \

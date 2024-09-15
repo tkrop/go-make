@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/tkrop/go-make/internal/info"
+	"github.com/tkrop/go-config/info"
 )
 
 // Logger provides a common interface for logging.

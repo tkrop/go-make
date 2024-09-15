@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/tkrop/go-make/internal/info"
+	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/log"
 	"github.com/tkrop/go-testing/test"
 )
@@ -17,7 +17,7 @@ var (
 	// log is the singleton logger for testing.
 	logger = log.NewLogger()
 	// infoDirty is an arbitrary dirty info for testing.
-	infoDirty = info.NewInfo("", "", "", "", "", true)
+	infoDirty = info.New("", "", "", "", "", "true")
 	// Any error that can happen.
 	errAny = errors.New("any error")
 )

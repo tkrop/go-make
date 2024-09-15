@@ -23,9 +23,10 @@ COLOR-cmd := 1;95
 COLOR-target := 1;96
 
 # Finding: \$\(call *[ce]*msg
+ts = $(shell date '+%F %T.%3N')
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
-cmsg = $(call msg,$(1),$(1):,$(2))
-emsg = $(if $(2),echo -e "$(call msg,$(1),$(1):,$(2))" > /dev/stderr)
+cmsg = $(ts) $(call msg,$(1),$(1):,$(2))
+emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" > /dev/stderr)
 dmsg = $(if $(findstring --trace,$(MAKEFLAGS)),$(call emsg,$(1),$(2)),echo -n)
 
 escape = $(subst $$,\$$,$(subst ",\",$(subst \",\\",$(1))))
@@ -207,7 +208,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.94
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.95
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)

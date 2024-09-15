@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/cmd"
-	"github.com/tkrop/go-make/internal/info"
 	"github.com/tkrop/go-make/internal/log"
 )
 
