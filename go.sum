@@ -20,8 +20,8 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
-github.com/tkrop/go-config v0.0.0-20240914095523-1879ab44bb13 h1:Emv8siUiQS+HUUl09WQG1z4XNJ080sPYZ+uKt3rExqY=
-github.com/tkrop/go-config v0.0.0-20240914095523-1879ab44bb13/go.mod h1:0vOLpf5PUmBNnHYdd60clKEnoOSNUGWEVOGsIRroCGA=
+github.com/tkrop/go-config v0.0.1 h1:C/lmsFXLJiPVu264F/gcjygACRb40bqyYmKTGUbFAAM=
+github.com/tkrop/go-config v0.0.1/go.mod h1:6j41JGTcFJfeXJpRna5jjy2qf9t0x9hGMlCukuYMFNY=
 github.com/tkrop/go-testing v0.0.13 h1:AEDmuSzYbY8/XIRd2j8J3EUzpVjJ1GN0zwjX87MHDy0=
 github.com/tkrop/go-testing v0.0.13/go.mod h1:BFsOhvdwOvNKO8nqAEEMAYEeim3nXjvOzREs6lobJ/8=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
