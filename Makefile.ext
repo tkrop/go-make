@@ -1,21 +1,28 @@
 LDFLAGS := -X main.Config=$(CURDIR)/config
 
+# extend clean up debug directories created by vscode.
 clean::
 	find -name "__debug_bin*" -exec rm -vrf {} \;;
 
+#@ bump version and update Makefiles to reflect change.
 bump:: version-bump
 version-bump version-bump-reset::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
 	  Makefile config/Makefile config/Makefile.base; \
 
-commit::
+# customize commit target with config file synchronization check.
+commit:: sync-check
+
+#@ check all config files to be synchronized with config directory.
+sync-check::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 	    echo "error: $${FILE} (not synchronized)" > "/dev/stderr"; exit -1; \
 	  fi; \
 	done;
 
+#@ sync all config files with their respective Makefile.
 sync::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
@@ -23,13 +30,30 @@ sync::
 	  fi; \
 	done;
 
+## Experiment:
+
+#@ show some variables for debugging purposes.
+debug::
+	@echo 'IMAGE $(IMAGE)'; \
+	echo 'GEN_DIRS $(GEN_DIRS)'; \
+	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
+	echo 'SOURCES $(SOURCES)'; \
+	echo 'MOCKS $(MOCKS)'; \
+	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
+	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
+	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)'; \
+
+#@ test function for git message creation.
 test-git-message:: test-git-message-fix
 $(addprefix test-git-message-,$(COMMIT_CONVENTION)):: test-git-message-%:
 	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
 
+
+#@ test function for go package version evaluation.
 test-check-version::
 	@$(call go-check-version,go-make,$(RUNARGS),)
 
+#@ test function for test argument evaluation.
 test-args::
 	@$(call test-args,$(RUNARGS))
 
@@ -53,35 +77,3 @@ test-compat::
 	DIFF="$$(diff <(echo "$${ACTUAL}") <(echo "$${COMPAT}"))" && \
 	echo "info: test-compat finished successful!!" || echo "$${DIFF}";
 
-
-CI_IMAGE_VERSION ?= latest
-CI_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CI_IMAGE_VERSION}
-#@ test build in continuous integration container.
-test-cdp:
-	@if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
-	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
-	( cat $${HOME}/.gitconfig; \
-	  echo -e '[safe]\n\tdirectory = /workspace' \
-	) >> $${DIR}/.gitconfig; \
-	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
-	sudo chown --recursive root:root $${DIR}; \
-	trap "sudo rm -rf $${DIR}" EXIT INT TERM; \
-	$(IMAGE_CMD) run $${TTY} --interactive --rm \
-	  --privileged --network host --workdir="/workspace" \
-	  --env SSH_AUTH_SOCK=/ssh-agent \
-	  --mount type=bind,source=$${SSH_AUTH_SOCK},target=/ssh-agent \
-	  --volume=/var/run/docker.sock:/var/run/docker.sock \
-	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
-	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
-	  --volume=$${PWD}:/workspace \
-	  ${CI_IMAGE} /bin/bash $(ARGS);
-
-debug::
-	@echo 'IMAGE $(IMAGE)'; \
-	echo 'GEN_DIRS $(GEN_DIRS)'; \
-	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
-	echo 'SOURCES $(SOURCES)'; \
-	echo 'MOCKS $(MOCKS)'; \
-	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
-	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
-	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)'; \

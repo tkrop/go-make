@@ -208,7 +208,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.96
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.97
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -366,6 +366,7 @@ CODACY_GOSEC_VERSION ?= 0.4.5
 CODACY_STATICCHECK_VERSION ?= 3.0.12
 CODACY_PROJECT_TOKEN ?=
 CODACY_API_TOKEN ?=
+$(call cdebug,using CODACY_API_BASE_URL [$(CODACY_API_BASE_URL)])
 
 KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
 	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
@@ -484,6 +485,7 @@ gen-mocks-awk = \
 	  if (source == "_") { package = $$(NF-1) } \
 	  print target "|" source "|" package "|" origin \
 	}'
+$(call cdebug, gen-mocks = $(call escape,$(call gen-mocks)))
 
 MOCKS := $(shell $(gen-mocks))
 MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
@@ -492,6 +494,7 @@ MOCKS_SOURCES := $(shell echo "$(MOCKS)" | \
 	awk 'BEGIN {FS="|"; RS=" "} ($$2 != "_") { print $$2 }' | sort --unique)
 MOCKS_ORIGINS := $(shell echo "$(MOCKS)" | \
 	awk 'BEGIN {FS="|"; RS=" "} ($$4 != "_") { print $$4 }' | sort --unique)
+$(call cdebug,using MOCKS [$(MOCKS)])
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
@@ -1054,6 +1057,28 @@ $(TEST_BENCH):: $(SOURCES) init-sources $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
+
+CDP_IMAGE_VERSION ?= latest
+CDP_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CDP_IMAGE_VERSION}
+#@ test building in continuous integration container.
+test-cdp:
+	@if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
+	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
+	( cat $${HOME}/.gitconfig; \
+	  echo -e '[safe]\n\tdirectory = /workspace' \
+	) >> $${DIR}/.gitconfig; \
+	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
+	sudo chown --recursive root:root $${DIR}; \
+	trap "sudo rm -rf $${DIR}" EXIT INT TERM; \
+	$(IMAGE_CMD) run $${TTY} --interactive --rm \
+	  --privileged --network host --workdir="/workspace" \
+	  --env SSH_AUTH_SOCK=/ssh-agent \
+	  --mount type=bind,source=$${SSH_AUTH_SOCK},target=/ssh-agent \
+	  --volume=/var/run/docker.sock:/var/run/docker.sock \
+	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
+	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
+	  --volume=$${PWD}:/workspace \
+	  ${CDP_IMAGE} /bin/bash $(ARGS);
 
 #@ execute a kind of self-test running the main targets.
 test-self:: update-all? update-all clean-all all-clean install-all
