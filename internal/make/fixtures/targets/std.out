@@ -131,6 +131,7 @@ test
 test-all
 test-bench
 test-build
+test-cdp
 test-clean
 test-cover
 test-go
