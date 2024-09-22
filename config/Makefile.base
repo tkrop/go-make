@@ -24,6 +24,7 @@ COLOR-target := 1;96
 
 # Finding: \$\(call *[ce]*msg
 ts = $(shell date '+%F %T.%3N')
+eq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4))
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 cmsg = $(ts) $(call msg,$(1),$(1):,$(2))
 emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" > /dev/stderr)
@@ -74,15 +75,6 @@ MAKEFLAGS += --no-print-directory
 MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
-# Setup default variables for building, linking, and installing.
-LDFLAGS ?=
-LD_FLAGS ?= $(strip $(LDFLAGS))
-LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
-BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
-BUILD_FLAGS ?= $(strip -mod=readonly -buildvcs=auto -trimpath $(BUILDFLAGS))
-INSTALLFLAGS ?=
-INSTALL_FLAGS ?= $(strip -mod=readonly -buildvcs=auto $(INSTALLFLAGS))
-
 # Setup default directories of projects.
 DIR_CONFIG := $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%)
 DIR_BUILD := $(CURDIR)/build
@@ -95,6 +87,30 @@ ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
 else
   $(shell $(call emsg,warning,please customize variables in $(CURDIR)/Makefile.vars))
 endif
+
+# Setup default browser command to open coverage reports.
+BROWSER ?= xdg-open
+# Setup default verions used for building, releasing, and publishing.
+VERSION ?= snapshot
+IMAGE_VERSION ?= $(VERSION)
+ifeq ($(wildcard VERSION),VERSION)
+  BUILD_VERSION := v$(shell cat VERSION)
+else
+  BUILD_VERSION ?= $(VERSION)
+endif
+
+mod-readonly = $(call eq,$(IMAGE_VERSION),snapshot,,-mod=readonly)
+
+# Setup default variables for building, linking, and installing.
+LDFLAGS ?=
+LD_FLAGS ?= $(strip $(LDFLAGS))
+LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
+TESTFLAGS ?=
+TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
+BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
+BUILD_FLAGS ?=  $(strip $(mod-readonly) -buildvcs=auto -trimpath $(BUILDFLAGS))
+INSTALLFLAGS ?=
+INSTALL_FLAGS ?= $(strip $(mod-readonly) -buildvcs=auto $(INSTALLFLAGS))
 
 
 # Function to ensure compatibility of gawk and mawk.
@@ -208,7 +224,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.97
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.98
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -260,16 +276,6 @@ NVM_BIN ?=
 $(call cdebug, go-check-version = $(call escape,$(call go-check-version,go-make,)))
 $(shell $(call go-check-version,go-make,))
 
-# Setup default browser command to open coverage reports.
-BROWSER ?= xdg-open
-# Setup default verions used for building, releasing, and publishing.
-VERSION ?= snapshot
-ifeq ($(wildcard VERSION),VERSION)
-  BUILD_VERSION := v$(shell cat VERSION)
-else
-  BUILD_VERSION ?= $(VERSION)
-endif
-
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
@@ -315,7 +321,6 @@ TEAM ?= $(shell \
 # Setup container image command (supports: docker or podman).
 IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
 # Setup default container image name and host.
-IMAGE_VERSION ?= $(VERSION)
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
     $(call cerror,invalid base image name [$(IMAGE_NAME)] \
@@ -1039,8 +1044,6 @@ test-args = \
 	fi; \
   else echo "./..."; fi
 
-TESTFLAGS ?=
-TEST_FLAGS ?= $(strip -mod=readonly -count=1 -race $(TESTFLAGS))
 TEST_ARGS ?= $(shell $(call test-args,$(ARGS)))
 TEST_DEPS ?=
 

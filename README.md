@@ -47,17 +47,18 @@
 
 ## Introduction
 
-Goal of `go-make` is to provide a simple, versioned build and test environment
-for "common [`go`][go]-projects" that make standard development tasks easy (see
-also [Standard `go`-project](#standard-go-project) for details). To accomplish
-this goal `go-make` provides default targets, tools, and configs for testing,
-linting, building, installing, updating, running, and releasing libraries,
-binaries, and container images.
+Goal of [`go-make`][go-make] is to provide a simple, versioned build and test
+environment for "common [`go`][go]-projects" that make standard development
+tasks easy (see also [Standard `go`-project](#standard-go-project) for
+details). To accomplish this goal [`go-make`][go-make] provides default
+targets, tools, and configs for testing, linting, building, installing,
+updating, running, and releasing libraries, binaries, and container images.
 
-`go-make` can be either run as command line tool or hooked into an existing
-project via a minimal [`Makefile`](config/Makefile). Technically `go-make` is
-just a thin wrapper around a very generic [`Makefile`](config/Makefile.base)
-based on a standard [`go`][go]-project supporting different tools:
+[`go-make`][go-make] can be either run as command line tool or hooked into an
+existing project via a minimal [`Makefile`](config/Makefile). Technically
+[`go-make`][go-make] is just a thin wrapper around a very generic
+[`Makefile`](config/Makefile.base) based on a standard [`go`][go]-project
+supporting different tools:
 
 * [`gomock`][gomock] - go generating mocks.
 * [`codacy`][codacy] - for code quality documentation.
@@ -67,21 +68,24 @@ based on a standard [`go`][go]-project supporting different tools:
 * [`grype`][grype] - for security scanning.
 * [`syft`][syft] - for material listing.
 
-The `go-make` wrapper provides the necessary version control for the `Makefile`
-and the [`config`](config) of the tools. The tools are automatically installed
-when needed in the configured (or latest) available version using a default or
-custom config file. All config files can be installed and customized (see
+The `go-make` wrapper provides the necessary version control for the
+[`Makefile`](config/Makefile.base) and the [`config`](config) of tools. The
+tools are automatically installed or updated when needed in the configured (or
+latest) available version using a default or custom config file. All config
+files can be installed and customized (see
 [Setup and customization](MANUAL.md#setup-and-customization)).
 
 **Note:** For many tools `go-make` accepts the risk that using the latest
-versions of tools, e.g. for linting, may break the build to allow cotinuous
+versions of tools, e.g. for linting, may break the build to allow continuous
 upgrading of dependencies by default. For tools were this is not desireable,
-e.g. for `revive` and `golangci-lint` the default import is version. Other
-tools can be versioned if needed (see [manual](MANUAL.md) for more
-information).
+e.g. for [`revive`][revive] and [`golangci-lint`][golangci] the default import
+is version. Other tools can be versioned if needed (see [manual](MANUAL.md) for
+more information).
 
+[go-make]: <https://github.com/tkrop/gomake>
 [gomock]: <https://github.com/uber/mock>
 [golangci]: <https://github.com/golangci/golangci-lint>
+[revive]: <https://github.com/mgechev/revive>
 [codacy]: <https://www.codacy.com/>
 [zally]: <http://opensource.zalando.com/zally>
 [gitleaks]: <https://github.com/gitleaks/gitleaks>
@@ -91,17 +95,17 @@ information).
 
 ## Installation
 
-To install `go-make` simply use [`go` install][go-install] command (or any
-other means, e.g. [`curl`][curl] to obtain a released binary):
+To install [`go-make`][go-make] simply use [`go` install][go-install] command
+(or any other means, e.g. [`curl`][curl] to obtain a released binary):
 
 ```bash
 go install github.com/tkrop/go-make@latest
 ```
 
 The scripts and configs are automatically checked out in the version matching
-the wrapper. `go-make` has the following dependencies, that must be satisfied
-by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04] or
-[`ubuntu-22.04`][ubuntu-22.04]:
+the wrapper. [`go-make`][go-make] has the following dependencies, that must be
+satisfied by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04]
+or [`ubuntu-22.04`][ubuntu-22.04]:
 
 * [GNU `make`][make] (^4.2).
 * [GNU `bash`][bash] (^5.0).
@@ -157,12 +161,14 @@ Other available [config](config) files can be installed one by one using
 
 ## Shell integration
 
-To setup command completion for `go-make`, add the following snippet to your
-`.bashrc`.
+To set up command completion for `go-make`, add the following snippet to
+your [`.bashrc`][bashrc].
 
 ```bash
 source <(go-make --completion=bash)
 ```
+
+[bashrc]: <https://www.gnu.org/software/bash/manual/bash.html>
 
 
 ## Makefile development
@@ -227,9 +233,10 @@ targets as necessary.
 
 ## Trouble Shooting
 
-If we have published an non-working version of `go-make` and your project is
-not able to build, test, run, etc, the quickest way to reset the project
-[Makefile](config/Makefile) working `go-make` version is to run:
+If we have published a non-working version of [`go-make`][go-make] and your
+project is not able to build, test, run, etc, the quickest way to reset the
+project [Makefile](config/Makefile) working [`go-make`][go-make] version is to
+run:
 
 ```bash
 go install github.com/tkrop/go-make@latest; go-make update;
@@ -249,7 +256,7 @@ changes non-breaking.
 ## Building
 
 The project is using itself for building as a proof of concept. So either run
-`make all` or `go-make all`. As fallback it is always possible to directly use
+`make all` or `go-make all`. As fall back it is always possible to directly use
 the core [Makefile](Makefile.base) calling:
 
 ```bash

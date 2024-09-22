@@ -327,6 +327,7 @@ make test-upload # uploads the test coverage files
 make test-clean  # cleans up the test files
 make test-build  # test conflicts in program names
 make test-image  # test conflicts in container image names
+make test-cdp    # test cdp-runtime execution locally to debug scripts
 make test-go     # test go versions
 ```
 
@@ -544,18 +545,18 @@ releasing, and publishing the provided packages as library.
 ```bash
 make version-bump <version>  # bumps version to prepare a new release
 make version-release         # creates the release tags in the repository
-make version-publish         # 
+make version-publish         # publishes the version to the go-proxy
 ```
 
 The `version-bump` target supports an optional `<version>` argument that allows
-to name define a version or increment the version using the semantic keywords
-`major`, `minor`, and `patch` to signal the scope.
+defining a version or increment the version using the semantic keywords `major`,
+`minor`, and `patch` to signal the scope.
 
 
 ### Init targets
 
-The [Makefile](config/Makefile.base) supports initialization targets that are
-added as prerequisites for targets that require them. So there is usually no
+The [Makefile](config/Makefile.base) supports initialization targets usually
+added as prerequisites for targets that require them. So there is really no
 need to call them manually.
 
 
