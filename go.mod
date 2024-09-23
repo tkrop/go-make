@@ -5,8 +5,8 @@ go 1.23.1
 require (
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.9.0
-	github.com/tkrop/go-config v0.0.4
-	github.com/tkrop/go-testing v0.0.16
+	github.com/tkrop/go-config v0.0.5
+	github.com/tkrop/go-testing v0.0.19
 )
 
 require (
