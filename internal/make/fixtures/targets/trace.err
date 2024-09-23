@@ -4,5 +4,5 @@ exec: git rev-parse --show-toplevel [go-make/run]
 exec: test -d go-make/config [go-make/run]
 exec: make --file go-make/config/Makefile.base --no-print-directory --trace show-targets [go-make/run]
 [1;93mwarning:[0m please customize variables in go-make/run/Makefile.vars
-[1;96minfo:[0m captured arguments [param]
+[1;96minfo:[0m make show-targets [param]
 [1;96minfo:[0m updating targets [go-make/config/run/targets]

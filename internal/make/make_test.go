@@ -460,6 +460,10 @@ var (
 	// are moved around.
 	regexMakeTrace = regexp.MustCompile(
 		`(?m)(go-make/config/Makefile.base:)[0-9]+:`)
+	// regexMakeTarget is used to match the make trace output and to remove the
+	// target update message that changes between make 4.3 and make 4.4.
+	regexMakeTarget = regexp.MustCompile(
+		`(?m)(go-make/config/Makefile.base:).*('.*').*`)
 	// replaceFixture replaces the placeholders in the fixture with the values
 	// provided to the replacer.
 	replacerFixture = strings.NewReplacer(
@@ -476,6 +480,7 @@ func FilterMakeOutput(str string) string {
 	str = regexGoMakeSource.ReplaceAllString(str, "go-make")
 	str = regexGoMakeConfig.ReplaceAllString(str, "go-make/config")
 	str = regexMakeTrace.ReplaceAllString(str, "$1")
+	str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
 	return str
 }
 

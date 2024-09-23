@@ -48,17 +48,17 @@
 ## Introduction
 
 Goal of [`go-make`][go-make] is to provide a simple, versioned build and test
-environment for "common [`go`][go]-projects" that make standard development
-tasks easy (see also [Standard `go`-project](#standard-go-project) for
-details). To accomplish this goal [`go-make`][go-make] provides default
-targets, tools, and configs for testing, linting, building, installing,
-updating, running, and releasing libraries, binaries, and container images.
+environment for "common [`go`][go]-projects" to make standard development tasks
+easy (see also [Standard `go`-project](#standard-go-project) for details). To
+accomplish this goal [`go-make`][go-make] provides default targets, tools, and
+configs for testing, linting, building, installing, updating, running, and
+releasing libraries, binaries, and container images.
 
 [`go-make`][go-make] can be either run as command line tool or hooked into an
 existing project via a minimal [`Makefile`](config/Makefile). Technically
-[`go-make`][go-make] is just a thin wrapper around a very generic
-[`Makefile`](config/Makefile.base) based on a standard [`go`][go]-project
-supporting different tools:
+[`go-make`][go-make] is a thin versioning wrapper for a very generic
+[`Makefile`](config/Makefile.base) and configs supporting different tools and
+unix platforms, i.e. Linux & MacOS (Darwin):
 
 * [`gomock`][gomock] - go generating mocks.
 * [`codacy`][codacy] - for code quality documentation.
@@ -69,7 +69,7 @@ supporting different tools:
 * [`syft`][syft] - for material listing.
 
 The [`go-make`][go-make] wrapper provides the necessary version control for the
-[`Makefile`](config/Makefile.base) and the [`config`](config) of tools. The
+[`Makefile`](config/Makefile.base) and the [`config`](config) of the tools. The
 tools are automatically installed or updated when needed in the configured (or
 latest) available version using a default or custom config file. All config
 files can be installed and customized (see
@@ -104,10 +104,11 @@ go install github.com/tkrop/go-make@latest
 
 The scripts and configs are automatically checked out in the version matching
 the wrapper. [`go-make`][go-make] has the following dependencies, that must be
-satisfied by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04]
-or [`ubuntu-22.04`][ubuntu-22.04]:
+satisfied by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04],
+[`ubuntu-22.04`][ubuntu-22.04], [`ubunut-24.04`][ubuntu-24.04], or
+[`MacOSX`][mac-osx]:
 
-* [GNU `make`][make] (^4.2).
+* [GNU `make`][make] (^4.1).
 * [GNU `bash`][bash] (^5.0).
 * [GNU `coreutils`][core] (^8.30)
 * [GNU `findutils`][find] (^4.7)
@@ -115,9 +116,18 @@ or [`ubuntu-22.04`][ubuntu-22.04]:
 * [GNU `sed`][sed] (^4.7)
 * [`curl`][curl] (^7)
 
+**Note:** Since [`MacOSX`][mac-osx] comes with heavily outdated GNU tools,
+[`go-make`][go-make] is setting up its necessary environment using the
+[`brew`][brew] package manager only requiring a minimal pre-condition of
+[`go`][go] and [GNU `make`] that is usually satisfied by the standard
+installation.
+
 [ubuntu-20.04]: <https://releases.ubuntu.com/focal/>
 [ubuntu-22.04]: <https://releases.ubuntu.com/jammy/>
+[ubuntu-24.04]: <https://releases.ubuntu.com/noble/>
+[mac-osx]: <https://support.apple.com/en-gb/mac>
 [go-install]: <https://go.dev/doc/tutorial/compile-install>
+[brew]: <https://brew.sh/>
 [curl]: <https://curl.se/>
 [make]: <https://www.gnu.org/software/make/>
 [bash]: <https://www.gnu.org/software/bash/>

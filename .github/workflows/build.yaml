@@ -4,13 +4,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: 1.23.1
+
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Build and tests
       env:
@@ -22,3 +22,95 @@ jobs:
       uses: shogo82148/actions-goveralls@v1
       with:
         path-to-profile: ./build/test-all.cover
+
+  bash:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23.1
+
+    - name: Setup Npm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Bash compatibility tests
+      env:
+        BASH_COMPAT: 3.2
+      run: make --file=config/Makefile.base --trace test-self
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23.1
+
+    - name: Setup Npm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
+
+    - name: Run Bash compatibility tests
+      run: |-
+        make --version
+        make --file=config/Makefile.base --trace test-self
+
+  macos:
+    runs-on: macos-latest
+    steps:
+    # - name: Set up Docker
+    #   uses: crazy-max/ghaction-setup-docker@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23.1
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run MacOS compatibility tests
+      env:
+        BASH_COMPAT: 3.2
+      run: |-
+        brew install make;
+        export PATH="/opt/homebrew/opt/make/libexec/gnubin:${PATH}";
+        make --version;
+        make --file=config/Makefile.base --trace test-self
+
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23.1
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Release new version
+      env:
+        GH_TOKEN: ${{ github.token }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |-
+        make --file=config/Makefile.base --trace version-release
+
+    - name: Publish new version
+      env:
+        GH_TOKEN: ${{ github.token }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: |-
+        sleep 60 && make --file=config/Makefile.base --trace version-publish || true
