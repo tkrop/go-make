@@ -224,7 +224,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.99
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.100
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1800,7 +1800,7 @@ update/go.mod:: install-gomajor
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
 update/go.mod?:: install-gomajor
-	@if [ ! -f "go.mod" ]; then exit 0; fi \
+	@if [ ! -f "go.mod" ]; then exit 0; fi; \
 	$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum
 

@@ -68,19 +68,19 @@ supporting different tools:
 * [`grype`][grype] - for security scanning.
 * [`syft`][syft] - for material listing.
 
-The `go-make` wrapper provides the necessary version control for the
+The [`go-make`][go-make] wrapper provides the necessary version control for the
 [`Makefile`](config/Makefile.base) and the [`config`](config) of tools. The
 tools are automatically installed or updated when needed in the configured (or
 latest) available version using a default or custom config file. All config
 files can be installed and customized (see
 [Setup and customization](MANUAL.md#setup-and-customization)).
 
-**Note:** For many tools `go-make` accepts the risk that using the latest
-versions of tools, e.g. for linting, may break the build to allow continuous
-upgrading of dependencies by default. For tools were this is not desireable,
-e.g. for [`revive`][revive] and [`golangci-lint`][golangci] the default import
-is version. Other tools can be versioned if needed (see [manual](MANUAL.md) for
-more information).
+**Note:** For many tools [`go-make`][go-make] accepts the risk that using the
+latest versions of tools, e.g. for linting, may break the build to allow
+continuous upgrading of dependencies by default. For tools were this is not
+desireable, e.g. for [`revive`][revive] and [`golangci-lint`][golangci] the
+default import is version. Other tools can be versioned if needed (see
+[manual](MANUAL.md) for more information).
 
 [go-make]: <https://github.com/tkrop/gomake>
 [gomock]: <https://github.com/uber/mock>
@@ -129,9 +129,10 @@ or [`ubuntu-22.04`][ubuntu-22.04]:
 
 ## Example usage
 
-After installing `go-make`, all provided targets can executed by simply calling
-`go-make <target>` in the project repository on the command line, in another
-`Makefile`, in a github action, or any other delivery pipeline config script:
+After installing [`go-make`][go-make], all provided targets can executed by
+simply calling `go-make <target>` in the project repository on the command
+line, in another `Makefile`, in a github action, or any other delivery pipeline
+config script:
 
 ```bash
 go-make all        # execute a whole build pipeline depending on the project.
@@ -141,17 +142,18 @@ go-make image      # execute minimal steps to create all container images.
 
 For further examples see [`go-make` manual](MANUAL.md).
 
-**Note:** Many `go-make` targets can be customized via environment variables,
-that by default are defined via [`Makefile.vars`](Makefiles.vars) (see also
-[Modifying variables](Manual.md#modifying-variables)).
+**Note:** Many [`go-make`][go-make] targets can be customized via environment
+variables, that by default are defined via [`Makefile.vars`](Makefiles.vars)
+(see also [Modifying variables](Manual.md#modifying-variables)).
 
 
 ## Makefile integration
 
-If you like to integrate `go-make` into another `Makefile` you may find the
-`Makefile` provided in the [config](config) helpful that automatically installs
-`go-make` creates a set of phony targets to allow auto-completion and delegates
-the execution (see also [Makefile](config/Makefile)).
+If you like to integrate [`go-make`][go-make] into another `Makefile` you may
+find the [`Makefile`](config/Makefile.base) provided in the [config](config)
+helpful that automatically installs [`go-make`][go-make] creates a set of phony
+targets to allow auto-completion and delegates the execution (see also
+[`Makefile`](config/Makefile)).
 
 The default [`Makefile`](config/Makefile) can also be installed to a project
 from the [config](config) via `go-make init-make` to boot strap a project.
@@ -161,8 +163,8 @@ Other available [config](config) files can be installed one by one using
 
 ## Shell integration
 
-To set up command completion for `go-make`, add the following snippet to
-your [`.bashrc`][bashrc].
+To set up command completion for [`go-make`][go-make], add the following
+snippet to your [`.bashrc`][bashrc].
 
 ```bash
 source <(go-make --completion=bash)
@@ -199,8 +201,8 @@ following conventions:
 
 3. Modules are placed in any sub-path of the repository, e.g. in `pkg`, `app`,
    `internal` are commonly used patterns, except for `build` and `run`. These
-   are used by `go-make` as temporary folders to build commands and run commands
-   and are cleaned up regularly.
+   are used by [`go-make`][go-make] as temporary folders to build commands and
+   run commands and are cleaned up regularly.
 
 4. The build target provides build context values to set up global variables in
    `main` and `config` packages.
@@ -263,8 +265,8 @@ the core [Makefile](Makefile.base) calling:
 make -f config/Makefile.base <target>...
 ```
 
-You can also test the local build `go-make` application with the local config.
-The project compiles itself to use the local config by default.
+You can also test the local build [`go-make`][go-make] application with the
+local config. The project compiles itself to use the local config by default.
 
 
 ## Contributing
