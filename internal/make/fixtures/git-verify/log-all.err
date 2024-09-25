@@ -1,5 +1,5 @@
 [1;93mwarning:[0m please customize variables in go-make/run/Makefile.vars
-[1;96minfo:[0m captured arguments [log ../internal/make/fixtures/git-verify/log-all.in]
+[1;96minfo:[0m make git-verify [log ../internal/make/fixtures/git-verify/log-all.in]
 [1;91merror:[0m commit type missing [title=commit type is missing (#0)]
 [1;91merror:[0m commit type invalid [title=feature: commit type is invalid (#1)]
 [1;91merror:[0m signed-off-by missing [msg=feat[service]: initial commit (#2)]

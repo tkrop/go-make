@@ -24,7 +24,7 @@ COLOR-target := 1;96
 
 # Finding: \$\(call *[ce]*msg
 ts = $(shell date '+%F %T.%3N')
-eq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4))
+xifeq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4))
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 cmsg = $(ts) $(call msg,$(1),$(1):,$(2))
 emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" > /dev/stderr)
@@ -32,6 +32,7 @@ dmsg = $(if $(findstring --trace,$(MAKEFLAGS)),$(call emsg,$(1),$(2)),echo -n)
 
 escape = $(subst $$,\$$,$(subst ",\",$(subst \",\\",$(1))))
 cerror = $(if $(1),$(error $(shell $(call emsg,error,$(1)))))
+cinfo = $(shell $(call emsg,info,$(1)))
 cdebug = $(shell $(call dmsg,debug,$(1)))
 
 # Check whether bash version is higher or equal version 3.2 to be compatible.
@@ -40,30 +41,42 @@ ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
 endif
 # Check whether bash is running in minmal compatibility mode for testing.
 ifdef BASH_COMPAT
-  $(shell $(call emsg,info,bash compatibility mode set [$(BASH_COMPAT)]))
+  $(call cdebug,bash compatibility mode set [$(BASH_COMPAT)])
 endif
 
 # System depdendent helper functions.
 ifeq ("$(shell uname)","Linux")
-  uname-all := uname --all
-  rm-verbose-force := rm --verbose --force
-  rm-verbose-force-recursive := rm --verbose --force --recursive
 else ifeq ($(shell uname),Darwin)
-  uname-all := uname -a
-  rm-verbose-force := rm -vf
-  rm-verbose-force-recursive := rm -vrf
+  path-setup = $(shell \
+	if [ "$(1)" == "opt" ]; then \
+	  XPATH="$(shell brew --prefix)/$(1)/$(2)/libexec/gnubin"; \
+	else XPATH="$(shell brew --prefix)/$(1)"; fi; \
+	test ! -e "$${XPATH}/$(3)" && brew install $(2) >&2; \
+	echo -n "$${XPATH}:$(4)")
+  export PATH := $(call path-setup,opt,coreutils,ls,$(PATH))
+  export PATH := $(call path-setup,opt,findutils,find,$(PATH))
+  export PATH := $(call path-setup,bin,bash,bash,$(PATH))
+#  export PATH := $(call path-setup,bin,curl,curl,$(PATH))
+  export PATH := $(call path-setup,opt,gawk,awk,$(PATH))
+  export PATH := $(call path-setup,opt,gsed,sed,$(PATH))
+  export PATH := $(call path-setup,opt,make,make,$(PATH))
 else
-  $(call cerror,unsupported operating system [$(shell $(uname-all))])
+  $(call cerror,unsupported operating system [$(shell $(uname --all))])
 endif
+
 # Log execution environment for debugging.
-$(call cdebug,$(shell $(uname-all)))
+$(call cdebug,$(shell $(uname --all)))
+$(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
+$(call cdebug,using PATH [$(shell echo -n "$${PATH}")])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
 	sed -e "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
-clean-file = $(call find-all,$(1),-type f \( $(2) \) -exec $(rm-verbose-force) {} \;)
-clean-dir = $(call find-all,$(1),-type d \( $(2) \) -exec $(rm-verbose-force-recursive) {} \;)
+clean-file = $(call find-all,$(1),-type f \( $(2) \) \
+	-exec rm --verbose --force {} \;)
+clean-dir = $(call find-all,$(1),-type d \( $(2) \) \
+	-exec rm --verbose --force --recursive {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 
@@ -99,7 +112,7 @@ else
   BUILD_VERSION ?= $(VERSION)
 endif
 
-mod-readonly = $(call eq,$(IMAGE_VERSION),snapshot,,-mod=readonly)
+mod-readonly = $(call xifeq,$(IMAGE_VERSION),snapshot,,-mod=readonly)
 
 # Setup default variables for building, linking, and installing.
 LDFLAGS ?=
@@ -175,6 +188,11 @@ go-install-module = \
   $(call go-install,$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
   $(GO) install $(INSTALL_FLAGS) "$(1)"
+# Function to determine whether to filter go-make targets.
+go-make-filter = $(call xifeq,$(shell if [ ! -f "$(GOBIN)/go-make" ]; then \
+	echo "(devel)"; else $(GO) version -m "$(GOBIN)/go-make" | \
+	grep -E "^\s*(mod|dep)\s*github.com/tkrop/go-make" | cut -f 4; fi), \
+	(devel),%-go-make,)
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -224,7 +242,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.100
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.101
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -319,7 +337,7 @@ TEAM ?= $(shell \
 	else echo "${GITOWNER}"; fi)
 
 # Setup container image command (supports: docker or podman).
-IMAGE_CMD ?= $(shell command -v docker || command -v podman || docker)
+IMAGE_CMD ?= $(shell command -v docker || command -v podman)
 # Setup default container image name and host.
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
@@ -460,12 +478,9 @@ CMDARGS ?= $(shell  awk '{ split("$(CMDWORDS)",seps); \
 ARGS ?=
 ifdef CMDARGS
   ARGS := $(strip $(CMDARGS) $(ARGS))
-  $(shell if [ -n "$(ARGS)" ]; then \
-    $(call emsg,info,captured arguments [$(ARGS)]); \
-  fi)
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
-
+$(call cinfo,make $(filter-out $(ARGS),$(MAKECMDGOALS)) [$(ARGS)])
 
 # Optimized generation of mocks.
 gen-mocks = \
@@ -524,21 +539,25 @@ TARGETS_UNINSTALL_GO := $(addprefix uninstall-, $(COMMANDS_GO))
 TARGETS_UNINSTALL_SH := $(addprefix uninstall-, $(COMMANDS_SH))
 TARGETS_UNINSTALL_NPM := $(addprefix uninstall-, $(TOOLS_NPM:-cli=))
 TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-, $(CODACY_BINARIES))
-TARGETS_UNINSTALL_ALL := $(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) \
-	$(TARGETS_UNINSTALL_SH) $(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY)
+# TARGETS_UNINSTALL_ALL := $(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) \
+#	$(TARGETS_UNINSTALL_SH) $(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY)
+TARGETS_UNINSTALL_ALL := $(filter-out $(go-make-filter), \
+	$(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) $(TARGETS_UNINSTALL_SH) \
+	$(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY))
 TARGETS_RUN := $(addprefix run-, $(COMMANDS))
 TARGETS_RUN_GO := $(addprefix run-go-, $(COMMANDS))
-TARGETS_RUN_IMAGE := $(addprefix run-image-, $(COMMANDS))
-TARGETS_RUN_CLEAN := $(addprefix run-clean-, $(COMMANDS) db aws)
+TARGETS_RUN_IMAGE := $(addprefix run-image-,$(if $(IMAGES),$(COMMANDS)))
+TARGETS_RUN_CLEAN := $(addprefix run-clean-,$(if $(IMAGES),$(COMMANDS)) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
-TARGETS_CLEAN_RUN := $(addprefix clean-run-, $(COMMANDS) db aws)
-TARGETS_UPDATE_GO := $(addprefix update-,$(sort $(COMMANDS_GO) go-make))
+TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(if $(IMAGES),$(COMMANDS)) db aws)
+TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
 TARGETS_UPDATE_ALL := update-go update-deps update-tools update-make
 TARGETS_UPDATE_ALL? := update-go? update-deps? update-make?
 TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 	$(TARGETS_UPDATE_ALL?) $(TARGETS_UPDATE_MAKE?))
+
 
 ## Standard: default targets to test, lint, and build.
 
@@ -810,12 +829,10 @@ go.mod:
 #@ initialize git pre-commit and commit-message hooks.
 init-hooks:: $(GITHOOKS:%=.git/hooks/%)
 git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
-	echo "make git-verify message $${1}" > /dev/stderr;\n\
 	command -v $(GOBIN)/go-make >/dev/null || \\\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make git-verify message $${1};\n' | sed 's/^ *//g'
 git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
-	echo "make commit" > /dev/stderr;\n\
 	command -v $(GOBIN)/go-make >/dev/null || \\\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
@@ -931,7 +948,7 @@ test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
 
 # remove all coverage files of test and benchmarks.
 test-clean::
-	@$(rm-verbose-force) $(TEST_ALL) $(TEST_UNIT) $(TEST_BENCH);
+	@rm --verbose --force $(TEST_ALL) $(TEST_UNIT) $(TEST_BENCH);
 
 #@ start the test coverage report.
 test-cover::
@@ -1065,7 +1082,10 @@ CDP_IMAGE_VERSION ?= latest
 CDP_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CDP_IMAGE_VERSION}
 #@ test building in continuous integration container.
 test-cdp:
-	@if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
+	@$(call emsg,info,testing in cdp container); \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
+		no docker command - aborting!); exit 1; fi;
+	if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
 	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
 	( cat $${HOME}/.gitconfig; \
 	  echo -e '[safe]\n\tdirectory = /workspace' \
@@ -1084,7 +1104,7 @@ test-cdp:
 	  ${CDP_IMAGE} /bin/bash $(ARGS);
 
 #@ execute a kind of self-test running the main targets.
-test-self:: update-all? update-all clean-all all-clean install-all
+test-self::  clean-all all-clean clean-all install-all update-all? update-all
 	@$(call emsg,success,test-self finished successfully!);
 
 
@@ -1246,7 +1266,10 @@ lint-config::
 #@ execute all codacy linters activated by the custom setup (all files).
 lint-codacy:: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
 $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-sources
-	@LARGS=("--allow-network" "--skip-uncommitted-files-check"); \
+	@$(call emsg,info,linting [$*]); \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command - continu without $*!); exit 0; fi; \
+	LARGS=("--allow-network" "--skip-uncommitted-files-check"); \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
 	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
@@ -1307,24 +1330,31 @@ lint-revive:: init-sources install-revive
 
 #@ execute markdown linter (md-files).
 lint-markdown:: init-sources $(NVM_BIN)/markdownlint
-	@echo "markdownlint --config .markdownlint.yaml ."; \
+	@$(call emsg,info,linting with markdownlint); \
+	echo "markdownlint --config .markdownlint.yaml ."; \
 	if  [ -n "$$(find -name "*.md")" ]; then \
 	  if command -v markdownlint &> /dev/null; then \
 	    markdownlint --config .markdownlint.yaml .; \
-	  else $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
-	    container-registry.zalando.net/library/node-18-alpine:latest \
-	    /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
-	      cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
+	  elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+		no docker command - continue without markdownlint!); \
+	  else \
+	    $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
+	      container-registry.zalando.net/library/node-18-alpine:latest \
+	      /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
+	        cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
 	  fi; \
 	fi; \
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
 lint-shell:: init-sources
-	@mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
+	@$(call emsg,info,linting with shellcheck); \
+	mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
 	if [ -n "$(ARGS)" ]; then ARGS=(${ARGS} $(ARGS)); fi; \
 	if  [ -n "$${FILES}" ]; then \
 	  if command -v shellcheck &> /dev/null; then \
 	    shellcheck "$${ARGS[@]}" "$${FILES[@]}"; \
+	  elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	    no docker command, continuing without [shellcheck]); \
 	  else \
 	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" \
 	      koalaman/shellcheck:stable "$${ARGS[@]}" "$${FILES[@]}"; \
@@ -1421,8 +1451,10 @@ image-build:: test-image $(TARGETS_IMAGE_BUILD)
 
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; \
-	if [ "$(IMAGE_PUSH)" == "never" ]; then \
-	  echo "We never build images, aborting [$${IMAGE}]."; exit 0; \
+	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
+	  we never build images, aborting [$${IMAGE}]); exit 0; \
+	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command, continuing without [$${IMAGE}]!); exit 0; \
 	fi; \
 	REVISION=$$($(GIT) rev-parse HEAD 2>/dev/null); \
 	BASE=$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2); \
@@ -1440,12 +1472,15 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	@IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
-	if [ "$(IMAGE_PUSH)" == "never" ]; then \
-	  echo "We never push images, aborting [$${IMAGE}]."; exit 0; \
-	elif [ "$${VERSION}" == "snapshot" ]; then \
-	  echo "We never push snapshot images, aborting [$${IMAGE}]."; exit 0; \
-	elif [[ "$${VERSION}" =~ ^pr-.*$$ ]] && [ "$(IMAGE_PUSH)" != "pulls" ]; then \
-	  echo "We never push pull request images, aborting [$${IMAGE}]."; exit 0; \
+	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
+	  we never push images, aborting [$${IMAGE}]); exit 0; \
+	elif [ "$${VERSION}" == "snapshot" ]; then $(call emsg,info, \
+	  we never push snapshot images, aborting [$${IMAGE}]); exit 0; \
+	elif [[ "$${VERSION}" =~ ^pr-.*$$ ]] && \
+	    [ "$(IMAGE_PUSH)" != "pulls" ]; then $(call emsg,info, \
+	  we never push pull request images, aborting [$${IMAGE}]); exit 0; \
+	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command, continuing without [$${IMAGE}]); exit 0; \
 	fi; \
 	$(IMAGE_CMD) push $${IMAGE};
 
@@ -1492,10 +1527,10 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 # uninstall tools providing an install.sh tool.
 $(TARGETS_UNINSTALL_SH):: uninstall-%:
-	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@if command -v npm &> /dev/null; then \
@@ -1505,10 +1540,10 @@ $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 # uninstall codacy tools used by the project.
 $(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	$(rm-verbose-force) $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
+	rm --verbose --force $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
 # uninstall software command or service created by the project.
 $(TARGETS_UNINSTALL):: uninstall-%:
-	@$(rm-verbose-force) $(wildcard $(GOBIN)/$*);
+	@rm --verbose --force $(wildcard $(GOBIN)/$*);
 
 
 ## Release: targets to support release process.
@@ -1591,7 +1626,9 @@ run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
 	$(call emsg,info,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)); \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
-	  $(call emsg,info,port allocated - use existing db container!); exit 0; \
+	  $(call emsg,info,port allocated, using existing [postgres]); exit 0; \
+	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command - continue without [postgres]); exit 0; fi;
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty \
@@ -1616,9 +1653,11 @@ run-db:: $(DIR_RUN)
 run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
 	$(call emsg,info,ensure $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
-	if [ -n "$$($(IMAGE_CMD) ps | \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command - continue without [aws/localstack]); exit 0; \
+	elif [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
-	  $(call emsg,info,ports allocated - use existing aws container!); \
+	  $(call emsg,info,ports allocated, useing existing [aws/localstack]); \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
@@ -1650,30 +1689,36 @@ $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 
 #@ run-image-*: start the matched command via the container images.
 $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
-	@trap "$(IMAGE_CMD) rm $(IMAGE_ARTIFACT)-$* >/dev/null" EXIT; \
-	trap "$(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* >/dev/null" INT TERM; \
+	@NAME="$(IMAGE_ARTIFACT)-$*"; \
+	$(call emsg,info,running image [$${NAME}]); \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
+		no docker command, aborting [$${NAME}]!); exit 1; fi; \
+	trap "$(IMAGE_CMD) rm $${NAME} >/dev/null" EXIT; \
+	trap "$(IMAGE_CMD) kill $${NAME} >/dev/null" INT TERM; \
 	if [ -n "$(filter %$*,$(IMAGES))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed -e "s/:/-$*:/")"; \
 	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
-	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $(IMAGE_ARTIFACT)-$* \
+	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $${NAME} \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
 	  --network=host $(call run-vars,--env) $(call run-vars-image,--env) \
 	  ${IMAGE} /$* $(ARGS) 2>&1 | \
-	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
-	exit $${PIPESTATUS[0]};
+	tee -a $(DIR_RUN)/$${NAME}.log; exit $${PIPESTATUS[0]};
 
 #@ clean up all running container images.
 run-clean:: $(TARGETS_RUN_CLEAN)
 #@ run-clean-*: kill and remove the container image of the matched command.
 $(TARGETS_RUN_CLEAN):: run-clean-%:
-	@echo "check container $(IMAGE_ARTIFACT)-$*"; \
-	if [ -n "$$($(IMAGE_CMD) ps | grep "$(IMAGE_ARTIFACT)-$*")" ]; then \
-	  $(IMAGE_CMD) kill $(IMAGE_ARTIFACT)-$* > /dev/null && \
-	  echo "killed container $(IMAGE_ARTIFACT)-$*"; \
+	@NAME="$(IMAGE_ARTIFACT)-$*"; \
+	$(call emsg,info,clean container [$${NAME}]); \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
+	  no docker command - aborting [$${NAME}]!); exit 0; fi; \
+	if [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
+	  $(IMAGE_CMD) kill $${NAME} > /dev/null && \
+	  $(call emsg,success,killed container [$${NAME}]); \
 	fi; \
-	if [ -n "$$($(IMAGE_CMD) ps -a | grep "$(IMAGE_ARTIFACT)-$*")" ]; then \
-	  $(IMAGE_CMD) rm $(IMAGE_ARTIFACT)-$* > /dev/null && \
-	  echo "removed container $(IMAGE_ARTIFACT)-$*"; \
+	if [ -n "$$($(IMAGE_CMD) ps -a | grep "$${NAME}")" ]; then \
+	  $(IMAGE_CMD) rm $${NAME} > /dev/null && \
+	  $(call emsg,success,removed container [$${NAME}]); \
 	fi; \
 
 
@@ -1687,10 +1732,10 @@ clean-all:: $(TARGETS_CLEAN_ALL)
 clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
 clean-hooks::
-	@$(rm-verbose-force) .git/hooks/pre-commit;
+	@rm --verbose --force .git/hooks/pre-commit;
 #@ clean up all resources created by building and testing.
 clean-build::
-	@$(rm-verbose-force-recursive) $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
+	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
 	$(call clean-file,.,-name "mock_*_test.go" -o -name "zz_generated.*.go");
 #@ clean up all package dependencies by removing packages.
 clean-deps::
