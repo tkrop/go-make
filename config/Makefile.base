@@ -242,7 +242,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.102
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.103
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -794,12 +794,15 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	@MESSAGE="$(ARGS)"; $(call git-message,$*,0); \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
-git-fix::
-	@GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
-	if [[ "$(ARGS)" =~ verify ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
-	if [[ "$(ARGS)" =~ no-verify ]]; then GITFIX+=("--no-verify"); fi; \
-	if [[ "$(ARGS)" =~ edit ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
-	if [[ "$(ARGS)" =~ no-edit ]]; then GITFIX+=("--no-edit"); fi; \
+TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
+$(TARGETS_GIT_FIX):: git-fix%:
+	@ARGS=" $(ARGS) $(*:-%=%) "; \
+	if [[ "$${ARGS}" =~ " all " ]]; then git add .; fi; \
+	GITFIX=($(patsubst %,"%",$(GITFIX))); GITPUSH=($(patsubst %,"%",$(GITPUSH))); \
+	if [[ "$${ARGS}" =~ " verify " ]]; then GITFIX=("$${GITFIX[@]/--no-verify}"); fi; \
+	if [[ "$${ARGS}" =~ " no-verify " ]]; then GITFIX+=("--no-verify"); fi; \
+	if [[ "$${ARGS}" =~ " edit " ]]; then GITFIX=("$${GITFIX[@]/--no-edit}"); fi; \
+	if [[ "$${ARGS}" =~ " no-edit " ]]; then GITFIX+=("--no-edit"); fi; \
 	for KEY in "$${!GITFIX[@]}"; do \
 	  if [ "$${GITFIX[$${KEY}]}" == "" ]; then unset GITFIX[$${KEY}]; fi; \
 	done; \
