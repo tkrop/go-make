@@ -581,15 +581,15 @@ conventional commits, where `*` is a placeholder for the [conventional commit
 types](#commit-types):
 
 ```bash
-make git-list        # shows the git log as pretty printed list
-make git-graph       # shows the git log as pretty printed graph
-make git-clean [all] # cleans up git history by removing merged branches
-make git-reset [all] # checks out default branch and cleans up git history
-make git-create(-*)  # creates and pushes a branch with the current change set
-make git-commit(-*)  # commits the current change set to the current branch
-make git-fix [...]   # pushes the latest changes to the previous commit
-make git-push        # pushes the current branch to the upstream repository
-make git-verify      # checks git log to follow commit conventions
+make git-list          # shows the git log as pretty printed list
+make git-graph         # shows the git log as pretty printed graph
+make git-clean [all]   # cleans up git history by removing merged branches
+make git-reset [all]   # checks out default branch and cleans up git history
+make git-create(-*)    # creates and pushes a branch with the current changes
+make git-commit(-*)    # commits the current change set to the current branch
+make git-fix(-*) [...] # pushes the latest changes to the previous commit
+make git-push          # pushes the current branch to the upstream repository
+make git-verify        # checks git log to follow commit conventions
 ```
 
 The `git-create(-*)` targets support `<branch>` and a `<message...>` argument

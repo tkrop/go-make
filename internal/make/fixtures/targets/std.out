@@ -44,6 +44,11 @@ git-create-remove
 git-create-style
 git-create-test
 git-fix
+git-fix-all
+git-fix-edit
+git-fix-no-edit
+git-fix-no-verify
+git-fix-verify
 git-graph
 git-log
 git-push
