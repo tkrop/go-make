@@ -61,11 +61,11 @@ else ifeq ($(shell uname),Darwin)
   export PATH := $(call path-setup,opt,gsed,sed,$(PATH))
   export PATH := $(call path-setup,opt,make,make,$(PATH))
 else
-  $(call cerror,unsupported operating system [$(shell $(uname --all))])
+  $(call cerror,unsupported operating system [$(shell uname --all)])
 endif
 
 # Log execution environment for debugging.
-$(call cdebug,$(shell $(uname --all)))
+$(call cdebug,$(shell uname --all))
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
 $(call cdebug,using PATH [$(shell echo -n "$${PATH}")])
 
@@ -242,7 +242,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.101
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.102
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
