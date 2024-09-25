@@ -32,17 +32,6 @@ sync::
 
 ## Experiment:
 
-#@ show some variables for debugging purposes.
-debug::
-	@echo 'IMAGE $(IMAGE)'; \
-	echo 'GEN_DIRS $(GEN_DIRS)'; \
-	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
-	echo 'SOURCES $(SOURCES)'; \
-	echo 'MOCKS $(MOCKS)'; \
-	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
-	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
-	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)'; \
-
 #@ test function for git message creation.
 test-git-message:: test-git-message-fix
 $(addprefix test-git-message-,$(COMMIT_CONVENTION)):: test-git-message-%:

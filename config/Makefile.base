@@ -188,11 +188,6 @@ go-install-module = \
   $(call go-install,$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
   $(GO) install $(INSTALL_FLAGS) "$(1)"
-# Function to determine whether to filter go-make targets.
-go-make-filter = $(call xifeq,$(shell if [ ! -f "$(GOBIN)/go-make" ]; then \
-	echo "(devel)"; else $(GO) version -m "$(GOBIN)/go-make" | \
-	grep -E "^\s*(mod|dep)\s*github.com/tkrop/go-make" | cut -f 4; fi), \
-	(devel),%-go-make,)
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -242,11 +237,14 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.103
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.104
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
+gomake-version = $(shell if [ ! -f "$(GOBIN)/go-make" ]; then \
+	echo "(devel)"; else $(GO) version -m "$(GOBIN)/go-make" | \
+	grep -E "^\s*(mod|dep)\s*github.com/tkrop/go-make" | cut -f 4; fi)
 
 # Ensure that we can find default config files.
 ifeq ($(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/),)
@@ -404,12 +402,12 @@ GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 # Default target list for all and pipeline builds.
 TARGETS_ALL ?= init test lint build image
 TARGETS_INIT ?= init-hooks init-go $(if $(filter $(CODACY),enabled),init-codacy,)
-TARGETS_CLEAN ?= clean-build
-TARGETS_UPDATE ?= update-go update-deps update-make
 TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdown
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
+TARGETS_CLEAN ?= clean-build
+TARGETS_UPDATE ?= update-go update-deps update-make
 
 INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS) $(FILE_MARKDOWN) \
     $(FILE_CODACY) $(FILE_REVIVE))
@@ -518,10 +516,10 @@ $(call cdebug,using MOCKS [$(MOCKS)])
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
-TARGETS_TEST_INIT := test-clean init-sources
-TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
+TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
 TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
+TARGETS_TEST_INIT := test-clean init-sources
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
 TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(IMAGES))
@@ -539,9 +537,8 @@ TARGETS_UNINSTALL_GO := $(addprefix uninstall-, $(COMMANDS_GO))
 TARGETS_UNINSTALL_SH := $(addprefix uninstall-, $(COMMANDS_SH))
 TARGETS_UNINSTALL_NPM := $(addprefix uninstall-, $(TOOLS_NPM:-cli=))
 TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-, $(CODACY_BINARIES))
-# TARGETS_UNINSTALL_ALL := $(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) \
-#	$(TARGETS_UNINSTALL_SH) $(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY)
-TARGETS_UNINSTALL_ALL := $(filter-out $(go-make-filter), \
+TARGETS_UNINSTALL_ALL := \
+	$(filter-out $(call xifeq,$(gomake-version),(devel),%-go-make,), \
 	$(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) $(TARGETS_UNINSTALL_SH) \
 	$(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY))
 TARGETS_RUN := $(addprefix run-, $(COMMANDS))
@@ -1628,11 +1625,10 @@ RUN_DEPS ?=
 run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
 	$(call emsg,info,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)); \
+	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
+	  no docker command - continue without [postgres]); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
-	  $(call emsg,info,port allocated, using existing [postgres]); exit 0; \
-	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command - continue without [postgres]); exit 0; fi;
-	fi; \
+	  $(call emsg,info,port allocated, using existing [postgres]); exit 0; fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty \
 	  --name ${IMAGE_ARTIFACT}-db \
@@ -1649,7 +1645,7 @@ run-db:: $(DIR_RUN)
 	do echo "waiting for db container" > /dev/stderr; sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
-	do echo "waiting for db service" > /dev/stderr; sleep 1; done) |\
+	do echo "waiting for db service" > /dev/stderr; sleep 1; done) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-db;
 
 #@ start an AWS localstack instance for testing.
@@ -1903,3 +1899,100 @@ $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
 ifneq ("$(wildcard Makefile.ext)","")
   include Makefile.ext
 endif
+
+
+debug-sources::
+	@echo 'SOURCES $(SOURCES)'; \
+	echo 'MODULES $(MODULES)'; \
+
+debug-gen::
+	@echo 'GEN_DIRS $(GEN_DIRS)'; \
+	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
+	echo 'GEN_TARGETS $(GEN_TARGETS)';
+
+debug-commands::
+	@echo 'COMMANDS $(COMMANDS)'; \
+	echo 'COMMANDS_REGEX $(COMMANDS_REGEX)'; \
+	echo 'COMMANDS_SH $(COMMANDS_SH)'; \
+	echo 'COMMANDS_GO $(COMMANDS_GO)'; \
+	echo 'COMMANDS_PKG $(COMMANDS_PKG)';
+
+debug-mocks::
+	@echo 'MOCKS $(MOCKS)'; \
+	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
+	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
+	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)';
+
+debug-image::
+	@echo 'IMAGE $(IMAGE)'; \
+	echo 'IMAGES $(IMAGES)'; \
+	echo 'IMAGE_CMD $(IMAGE_CMD)'; \
+	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
+
+debug-targets::
+	@echo 'TARGETS_ALL $(TARGETS_ALL)'; \
+	echo 'TARGETS_INIT $(TARGETS_INIT)'; \
+	echo 'TARGETS_COMMIT $(TARGETS_COMMIT)'; \
+	echo 'TARGETS_TEST $(TARGETS_TEST)'; \
+	echo 'TARGETS_LINT $(TARGETS_LINT)'; \
+	echo 'TARGETS_CLEAN $(TARGETS_CLEAN)'; \
+	echo 'TARGETS_UPDATE $(TARGETS_UPDATE)';
+
+debug-targets-init::
+	@echo 'TARGETS_INIT $(TARGETS_INIT)'; \
+	echo 'TARGETS_INIT_ALL $(TARGETS_INIT_ALL)'; \
+	echo 'TARGETS_INIT_MAKE $(TARGETS_INIT_MAKE)'; \
+	echo 'TARGETS_INIT_CODACY $(TARGETS_INIT_CODACY)';
+
+debug-targets-test::
+	@echo 'TARGETS_TEST $(TARGETS_TEST)'; \
+	echo 'TARGETS_TEST_INIT $(TARGETS_TEST_INIT)';
+
+debug-targets-lint::
+	@echo 'TARGETS_LINT $(TARGETS_LINT)'; \
+	echo 'TARGETS_LINT_CODACY_CLIENTS $(TARGETS_LINT_CODACY_CLIENTS)'; \
+	echo 'TARGETS_LINT_CODACY_BINARIES $(TARGETS_LINT_CODACY_BINARIES)';
+
+debug-targets-build::
+	@echo 'TARGETS_BUILD $(TARGETS_BUILD)'; \
+	echo 'TARGETS_BUILD_LINUX $(TARGETS_BUILD_LINUX)';
+
+debug-targets-image::
+	@echo 'TARGETS_IMAGE_BUILD $(TARGETS_IMAGE_BUILD)'; \
+	echo 'TARGETS_IMAGE_PUSH $(TARGETS_IMAGE_PUSH)'; \
+
+debug-targets-install::
+	@echo 'TARGETS_INSTALL $(TARGETS_INSTALL)'; \
+	echo 'TARGETS_INSTALL_GO $(TARGETS_INSTALL_GO)'; \
+	echo 'TARGETS_INSTALL_SH $(TARGETS_INSTALL_SH)'; \
+	echo 'TARGETS_INSTALL_NPM $(TARGETS_INSTALL_NPM)'; \
+	echo 'TARGETS_INSTALL_ALL $(TARGETS_INSTALL_ALL)';
+
+debug-targets-uninstall::
+	@echo 'TARGETS_UNINSTALL $(TARGETS_UNINSTALL)'; \
+	echo 'TARGETS_UNINSTALL_GO $(TARGETS_UNINSTALL_GO)'; \
+	echo 'TARGETS_UNINSTALL_SH $(TARGETS_UNINSTALL_SH)'; \
+	echo 'TARGETS_UNINSTALL_NPM $(TARGETS_UNINSTALL_NPM)'; \
+	echo 'TARGETS_UNINSTALL_CODACY $(TARGETS_UNINSTALL_CODACY)'; \
+	echo 'TARGETS_UNINSTALL_ALL $(TARGETS_UNINSTALL_ALL)'; \
+	echo 'GOMAKE_VERSION $(gomake-version)';
+
+debug-targets-run::
+	@echo 'TARGETS_RUN $(TARGETS_RUN)'; \
+	echo 'TARGETS_RUN_GO $(TARGETS_RUN_GO)'; \
+	echo 'TARGETS_RUN_IMAGE $(TARGETS_RUN_IMAGE)'; \
+	echo 'TARGETS_RUN_CLEAN $(TARGETS_RUN_CLEAN)';
+
+debug-targets-clean::
+	@echo 'TARGETS_CLEAN $(TARGETS_CLEAN)'; \
+	echo 'TARGETS_CLEAN_ALL $(TARGETS_CLEAN_ALL)'; \
+	echo 'TARGETS_CLEAN_RUN $(TARGETS_CLEAN_RUN)';
+
+debug-targets-update::
+	@echo 'TARGETS_UPDATE $(TARGETS_UPDATE)'; \
+	echo 'TARGETS_UPDATE? $(TARGETS_UPDATE?)'; \
+	echo 'TARGETS_UPDATE_GO $(TARGETS_UPDATE_GO)'; \
+	echo 'TARGETS_UPDATE_MAKE $(TARGETS_UPDATE_MAKE)'; \
+	echo 'TARGETS_UPDATE_MAKE? $(TARGETS_UPDATE_MAKE?)'; \
+	echo 'TARGETS_UPDATE_ALL $(TARGETS_UPDATE_ALL)'; \
+	echo 'TARGETS_UPDATE_ALL? $(TARGETS_UPDATE_ALL?)'; \
