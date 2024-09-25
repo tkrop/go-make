@@ -117,24 +117,16 @@ satisfied by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04],
 * [`curl`][curl] (^7)
 
 **Note:** Since [`MacOSX`][mac-osx] comes with heavily outdated GNU tools,
-[`go-make`][go-make] is setting up its necessary environment using the
-[`brew`][brew] package manager only requiring a minimal pre-condition of
-[`go`][go] and [GNU `make`] that is usually satisfied by the standard
-installation.
+[`go-make`][go-make] is ensures that these are available in recent verions
+using the [`brew`][brew] package manager. As a consequence it only requires
+[`go`][go] and [GNU `make`] in a decent version that is usually satisfied by
+the standard MacOS installation.
 
 [ubuntu-20.04]: <https://releases.ubuntu.com/focal/>
 [ubuntu-22.04]: <https://releases.ubuntu.com/jammy/>
 [ubuntu-24.04]: <https://releases.ubuntu.com/noble/>
 [mac-osx]: <https://support.apple.com/en-gb/mac>
 [go-install]: <https://go.dev/doc/tutorial/compile-install>
-[brew]: <https://brew.sh/>
-[curl]: <https://curl.se/>
-[make]: <https://www.gnu.org/software/make/>
-[bash]: <https://www.gnu.org/software/bash/>
-[core]: <https://www.gnu.org/software/coreutils/>
-[find]: <https://www.gnu.org/software/findutils/>
-[awk]: <https://www.gnu.org/software/awk/>
-[sed]: <https://www.gnu.org/software/sed/>
 
 
 ## Example usage
@@ -157,7 +149,7 @@ variables, that by default are defined via [`Makefile.vars`](Makefiles.vars)
 (see also [Modifying variables](Manual.md#modifying-variables)).
 
 
-## Makefile integration
+## Project integration
 
 If you like to integrate [`go-make`][go-make] into another `Makefile` you may
 find the [`Makefile`](config/Makefile.base) provided in the [config](config)
@@ -169,6 +161,34 @@ The default [`Makefile`](config/Makefile) can also be installed to a project
 from the [config](config) via `go-make init-make` to boot strap a project.
 Other available [config](config) files can be installed one by one using
 `go-make init/<file>`.
+
+If you use [`go-make`][go-make] in your project, you may want to copy the
+following [Project requirement notice](#project-requirement-notice) into your
+[README.md].
+
+
+### Project requirement notice
+
+**Note:** This project supports Linux and MacOS Darwin using the standardized
+[`Makefile`](Makefile) provided by [`go-make`][go-make]. The project therefore
+depends on [`go`][go] for version management, and makes heavy use of GNU tools,
+i.e. [`coretils`][core], [`findutils`][find], ['(g)make'][make],
+[`(g)awk`][awk], [`(g)sed`][sed], and not the least [`bash`][bash]. For certain
+non-core-features it also requires [`docker`][docker]/[`podman`][podman] and
+[`curl`][curl]. On MacOS, it uses [brew][brew] to ensure that the latest
+versions with the exception [`docker`][docker]/[`podman`][podman] are.
+
+[brew]: <https://brew.sh/>
+[curl]: <https://curl.se/>
+[docker]: <https://www.docker.com/>
+[podman]: <https://podman.io/>
+[make]: <https://www.gnu.org/software/make/>
+[bash]: <https://www.gnu.org/software/bash/>
+[core]: <https://www.gnu.org/software/coreutils/>
+[find]: <https://www.gnu.org/software/findutils/>
+[awk]: <https://www.gnu.org/software/awk/>
+[sed]: <https://www.gnu.org/software/sed/>
+
 
 
 ## Shell integration
