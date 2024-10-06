@@ -1,2 +1,2 @@
 [1;93mwarning:[0m please customize variables in go-make/run/Makefile.vars
-[1;96minfo:[0m make call [cat]
+[1;96minfo:[0m executing [make call ARGS="cat"]

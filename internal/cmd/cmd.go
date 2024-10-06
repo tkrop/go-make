@@ -14,11 +14,6 @@ type Executor interface {
 	// given writers.
 	Exec(stdin io.Reader, stdout, stderr io.Writer,
 		dir string, env []string, args ...string) error
-	// ExecPty executes the command with given name and arguments in given
-	// directory using a pseudo terminal defined by the given file for input
-	// and output.
-	// ExecPty(stdin, stdout, stderr *os.File,
-	// 	dir string, env []string, args ...string) error
 }
 
 // defaultExecutor provides a default command executor using `os/exec`

@@ -78,12 +78,12 @@ image-build
 image-push
 init
 init-codacy
+init-code
 init-go
 init-gosec
 init-hooks
 init-make
 init-make!
-init-sources
 init-staticcheck
 init/.codacy.yaml
 init/.gitleaks.toml
