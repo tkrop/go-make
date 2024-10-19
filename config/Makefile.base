@@ -237,7 +237,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.105
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.106
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -782,7 +782,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	$(call git-message,$*,1); \
 	$(GIT) checkout -B "$${BRANCH}" && \
-	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}" && \
+	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" || \
 	$(GIT) checkout $${BRANCH}; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
@@ -954,7 +954,13 @@ test-clean::
 test-cover::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); \
-	$(GO) tool cover -html="$${FILE}"; \
+	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
+	if [ $(ARGS) == "white" ]; then \
+	  sed -i 's/black/whitesmoke/g' "$${FILE}.html"; \
+	fi; \
+	sensible-browser "$${FILE}.html";
+
+#	$(GO) tool cover -html="$${FILE}"; \
 
 #@ upload the test coverage report to codacy.
 test-upload::
@@ -1408,7 +1414,7 @@ BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 main-pkg = $(patsubst $(1)=%,%,$(firstword $(filter $(1)=%,$(COMMANDS_PKG))))
 
 # Functions and variables to propagate versions to build commands.
-LD_CONFIG_PATHS ?= main $(shell $(GO) list ./... | grep "config$$")
+LD_CONFIG_PATHS ?= main # $(shell $(GO) list ./... | grep "config$$")
 ld-flag = $(addprefix -X ,$(addsuffix .$(1),$(LD_CONFIG_PATHS)))
 ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 	$(call ld-flag,Revision=$(shell $(GIT) rev-parse HEAD)) \
