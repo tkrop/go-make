@@ -282,29 +282,22 @@ targets as necessary.
 
 If we have published a non-working version of [`go-make`][go-make] and your
 project is not able to build, test, run, etc, the quickest way to reset the
-project [Makefile](config/Makefile) working [`go-make`][go-make] version is to
-run:
+project's [Makefile](config/Makefile) to a working [`go-make`][go-make] version
+is to run:
 
 ```bash
 go install github.com/tkrop/go-make@latest; go-make update;
 ```
 
 If the latest version is not fixed yet, you can also try to move backward
-finding the last working [tagged version](tags).
-
-
-## Terms of usage
-
-This software is open source as is under the MIT license. If you start using
-the software, please give it a star, so that I know to be more careful to keep
-changes non-breaking.
+finding the last working [tagged version](../../tags).
 
 
 ## Building
 
 The project is using itself for building as a proof of concept. So either run
 `make all` or `go-make all`. As fall back it is always possible to directly use
-the core [Makefile](Makefile.base) calling:
+the core [Makefile](config/Makefile.base) calling:
 
 ```bash
 make -f config/Makefile.base <target>...
@@ -314,8 +307,15 @@ You can also test the local build [`go-make`][go-make] application with the
 local config. The project compiles itself to use the local config by default.
 
 
+## Terms of usage
+
+This software is open source under the MIT license. You can use it without
+restrictions and liabilities. Please give it a star, so that I know. If the
+project has more than 25 Stars, I will introduce semantic versions `v1`.
+
+
 ## Contributing
 
 If you like to contribute, please create an issue and/or pull request with a
 proper description of your proposal or contribution. I will review it and
-provide feedback on it as soon as possible.
+provide feedback on it as fast as possible.

@@ -46,6 +46,7 @@ endif
 
 # System depdendent helper functions.
 ifeq ("$(shell uname)","Linux")
+  MAKESHELL := PATH=$(PATH) /bin/bash
 else ifeq ($(shell uname),Darwin)
   path-setup = $(shell \
 	if [ "$(1)" == "opt" ]; then \
@@ -60,6 +61,8 @@ else ifeq ($(shell uname),Darwin)
   export PATH := $(call path-setup,opt,gawk,awk,$(PATH))
   export PATH := $(call path-setup,opt,gsed,sed,$(PATH))
   export PATH := $(call path-setup,opt,make,make,$(PATH))
+  # Ensure export of path to $(shell ...) in gmake 3.81.
+  MAKESHELL := PATH=$(PATH) /bin/bash
 else
   $(call cerror,unsupported operating system [$(shell uname --all)])
 endif
@@ -237,7 +240,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.106
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.107
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -681,7 +684,7 @@ git-clean = \
 	done; $(GITPRUNE)
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	BEGIN { \
-	  re_type_suffix = "(\\[[a-z]+\\])?!?: "; \
+	  re_type_suffix = "((\\[|\\()[a-z]+(\\]|\\)))?!?: "; \
 	  re_type_missing = "^([a-z]+)" re_type_suffix; \
 	  re_type_invalid = "^(" gensub(" ", "|", "g", \
 	    "$(COMMIT_CONVENTION)") ")" re_type_suffix; \
