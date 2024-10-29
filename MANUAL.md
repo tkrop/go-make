@@ -604,16 +604,25 @@ to define whether also pushed branches should be cleaned up instead of only
 merged branches.
 
 The `git-fix` target supports `(no-)edit` and `(no)-verify` arguments to enable
-and disable commit verification and comment editing. The default is to using
-verification enabled but disable editing. The default behavior can be defined
-by setting providing the `GITFIX` environment variable.
+and disable commit verification and comment editing. By default, it is enabling
+verification but disabling editing. The default behavior can be defined by
+setting providing the `GITFIX` environment variable.
 
 The `git-verify` target verifies that commit messages in git log entries are
-following a common commit convention containing a [commit types](#commit-types)
-as well as a github issue references in the title and are signed-off. The
-target allows to validate full git `logs` as well as a single `message` file.
-As default the target verifies all commit added to the current branch in
-relation to the main branch.
+following a common commit convention containing a [commit types](#commit-types),
+provide a github issue references in the title, and are signed-off. While the
+target allows validating a full git `logs`, it by default, only verifies the
+commits added to the current branch in relation to the main branch. The message
+is expected to look as follows:
+
+```text
+<type>[(<scope>)][!]': <subject> (<issue>)
+
+[body]
+
+[footer(s)]
+Signed-of-by: <author-name> <<author-email>>
+```
 
 
 ## Commit types
