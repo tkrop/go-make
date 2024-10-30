@@ -1,5 +1,6 @@
 name: Go Build
 on: [push]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,12 +18,13 @@ jobs:
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         LANG: en_US.UTF-8
-      run: make --file=config/Makefile.base --trace all
+      run: make --file=config/Makefile.base --trace all;
 
     - name: Send coverage report
       uses: shogo82148/actions-goveralls@v1
       with:
         path-to-profile: ./build/test-all.cover
+
 
   bash:
     runs-on: ubuntu-latest
@@ -43,7 +45,8 @@ jobs:
     - name: Run Bash compatibility tests
       env:
         BASH_COMPAT: 3.2
-      run: make --file=config/Makefile.base --trace test-self
+      run: make --file=config/Makefile.base --trace test-self;
+
 
   linux:
     runs-on: ubuntu-latest
@@ -63,10 +66,33 @@ jobs:
 
     - name: Run Bash compatibility tests
       run: |-
-        make --version
-        make --file=config/Makefile.base --trace test-self
+        make --version;
+        make --file=config/Makefile.base --trace test-self;
+
 
   macos:
+    runs-on: macos-latest
+    steps:
+    # - name: Set up Docker
+    #   uses: crazy-max/ghaction-setup-docker@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.23.2
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run MacOS compatibility tests
+      env:
+        BASH_COMPAT: 3.2
+      run: |-
+        make --version;
+        make --file=config/Makefile.base test-self;
+
+
+  macos-brewed:
     runs-on: macos-latest
     steps:
     # - name: Set up Docker
@@ -87,7 +113,8 @@ jobs:
         brew install make;
         export PATH="/opt/homebrew/opt/make/libexec/gnubin:${PATH}";
         make --version;
-        make --file=config/Makefile.base --trace test-self
+        make --file=config/Makefile.base --trace test-self;
+
 
   release:
     runs-on: ubuntu-latest
