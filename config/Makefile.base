@@ -248,7 +248,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.108
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.109
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1817,9 +1817,9 @@ update-go?::
 
 # Functions to create the list of updates (not sure whether go list is contributing).
 update-args = \
-	if [[ " $(1) " =~ " major " ]]; then ARGS="-cached false -major"; \
-	elif [[ " $(1) " =~ " pre " ]]; then ARGS="-cached false -pre"; \
-	else ARGS="-cached false"; fi
+	if [[ " $(1) " =~ " major " ]]; then ARGS="-cached=false -major"; \
+	elif [[ " $(1) " =~ " pre " ]]; then ARGS="-cached=false -pre"; \
+	else ARGS="-cached=false"; fi
 update-list = \
 	( gomajor list $(1) 2>/dev/null | sed "s/://1; s/\[latest /\[/g"; \
 	  $(GO) list -m -u -mod=mod $(2) | grep "\[.*\]$$" \
@@ -1917,6 +1917,18 @@ ifneq ("$(wildcard Makefile.ext)","")
   include Makefile.ext
 endif
 
+debug-make::
+	@echo 'PATH $(PATH)'; \
+	echo 'SHELL $(SHELL)'; \
+	echo "BASH $(shell echo "$${0} - $${BASH_VERSION}")"; \
+	echo 'AWK $(shell awk --version | head -n 1)'; \
+	echo 'DIR_CONFIG $(DIR_CONFIG))';
+
+debug-bash::
+	@echo "PATH $${PATH}"; \
+	echo "SHELL $${SHELL}"; \
+	echo "BASH $${0} - $${BASH_VERSION}"; \
+	echo "AWK $$(awk --version | head -n 1)"; \
 
 debug-sources::
 	@echo 'SOURCES $(SOURCES)'; \

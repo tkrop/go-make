@@ -15,9 +15,11 @@ clean-run
 clean-run-aws
 clean-run-db
 commit
+debug-bash
 debug-commands
 debug-gen
 debug-image
+debug-make
 debug-mocks
 debug-sources
 debug-targets
