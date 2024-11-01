@@ -76,7 +76,7 @@ $(call cdebug,$(shell uname --all))
 $(call cdebug,using PATH [$${PATH}])
 $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
-$(call cdebug,using AWK [$(shell awk --version | head -n 1)])
+$(call cdebug,using AWK [$(shell awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
@@ -138,8 +138,7 @@ INSTALL_FLAGS ?= $(strip $(mod-readonly) -buildvcs=auto $(INSTALLFLAGS))
 # Function to ensure compatibility of gawk and mawk.
 awk-gensub = $(shell echo "false" | \
 	awk '{ print gensub("false","true","g") }' 2>/dev/null)
-$(call cdebug,using GENSUB [$(awk-gensub)])
-ifeq ($(awk-gensub),false)
+ifneq ($(awk-gensub),true)
   awk-gensub = function gensub(r, s, h, t) { \
 	  if (t == 0) { t = $$0 } \
 	  if (h ~ "^[gG]") { gsub(r, s, t) } \
@@ -152,10 +151,10 @@ ifeq ($(awk-gensub),false)
 	  } \
 	  return t \
 	}
+  $(call cdebug,using GENSUB [$(awk-gensub)])
 else
   awk-gensub =
 endif
-
 
 # Setup default go compiler environment.
 export GO ?= go
@@ -248,11 +247,12 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.111
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.112
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
+$(call cdebug,using GOMAKE_CONFIG [$(GOMAKE_CONFIG)])
 gomake-version = $(shell if [ ! -f "$(GOBIN)/go-make" ]; then \
 	echo "(devel)"; else $(GO) version -m "$(GOBIN)/go-make" | \
 	grep -E "^\s*(mod|dep)\s*github.com/tkrop/go-make" | cut -f 4; fi)
@@ -514,7 +514,6 @@ gen-mocks-awk = \
 	  if (source == "_") { package = $$(NF-1) } \
 	  print target "|" source "|" package "|" origin \
 	}'
-$(call cdebug, gen-mocks = $(call escape,$(call gen-mocks)))
 
 MOCKS := $(shell $(gen-mocks))
 MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
@@ -1106,6 +1105,7 @@ test-cdp:
 	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
 	( cat $${HOME}/.gitconfig; \
 	  echo -e '[safe]\n\tdirectory = /workspace' \
+	  echo -e '[safe]\n\tdirectory = /go-make' \
 	) >> $${DIR}/.gitconfig; \
 	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
 	sudo chown --recursive root:root $${DIR}; \
@@ -1117,6 +1117,7 @@ test-cdp:
 	  --volume=/var/run/docker.sock:/var/run/docker.sock \
 	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
 	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
+	  --volume=$(dir $(GOMAKE_CONFIG)):/go-make \
 	  --volume=$${PWD}:/workspace \
 	  ${CDP_IMAGE} /bin/bash $(ARGS);
 
