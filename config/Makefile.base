@@ -248,7 +248,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.110
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.111
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -913,7 +913,7 @@ $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
 	  $(call emsg,info,generate apis skipped [$${BPKG}]); exit 0; \
 	else $(call emsg,info,generate apis [$${BPKG}]); fi; \
 	\
-	go get k8s.io/api/core/v1; \
+	$(GO) get k8s.io/api/core/v1; \
 	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
 	  MANDIR="$${BPKG}/manifests"; \
 	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
@@ -940,7 +940,7 @@ $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
 	    --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
 	done; \
 	$(call emsg,info,update packages [$${BPKG}]); \
-	$(GO) get -u ./$${BPKG}/clients/...; \
+	$(GO) get ./$${BPKG}/clients/...; \
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -1795,7 +1795,7 @@ update-go::
 	fi; \
 	if [[ "$${VERSION}" < "1.21" ]]; then \
 	  sed -E -i -e "s/$(GOMOD_REGEX)/\1$${VERSION%\.*}/;" go.mod; \
-	  go mod tidy -go=$${VERSION%\.*}; \
+	  $(GO) mod tidy -go=$${VERSION%\.*}; \
 	fi; \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
