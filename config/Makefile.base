@@ -98,7 +98,7 @@ MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
-DIR_CONFIG := $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%)
+DIR_CONFIG := $(abspath $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%))
 DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
@@ -247,7 +247,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.113
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.114
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -333,7 +333,7 @@ GITHOOKS ?= pre-commit # commit-msg
 GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get user.email)>")
 GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
 GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
-	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/:/\//")
+	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/:/\//; s/^x-access-token:[^@]*@//")
 GITHOST := $(word 1,$(subst /, ,$(GITURL)))
 GITOWNER := $(word 2,$(subst /, ,$(GITURL)))
 GITREPO := $(word 3,$(subst /, ,$(GITURL)))
