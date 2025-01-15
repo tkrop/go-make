@@ -60,7 +60,9 @@ var (
 	argsVersion           = []string{"--version"}
 	argsTraceVersion      = []string{"--trace", "--version"}
 	argsBash              = []string{"--completion=bash"}
-	argsTraceBash         = []string{"--trace", "--completion=bash"}
+	argsBashTrace         = []string{"--trace", "--completion=bash"}
+	argsZsh               = []string{"--completion=zsh"}
+	argsZshTrace          = []string{"--trace", "--completion=zsh"}
 	argsShowTargets       = []string{"show-targets"}
 	argsShowTargetsParam  = []string{"show-targets", "param"}
 	argsShowTargetsCustom = []string{"--config=custom", "show-targets"}
@@ -204,6 +206,13 @@ var testMakeParams = map[string]MakeParams{
 		info: infoBase,
 		args: argsBash,
 	},
+	"go-make completion zsh": {
+		mockSetup: mock.Chain(
+			LogMessage("stdout", make.ZshCompletion),
+		),
+		info: infoBase,
+		args: argsZsh,
+	},
 
 	"go-make show targets": {
 		mockSetup: mock.Chain(
@@ -282,19 +291,6 @@ var testMakeParams = map[string]MakeParams{
 		args: argsShowTargetsLatest,
 	},
 
-	"go-make show targets top failed": {
-		mockSetup: mock.Chain(
-			Exec("nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), errAny, "", ""),
-			LogError("stderr", "ensure top", make.NewErrCallFailed(
-				dirWork, make.CmdGitTop(), errAny)),
-		),
-		info: infoBase,
-		args: argsShowTargets,
-		expectError: make.NewErrCallFailed(dirWork,
-			make.CmdGitTop(), errAny),
-		expectExit: make.ExitGitFailure,
-	},
 	"go-make show targets install failed": {
 		mockSetup: mock.Chain(
 			Exec("nil", "builder", "stderr", dirWork, nil,
@@ -348,12 +344,21 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make completion bash traced": {
 		mockSetup: mock.Chain(
-			LogCall("stderr", argsTraceBash),
+			LogCall("stderr", argsBashTrace),
 			LogInfo("stderr", infoBase, false),
 			LogMessage("stdout", make.BashCompletion),
 		),
 		info: infoBase,
-		args: argsTraceBash,
+		args: argsBashTrace,
+	},
+	"go-make completion zsh traced": {
+		mockSetup: mock.Chain(
+			LogCall("stderr", argsZshTrace),
+			LogInfo("stderr", infoBase, false),
+			LogMessage("stdout", make.ZshCompletion),
+		),
+		info: infoBase,
+		args: argsZshTrace,
 	},
 	"go-make any target traced": {
 		mockSetup: mock.Chain(

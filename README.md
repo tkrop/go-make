@@ -116,7 +116,7 @@ satisfied by the runtime environment, e.g. using [`ubuntu-20.04`][ubuntu-20.04],
 * [`curl`][curl] (^7)
 
 **Note:** Since [`MacOSX`][mac-osx] comes with heavily outdated GNU tools,
-[`go-make`][go-make] is ensures that these are available in recent verions
+[`go-make`][go-make] is ensures that these are available in recent versions
 using the [`brew`][brew] package manager. As a consequence it only requires
 [`go`][go] and [GNU `make`] in a decent version that is usually satisfied by
 the standard MacOS installation.
@@ -139,6 +139,7 @@ config script:
 go-make all        # execute a whole build pipeline depending on the project.
 go-make test lint  # execute only test 'test' and 'lint' steps of a pipeline.
 go-make image      # execute minimal steps to create all container images.
+go-make init       # initialize a new go-make project from scratch.
 ```
 
 For further examples see [`go-make` manual](MANUAL.md).
@@ -210,6 +211,11 @@ is following the [conventional commit][convent-commit] best practice.
 
 ## Shell integration
 
+For being able to efficiently work with `go-make` a proper shell integration is
+important. Most linux systems come with a good sell integration that supports
+auto-completion for `make` showing the targets provided via the wrapper
+`Makefile`. However, the vanilla MacOS has its limits.
+
 To set up command completion for [`go-make`][go-make], add the following
 snippet to your [`.bashrc`][bashrc].
 
@@ -251,8 +257,9 @@ following conventions:
    are used by [`go-make`][go-make] as temporary folders to build commands and
    run commands and are cleaned up regularly.
 
-4. The build target provides build context values to set up global variables in
-   `main` and `config` packages.
+4. The `build` target creates an extended build context that is provisioned via
+   the ldflag `-X` and can be accessed providing the following variables in
+   the `main` package:
 
    * `Path` - the formal package path of the command build.
    * `Version` - the version as provided by the `VERSION`-file in project root
@@ -291,6 +298,10 @@ go install github.com/tkrop/go-make@latest; go-make update;
 
 If the latest version is not fixed yet, you can also try to move backward
 finding the last working [tagged version](../../tags).
+
+**Note:** After updating a project to the latest version you may need to
+cleanup the installed tools using `make clean-all` before the new tool
+version are automatically supported correctly.
 
 
 ## Building

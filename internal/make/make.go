@@ -32,12 +32,18 @@ const (
 		"		-- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
 		"}\n" +
 		"complete -F __complete_go-make go-make;\n"
+	ZshCompletion = "### zsh completion for go-make\n" +
+		"zstyle ':completion:*:*:make:*' tag-order 'targets'\n" +
+		"function __complete_go-make() {\n" +
+		"	COMPREPLY=($(compgen -W \"$(go-make show-targets 2>/dev/null)\" \\\n" +
+		"		-- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"}\n" +
+		"complete -F __complete_go-make go-make;\n"
 )
 
 // Available exit code constants.
 const (
 	ExitSuccess       int = 0
-	ExitGitFailure    int = 1
 	ExitConfigFailure int = 2
 	ExitTargetFailure int = 3
 )
@@ -147,14 +153,12 @@ func NewGoMake( //revive:disable-line:argument-limit // kiss.
 // setupWorkDir ensures that the working directory is setup to the root of the
 // current git repository since this is where the go-make targets should be
 // executed.
-func (gm *GoMake) setupWorkDir() error {
+func (gm *GoMake) setupWorkDir() {
 	buffer := &strings.Builder{}
 	if err := gm.exec(nil, buffer, gm.Stderr,
-		gm.WorkDir, gm.Env, CmdGitTop()...); err != nil {
-		return err
+		gm.WorkDir, gm.Env, CmdGitTop()...); err == nil {
+		gm.WorkDir = strings.TrimSpace(buffer.String())
 	}
-	gm.WorkDir = strings.TrimSpace(buffer.String())
-	return nil
 }
 
 // setupConfig sets up the go-make config by evaluating the director or version
@@ -246,8 +250,12 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 			gm.Logger.Info(gm.Stdout, gm.Info, true)
 			return 0, nil
 
-		case strings.HasPrefix(arg, "--completion"):
+		case strings.HasPrefix(arg, "--completion=bash"):
 			gm.Logger.Message(gm.Stdout, BashCompletion)
+			return 0, nil
+
+		case strings.HasPrefix(arg, "--completion=zsh"):
+			gm.Logger.Message(gm.Stdout, ZshCompletion)
 			return 0, nil
 
 		case strings.HasPrefix(arg, "--config="):
@@ -258,10 +266,8 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 		}
 	}
 
-	if err := gm.setupWorkDir(); err != nil {
-		gm.Logger.Error(gm.Stderr, "ensure top", err)
-		return ExitGitFailure, err
-	} else if err := gm.setupConfig(); err != nil {
+	gm.setupWorkDir()
+	if err := gm.setupConfig(); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
 	} else if err := gm.makeTargets(targets...); err != nil {
