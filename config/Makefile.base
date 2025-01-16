@@ -39,12 +39,12 @@ cdebug = $(shell $(call dmsg,debug,$(1)))
 ifneq ($(shell echo $${BASH_VERSION} | grep -E -v "^([4-9]+|3\.2)"),)
   $(call cerror,bash version incompatible [$${BASH_VERSION}])
 endif
-# Check whether bash is running in minmal compatibility mode for testing.
+# Check whether bash is running in minimal compatibility mode for testing.
 ifdef BASH_COMPAT
   $(call cdebug,bash compatibility mode set [$(BASH_COMPAT)])
 endif
 
-# System depdendent helper functions.
+# System dependent helper functions.
 ifeq ("$(shell uname)","Linux")
 else ifeq ($(shell uname),Darwin)
   path-setup = $(shell \
@@ -98,6 +98,7 @@ MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
+DIR_GIT := $(CURDIR)/.git
 DIR_CONFIG := $(abspath $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%))
 DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
@@ -161,7 +162,7 @@ export GO ?= go
 export GOPATH ?= $(shell $(GO) env GOPATH)
 export GOBIN ?= $(GOPATH)/bin
 # Export private repositories that do not need to be downloaded.
-export GOPRIVATE ?= github.bus.zalan.do
+export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
 # Setup go to use desired and consistent go versions.
 GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
 # Function for checking and wanring about go and package version mismatches.
@@ -247,7 +248,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.115
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.116
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -266,7 +267,7 @@ search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
 	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
 TOOL_VERSION_K8S ?= v0.31.0
-TOOL_VERSION_GOLANGCI ?= v1.60.3
+TOOL_VERSION_GOLANGCI ?= v1.63.4
 TOOL_VERSION_REVIVE ?= v1.3.3
 
 # Setup default tool command versions to be installed.
@@ -389,10 +390,11 @@ CODACY_PROVIDER ?= ghe
 CODACY_USER ?= $(GITOWNER)
 CODACY_PROJECT ?= $(GITREPO)
 CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
+CODACY_SKIP_SSL_VERIFICATION ?= false
 CODACY_CLIENTS ?= aligncheck deadcode
 CODACY_BINARIES ?= gosec staticcheck
 ifeq (CODACY_API_BASE_URL,$(CODACY_API_BASE_URL))
-	CODACY_REPORTER_VERSION ?= 13.12.3
+	CODACY_REPORTER_VERSION ?= 13.13.13
 endif
 CODACY_GOSEC_VERSION ?= 0.4.5
 CODACY_STATICCHECK_VERSION ?= 3.0.12
@@ -411,8 +413,9 @@ GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 
 
 # Default target list for all and pipeline builds.
-TARGETS_ALL ?= init test lint build image
-TARGETS_INIT ?= init-hooks init-go $(if $(filter $(CODACY),enabled),init-codacy,)
+TARGETS_ALL ?= init-hooks test lint build image
+TARGETS_INIT ?= init-git init-hooks init-go init-make \
+	$(if $(filter $(CODACY),enabled),init-codacy,)
 TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdown
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
@@ -584,7 +587,7 @@ $(DIR_CONFIG) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
 
 
-## Make-Support: targets to support user understanding.
+## Make-Support: targets to support user understanding the functionality.
 show-help = awk ' \
 	BEGIN { \
 	  printf("\n$(call msg,topic,Usage:,) $(call msg,cmd,(go-)make, \
@@ -825,6 +828,33 @@ git-push::
 
 #@ initialize the project to prepare it for building.
 init:: $(TARGETS_INIT)
+#@ initialize the project with git revision management.
+init-git:
+	@if [ ! -d "$(DIR_GIT)" ]; then \
+	  $(call emsg,info,initializing repository [$(DIR_GIT)]); \
+	  $(GIT) init; \
+	fi;
+#@ initialize git pre-commit and commit-message hooks.
+init-hooks:: $(GITHOOKS:%=$(DIR_GIT)/hooks/%)
+git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
+	command -v $(GOBIN)/go-make >/dev/null || \\\n\
+	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
+	$(GOBIN)/go-make git-verify message $${1};\n' | sed 's/^ *//g'
+git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
+	command -v $(GOBIN)/go-make >/dev/null || \\\n\
+	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
+	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
+$(DIR_GIT)/hooks/commit-msg: $(MAKEFILE_LIST)
+	@if [ -d "$(DIR_GIT)/hooks" ] && ! diff <(cat $@ 2>/dev/null) \
+	    <($(git-hooks-commit-msg)) >/dev/null; then \
+	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
+	fi;
+$(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
+	@if [ -d "$(DIR_GIT)/hooks" ] && ! diff <(cat $@ 2>/dev/null) \
+	    <($(git-hooks-pre-commit)) >/dev/null; then \
+	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
+	fi; \
+
 #@ initialize the go module and package dependencies.
 init-go:: go.sum
 go.sum: go.mod
@@ -834,26 +864,6 @@ go.sum: go.mod
 go.mod:
 	@$(call emsg,info,updating [go.mod]);
 	$(if $(SOURCES),$(GO) mod init "$(GITURL)";)
-
-
-#@ initialize git pre-commit and commit-message hooks.
-init-hooks:: $(GITHOOKS:%=.git/hooks/%)
-git-hooks-commit-msg = echo -ne '\#!/bin/sh\n\n\
-	command -v $(GOBIN)/go-make >/dev/null || \\\n\
-	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
-	$(GOBIN)/go-make git-verify message $${1};\n' | sed 's/^ *//g'
-git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
-	command -v $(GOBIN)/go-make >/dev/null || \\\n\
-	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
-	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
-.git/hooks/commit-msg: $(MAKEFILE_LIST)
-	@if ! diff <(cat $@ 2>/dev/null) <($(git-hooks-commit-msg)) >/dev/null; then \
-	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
-	fi;
-.git/hooks/pre-commit: $(MAKEFILE_LIST)
-	@if ! diff <(cat $@ 2>/dev/null) <($(git-hooks-pre-commit)) >/dev/null; then \
-	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
-	fi;
 
 #@ initialize the generated sources.
 init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
@@ -977,19 +987,24 @@ test-upload::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); COMMIT="$$($(GITHASH))"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
-	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
-	  bash <(curl --silent --location $${SCRIPT}) report \
-	    --project-token $(CODACY_PROJECT_TOKEN) --commit-uuid $${COMMIT} \
-	    --codacy-api-base-url $(CODACY_API_BASE_URL) --language go \
-	    --force-coverage-parser go --coverage-reports "$${FILE}"; \
-	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
-	  bash <(curl --silent --location $${SCRIPT}) report \
-	    --organization-provider $(CODACY_PROVIDER) \
-	    --username $(CODACY_USER) --project-name $(CODACY_PROJECT) \
-	    --api-token $(CODACY_API_TOKEN) --commit-uuid $${COMMIT} \
-	    --codacy-api-base-url $(CODACY_API_BASE_URL) --language go \
-	    --force-coverage-parser go --coverage-reports "$${FILE}"; \
+	LARGS=("--language" "go" "--force-coverage-parser" "go"); \
+	if [ "$(CODACY_SKIP_SSL_VERIFICATION)" == "true" ]; then \
+	  LARGS+=("--skip-ssl-verification"); \
 	fi; \
+	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
+	LARGS+=("--commit-uuid" "$${COMMIT}" "--skip"); \
+	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
+	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
+	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
+	  LARGS+=("--organization-provider" "$(CODACY_PROVIDER)"); \
+	  LARGS+=("--username" "$(CODACY_USER)"); \
+	  LARGS+=("--project-name" "$(CODACY_PROJECT)"); \
+	  LARGS+=("--api-token" "$(CODACY_API_TOKEN)"); \
+	else $(call emsg,info,coverage report (skipped)); exit 0; fi; \
+	bash <(curl --silent --location $${SCRIPT}) \
+	  report "$${LARGS[@]}" --coverage-reports "$${FILE}" && \
+	$(call emsg,info,coverage report (uploadad)) || \
+	$(call emsg,info,coverage report (failed));
 
 #@ test whether project creates conflicting program names.
 test-build::
@@ -1288,16 +1303,19 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  no docker command - continu without $*!); exit 0; fi; \
 	LARGS=("--allow-network" "--skip-uncommitted-files-check"); \
+	if [ "$(CODACY_SKIP_SSL_VERIFICATION)" == "true" ]; then \
+	  LARGS+=("--skip-ssl-verification"); \
+	fi; \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
-	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
 	  LARGS+=("--upload" "--verbose"); \
+	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
 	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
+	  LARGS+=("--upload" "--verbose"); \
 	  LARGS+=("--provider" "$(CODACY_PROVIDER)"); \
 	  LARGS+=("--username" "$(CODACY_USER)"); \
 	  LARGS+=("--project" "$(CODACY_PROJECT)"); \
 	  LARGS+=("--api-token" "$(CODACY_API_TOKEN)"); \
-	  LARGS+=("--upload" "--verbose"); \
 	fi; \
 	echo """$(IMAGE_CMD) run --rm=true --env CODACY_CODE="/code" \
 	  --volume /var/run/docker.sock:/var/run/docker.sock \
@@ -1381,10 +1399,16 @@ lint-shell:: init-code
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
 lint-leaks:: install-gitleaks
-	gitleaks detect --no-banner --verbose --source .;
+	@if [ -d "$(DIR_GIT)" ]; then \
+	  echo "gitleaks detect --no-banner --verbose --source ."; \
+	  gitleaks detect --no-banner --verbose --source .; \
+	fi;
 #@ execute gitleaks to check un-committed code changes for leaking secrets (all files).
 lint-leaks?:: install-gitleaks
-	gitleaks protect --no-banner --verbose --source .;
+	@if [ -d "$(DIR_GIT)" ]; then \
+	  echo "gitleaks protect --no-banner --verbose --source ."; \
+	  gitleaks protect --no-banner --verbose --source .; \
+	fi;
 #@ execute govulncheck to find vulnerabilities in dependencies (go-files).
 lint-vuln:: install-govulncheck
 	govulncheck -test ./...
@@ -1660,10 +1684,10 @@ run-db:: $(DIR_RUN)
 	  $(ARGS) 2>&1 & \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
-	do echo "waiting for db container" > /dev/stderr; sleep 1; done && \
+	do $(call emsg,info,waiting for db container); sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
-	do echo "waiting for db service" > /dev/stderr; sleep 1; done) | \
+	do $(call emsg,info,waiting for db service); sleep 1; done) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-db;
 
 #@ start an AWS localstack instance for testing.
@@ -1683,10 +1707,10 @@ run-aws:: $(DIR_RUN)
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
-	do echo "waiting for aws container" > /dev/stderr; sleep 1; done && \
+	do $(call emsg,info,waiting for aws container); sleep 1; done && \
 	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-aws \
 	  curl --silent http://$(HOST):4566; \
-	do echo "waiting for aws service" > /dev/stderr; sleep 1; done && \
+	do $(call emsg,info,waiting for aws service); sleep 1; done && \
 	$(call run-setup-aws) || exit 1) | \
 	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log;
 
@@ -1868,7 +1892,7 @@ update/go.mod?:: install-gomajor
 
 update/go-make::
 	@$(call update-config,$(ARGS),download) || \
-	  ( echo "error: downloading $${GOMAKE}" > /dev/stderr && exit 1 )
+	  ( $(call emsg,error,download $${GOMAKE}) && exit 1 )
 
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
@@ -1877,14 +1901,14 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	if [ -z "$(ARGS)" ]; then  CONFIG="$(GOMAKE_CONFIG)"; \
 	else $(call update-config,$(ARGS),run); fi; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
-	  echo "update: $${FILE} (untracked)"; \
+	  $(call emsg,info,update [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
-	  echo "update: $${FILE} (skipped)"; \
+	  $(call emsg,info,update [$${FILE}] (skipped)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
-	  $(call emsg,warning,update: $${FILE} (blocked)); \
+	  $(call emsg,warning,update [$${FILE}] (blocked)); \
 	else \
-	  echo "update: $${FILE} (updated)"; \
+	  $(call emsg,info,update [$${FILE}] (updated)); \
 	  cp "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}"; \
 	fi; \
 
@@ -1894,13 +1918,13 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
 	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
-	  echo "update: $${FILE} (untracked)"; \
+	  $(call emsg,info,update [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
-	  echo "update: $${FILE} (unchanged)"; \
+	  $(call emsg,info,update [$${FILE}] (unchanged)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
-	  $(call emsg,warning,update: $${FILE} (blocked)); \
-	else echo "update: $${FILE} (updated)"; fi; \
+	  $(call emsg,warning,update [$${FILE}] (blocked)); \
+	else $(call emsg,info,update [$${FILE}] (updated)); fi; \
 
 #@ update all tools required by the project.
 update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)

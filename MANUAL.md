@@ -561,12 +561,14 @@ need to call them manually.
 
 
 ```bash
-make init         # short cut for 'init-tools init-hooks init-codacy'
-make init-hooks   # initializes github hooks for pre-commit, etc
+make init         # short cut for 'init-git init-hooks init-go init-make'
+make init-go      # initializes go project files
+make init-git     # initializes git resource revision control
+make init-hooks   # initializes git hooks for pre-commit, etc
 make init-codacy  # initializes tools for running the codacy targets
 make init-code    # initializes code by generating mocks and kube-apis
 make init-make    # initializes project by copying template files
-make init-make!   # copies Makefile.base from the template
+make init-make!   # initializes Makefile to contain a copy of Makefile.base
 ```
 
 The `init-make` targets support a `<version>` argument to install the config

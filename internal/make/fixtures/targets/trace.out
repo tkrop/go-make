@@ -90,6 +90,7 @@ image-push
 init
 init-codacy
 init-code
+init-git
 init-go
 init-gosec
 init-hooks
