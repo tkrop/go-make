@@ -248,7 +248,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.116
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.117
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1151,8 +1151,8 @@ test-self::  clean-all all-clean clean-all install-all update-all? update-all
 LINTERS_CUSTOM ?=
 LINTERS_DISABLED ?=
 LINTERS_DISCOURAGED ?= \
-	execinquery exhaustruct exportloopref gci gochecknoglobals gochecknoinits \
-	godox ireturn musttag nlreturn nonamedreturns paralleltest rowserrcheck \
+	exhaustruct exportloopref gci gochecknoglobals gochecknoinits godox \
+	ireturn musttag nlreturn nonamedreturns paralleltest rowserrcheck \
 	tagliatelle varnamelen wastedassign
 LINTERS_MINIMUM ?= \
 	asasalint asciicheck bidichk bodyclose dogsled dupl dupword durationcheck \
