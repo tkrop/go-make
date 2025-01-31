@@ -185,9 +185,8 @@ go-check-version = \
 	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
-	elif [ -f "$(GOBIN)/$(1)" ]; then rm --verbose --force  "$(GOBIN)/$(1)"; \
-	  $(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2))); \
-	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); fi
+	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); \
+	elif [ -f "$(GOBIN)/$(1)" ]; then $(call go-install-module,$(1),$(2)); fi
 # Function to warn about automated updating of go packages.
 go-update = \
 	if [ "$(3)" != "(devel)" ]; then \
@@ -200,7 +199,10 @@ go-update = \
 go-install-module = \
 	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
-	$(GO) install $(INSTALL_FLAGS) "$(2)"
+	echo $(GO) install $(INSTALL_FLAGS) "$(2)" >/dev/stderr 2>&1; \
+	if [ -z "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
+	  rm --verbose --force  "$(GOBIN)/$(1)"; \
+	fi; $(GO) install $(INSTALL_FLAGS) "$(2)"
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -250,7 +252,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.118
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.119
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1462,7 +1464,7 @@ lint-apis:: install-zally
 	@LINTER="https://infrastructure-api-linter.zalandoapis.com"; \
 	if ! curl --silent $${LINTER}; then \
 	  $(call emsg,warning,API linter not available); exit 0; \
-	fi; \
+	else $(call emsg,info,linting [zally]); fi; \
 	ARGS=("--linter-service" "$${LINTER}"); \
 	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
 	if [ -z "$(filter %.yaml,$(ARGS))" ]; then \
@@ -1571,7 +1573,7 @@ install-all:: $(TARGETS_INSTALL_ALL)
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
 	@$(call go-check-version,$*,$(ARGS));
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	$(call go-install-module,$*,$(ARGS));
+	@$(call go-install-module,$*,$(ARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1964,7 +1966,7 @@ update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	$(call go-install-module,$*,$(ARGS));
+	@$(call go-install-module,$*,$(ARGS));
 
 
 ## Custom: custom extension targets.
