@@ -167,7 +167,7 @@ export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
 GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
 # Function for checking and wanring about go and package version mismatches.
 go-check-version = \
-	if [ -f "$(GOBIN)/$(1)" ]; then \
+	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
@@ -185,20 +185,22 @@ go-check-version = \
 	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
-	fi
-# Funtion to warn about automated updating of go packages.
+	elif [ -f "$(GOBIN)/$(1)" ]; then rm --verbose --force  "$(GOBIN)/$(1)"; \
+	  $(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2))); \
+	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); fi
+# Function to warn about automated updating of go packages.
 go-update = \
 	if [ "$(3)" != "(devel)" ]; then \
 	  $(call emsg,warning,$(1) $(4): updating now!); \
-	  echo '$(call go-install,$(2))'; $(call go-install,$(2)); \
+	  $(call go-install,$(1),$(2)); \
 	else \
 	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
 	fi
 # Function to install go programs from package the go tooling list.
 go-install-module = \
-  $(call go-install,$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
+	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
-  $(GO) install $(INSTALL_FLAGS) "$(1)"
+	$(GO) install $(INSTALL_FLAGS) "$(2)"
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -248,7 +250,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.117
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.118
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -279,7 +281,6 @@ TOOLS_GO += \
 	github.com/fzipp/gocyclo/cmd/gocyclo \
 	github.com/mgechev/revive@$(TOOL_VERSION_REVIVE) \
 	github.com/securego/gosec/v2/cmd/gosec \
-	github.com/tsenart/deadcode \
 	honnef.co/go/tools/cmd/staticcheck \
 	github.com/zricethezav/gitleaks/v8 \
 	github.com/icholy/gomajor \
@@ -379,6 +380,12 @@ AWS_SERVICES ?= sqs s3
 AWS_VERSION ?= latest
 AWS_IMAGE ?= localstack/localstack:$(AWS_VERSION)
 
+# Setup java support.
+JAVA_VERSION ?= 11.0.26+4
+JAVA_HOME ?= $(GOBIN)/jdk-$(JAVA_VERSION)
+JRE_VERSION ?= $(JAVA_VERSION)
+JRE_HOME ?= $(GOBIN)/jre-$(JRE_VERSION)
+
 # Setup codacy integration.
 CODACY ?= enabled
 ifeq ($(IMAGE_VERSION),snapshot)
@@ -390,17 +397,26 @@ CODACY_PROVIDER ?= ghe
 CODACY_USER ?= $(GITOWNER)
 CODACY_PROJECT ?= $(GITREPO)
 CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
-CODACY_SKIP_SSL_VERIFICATION ?= false
-CODACY_CLIENTS ?= aligncheck deadcode
+CODACY_CLIENTS ?= aligncheck
 CODACY_BINARIES ?= gosec staticcheck
-ifeq (CODACY_API_BASE_URL,$(CODACY_API_BASE_URL))
-	CODACY_REPORTER_VERSION ?= 13.13.13
+ifdef CODACY_JRE_HOME
+  JRE_HOME := $(CODACY_JRE_HOME)
 endif
 CODACY_GOSEC_VERSION ?= 0.4.5
+CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
 CODACY_STATICCHECK_VERSION ?= 3.0.12
+CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
+CODACY_ANALYSIS-CLI_VERSION ?= 7.9.11
+CODACY_ANALYSIS-CLI_EXTENSION ?= assembly-$(CODACY_ANALYSIS-CLI_VERSION).jar
+ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
+	CODACY_REPORTER_VERSION ?= 13.13.13
+else
+	CODACY_REPORTER_VERSION ?=
+endif
 CODACY_PROJECT_TOKEN ?=
 CODACY_API_TOKEN ?=
 $(call cdebug,using CODACY_API_BASE_URL [$(CODACY_API_BASE_URL)])
+$(call cdebug,using CODACY_REPORTER_VERSION [$(CODACY_REPORTER_VERSION)])
 
 KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
 	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
@@ -414,8 +430,7 @@ GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 
 # Default target list for all and pipeline builds.
 TARGETS_ALL ?= init-hooks test lint build image
-TARGETS_INIT ?= init-git init-hooks init-go init-make \
-	$(if $(filter $(CODACY),enabled),init-codacy,)
+TARGETS_INIT ?= init-git init-hooks init-go init-make
 TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdown
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
@@ -531,7 +546,7 @@ $(call cdebug,using MOCKS [$(MOCKS)])
 TARGETS_PUBLISH := $(addprefix version-publish-, all $(COMMANDS))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
-TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES))
+TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES) analysis-cli)
 TARGETS_TEST_INIT := test-clean init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
@@ -584,7 +599,7 @@ call::;	@$(ARGS)
 
 
 $(DIR_CONFIG) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
-	@if [ ! -d "$@" ]; then mkdir -p $@; fi;
+	@if [ ! -d "$@" ]; then mkdir --parents $@; fi;
 
 
 ## Make-Support: targets to support user understanding the functionality.
@@ -879,18 +894,43 @@ $(MOCKS_TARGETS): go.sum $(MOCKS_SOURCES) install-mockgen install-mock
 	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
 	fi; \
 
-#@ initialize the codacy support - if enabled.
-init-codacy:: $(TARGETS_INIT_CODACY)
+#@ initialize the codacy support.
+init-codacy:: $(TARGETS_INIT_CODACY) init-jre
 $(TARGETS_INIT_CODACY):: init-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
+	EXTENSION="$(CODACY_$(call upper,$*)_EXTENSION)"; \
+	if [ -z "$${EXTENSION}" ]; then EXTENSION="$${VERSION}"; fi; \
 	FILE="$(GOBIN)/codacy-$*-$${VERSION}"; \
 	if [ ! -f $${FILE} ]; then \
 	  BASE="https://github.com/codacy/codacy-$*/releases/download"; \
 	  echo curl --silent --location --output $${FILE} \
-	    $${BASE}/$${VERSION}/codacy-$*-$${VERSION}; \
+	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
 	  curl --silent --location --output $${FILE} \
-	    $${BASE}/$${VERSION}/codacy-$*-$${VERSION}; \
+	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
 	  chmod 700 $${FILE}; \
+	fi; \
+
+# initialize java development and java runtime support.
+init-jre init-java:: init-%:
+	@DIR="$($(call upper,$*)_HOME)"; \
+	if [ ! -d "$${DIR}" ]; then VERSION="$($(call upper,$*)_VERSION)"; \
+	  case "$$(uname)" in (Linux) OS="linux";; (Darwin) OS="mac";; esac; \
+	  case "$$(uname -m)" in (x86_64) CPU="x64";; (arm64) CPU="aarch64";; esac; \
+	  XFILE="OpenJDK$${VERSION%%.*}U-$*_$${CPU}_$${OS}_hotspot_$${VERSION/+/_}.tar.gz"; \
+	  XPATH="temurin$${VERSION%%.*}-binaries/releases/download/jdk-$${VERSION}"; \
+	  FILE="/tmp/temurin-$*-$${VERSION}.tar.gz"; \
+	  if [ ! -f "$${FILE}" ]; then \
+	    $(call emsg,info,downloading $*-$${VERSION} [$${DIR}]); \
+	    CMD=(curl --silent --location --show-error --fail \
+		  "https://github.com/adoptium/$${XPATH}/$${XFILE}" \
+		  --output "$${FILE}"); \
+		echo $${CMD[@]}; $${CMD[@]}; \
+	  fi; \
+	  if [ -f "$${FILE}" ]; then mkdir --parents "$${DIR}"; \
+	    $(call emsg,info,installing $*-$${VERSION} [$${DIR}]); \
+	    case "$$(uname)" in (Linux) SUB="1";; (Darwin) SUB="3";; esac; \
+	    tar -C "$${DIR}" "--strip-components=$${SUB}" -zxf "$${FILE}"; \
+	  fi; \
 	fi; \
 
 #@ <version> # initialize project by copying config files from template.
@@ -988,9 +1028,6 @@ test-upload::
 	  "$(TEST_BENCH)" 2>/dev/null); COMMIT="$$($(GITHASH))"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
 	LARGS=("--language" "go" "--force-coverage-parser" "go"); \
-	if [ "$(CODACY_SKIP_SSL_VERIFICATION)" == "true" ]; then \
-	  LARGS+=("--skip-ssl-verification"); \
-	fi; \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	LARGS+=("--commit-uuid" "$${COMMIT}" "--skip"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
@@ -1109,22 +1146,25 @@ $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
 
-CDP_IMAGE_VERSION ?= latest
-CDP_IMAGE ?= pierone.stups.zalan.do/cdp-runtime/go:${CDP_IMAGE_VERSION}
+TAG ?= latest
+
 #@ test building in continuous integration container.
-test-cdp:
-	@$(call emsg,info,testing in cdp container); \
+test-cdp: test-cdp-go
+TEST_CDP_TARGETS ?= test-cdp-base test-cdp-go test-cdp-java
+$(TEST_CDP_TARGETS):: test-cdp-%:
+	@$(call emsg,info,testing in cdp container [$*]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
-		no docker command - aborting!); exit 1; fi;
+		no docker command - aborting!); exit 1; fi; \
+	CDP_IMAGE="pierone.stups.zalan.do/cdp-runtime/$*:$(TAG)"; \
 	if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
-	DIR=$$(mktemp -d); mkdir -p $${DIR}/.ssh; \
+	DIR=$$(mktemp --directory); mkdir --parents $${DIR}/.ssh; \
 	( cat $${HOME}/.gitconfig; \
 	  echo -e '[safe]\n\tdirectory = /workspace' \
 	  echo -e '[safe]\n\tdirectory = /go-make' \
 	) >> $${DIR}/.gitconfig; \
 	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
 	sudo chown --recursive root:root $${DIR}; \
-	trap "sudo rm -rf $${DIR}" EXIT INT TERM; \
+	trap "sudo rm --force --recursive $${DIR}" EXIT INT TERM; \
 	$(IMAGE_CMD) run $${TTY} --interactive --rm \
 	  --privileged --network host --workdir="/workspace" \
 	  --env SSH_AUTH_SOCK=/ssh-agent \
@@ -1133,8 +1173,9 @@ test-cdp:
 	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
 	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
 	  --volume=$(dir $(GOMAKE_CONFIG)):/go-make \
+	  --volume=/tmp:/tmp \
 	  --volume=$${PWD}:/workspace \
-	  ${CDP_IMAGE} /bin/bash $(ARGS);
+	  $${CDP_IMAGE} /bin/bash "$${ARGS[@]}";
 
 #@ execute a kind of self-test running the main targets.
 test-self::  clean-all all-clean clean-all install-all update-all? update-all
@@ -1298,14 +1339,10 @@ lint-config::
 
 #@ execute all codacy linters activated by the custom setup (all files).
 lint-codacy:: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
-$(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code
+$(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
 	@$(call emsg,info,linting [$*]); \
-	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command - continu without $*!); exit 0; fi; \
-	LARGS=("--allow-network" "--skip-uncommitted-files-check"); \
-	if [ "$(CODACY_SKIP_SSL_VERIFICATION)" == "true" ]; then \
-	  LARGS+=("--skip-ssl-verification"); \
-	fi; \
+	LARGS=("--skip-uncommitted-files-check"); \
+	if [ "$(ARGS)" == "verbose" ]; then LARGS+=("--verbose"); fi; \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
 	  LARGS+=("--upload" "--verbose"); \
@@ -1317,15 +1354,10 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code
 	  LARGS+=("--project" "$(CODACY_PROJECT)"); \
 	  LARGS+=("--api-token" "$(CODACY_API_TOKEN)"); \
 	fi; \
-	echo """$(IMAGE_CMD) run --rm=true --env CODACY_CODE="/code" \
-	  --volume /var/run/docker.sock:/var/run/docker.sock \
-	  --volume /tmp:/tmp --volume ".":"/code" \
-	  codacy/codacy-analysis-cli analyze "$${LARGS[@]}" --tool $*"""; \
-	$(IMAGE_CMD) run --rm=true --env CODACY_CODE="/code" \
-	  --volume /var/run/docker.sock:/var/run/docker.sock \
-	  --volume /tmp:/tmp --volume "$${PWD}:/code" \
-	  codacy/codacy-analysis-cli analyze "$${LARGS[@]}" --tool $* || \
-	    $(CODACY_CONTINUE); \
+	CMD=("$(JRE_HOME)/bin/java" \
+	  -jar "$(GOBIN)/codacy-analysis-cli-$(CODACY_ANALYSIS-CLI_VERSION)" \
+	  analyze "$${LARGS[@]}" --tool $*); \
+	echo "$${CMD[@]}"; "$${CMD[@]}" || $(CODACY_CONTINUE); \
 
 LINT_ARGS_GOSEC_LOCAL := -log /dev/null -exclude G307 ./...
 LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
@@ -1366,7 +1398,7 @@ lint-revive:: init-code install-revive
 
 #@ execute markdown linter (md-files).
 lint-markdown:: init-code $(NVM_BIN)/markdownlint
-	@$(call emsg,info,linting with markdownlint); \
+	@$(call emsg,info,linting [markdownlint]); \
 	echo "markdownlint --config .markdownlint.yaml ."; \
 	if  [ -n "$$(find -name "*.md")" ]; then \
 	  if command -v markdownlint &> /dev/null; then \
@@ -1383,7 +1415,7 @@ lint-markdown:: init-code $(NVM_BIN)/markdownlint
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
 lint-shell:: init-code
-	@$(call emsg,info,linting with shellcheck); \
+	@$(call emsg,info,linting [shellcheck]); \
 	mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
 	if [ -n "$(ARGS)" ]; then ARGS=(${ARGS} $(ARGS)); fi; \
 	if  [ -n "$${FILES}" ]; then \
@@ -1392,7 +1424,7 @@ lint-shell:: init-code
 	  elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	    no docker command, continuing without [shellcheck]); \
 	  else \
-	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" \
+	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" --network host \
 	      koalaman/shellcheck:stable "$${ARGS[@]}" "$${FILES[@]}"; \
 	  fi; \
 	fi; \
@@ -1672,9 +1704,8 @@ run-db:: $(DIR_RUN)
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
 	  $(call emsg,info,port allocated, using existing [postgres]); exit 0; fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
-	$(IMAGE_CMD) run --detach --tty \
-	  --name ${IMAGE_ARTIFACT}-db \
-	  --publish $(HOST):$(DB_PORT):5432 \
+	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-db \
+	  --network host --publish $(HOST):$(DB_PORT):5432 \
 	  --env POSTGRES_USER="$(DB_USER)" \
 	  --env POSTGRES_PASSWORD="$(DB_PASSWORD)" \
 	  --env POSTGRES_DB="$(DB_NAME)" $(DB_IMAGE) \
@@ -1703,7 +1734,7 @@ run-aws:: $(DIR_RUN)
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-aws \
-	  --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
+	  --network host --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
