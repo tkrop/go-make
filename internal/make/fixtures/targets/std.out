@@ -79,12 +79,15 @@ image
 image-build
 image-push
 init
+init-analysis-cli
 init-codacy
 init-code
 init-git
 init-go
 init-gosec
 init-hooks
+init-java
+init-jre
 init-make
 init-make!
 init-staticcheck
@@ -99,7 +102,6 @@ install
 install-all
 install-client-gen
 install-controller-gen
-install-deadcode
 install-deepcopy-gen
 install-gitleaks
 install-go-make
@@ -127,7 +129,6 @@ lint-apis
 lint-base
 lint-codacy
 lint-config
-lint-deadcode
 lint-gocognit
 lint-gocyclo
 lint-gosec
@@ -156,6 +157,9 @@ test-all
 test-bench
 test-build
 test-cdp
+test-cdp-base
+test-cdp-go
+test-cdp-java
 test-clean
 test-cover
 test-go
@@ -169,7 +173,6 @@ uninstall-client-gen
 uninstall-codacy-gosec
 uninstall-codacy-staticcheck
 uninstall-controller-gen
-uninstall-deadcode
 uninstall-deepcopy-gen
 uninstall-gitleaks
 uninstall-go-make
@@ -195,7 +198,6 @@ update-all
 update-all?
 update-client-gen
 update-controller-gen
-update-deadcode
 update-deepcopy-gen
 update-deps
 update-deps?
