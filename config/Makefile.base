@@ -252,7 +252,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.119
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.120
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -408,7 +408,7 @@ CODACY_GOSEC_VERSION ?= 0.4.5
 CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
 CODACY_STATICCHECK_VERSION ?= 3.0.12
 CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
-CODACY_ANALYSIS-CLI_VERSION ?= 7.9.11
+CODACY_ANALYSIS-CLI_VERSION ?= 7.9.13
 CODACY_ANALYSIS-CLI_EXTENSION ?= assembly-$(CODACY_ANALYSIS-CLI_VERSION).jar
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
 	CODACY_REPORTER_VERSION ?= 13.13.13
