@@ -252,7 +252,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.120
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.121
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1047,7 +1047,7 @@ test-upload::
 
 #@ test whether project creates conflicting program names.
 test-build::
-	@echo -e "$(COMMANDS_PKG)" | awk 'BEGIN{ RS="\\s"; FS="="; \
+	@echo -e "$(COMMANDS_PKG)" | awk 'BEGIN{ RS=" "; FS="="; \
 	  fmt = "$(call cmsg,error,program conflict) [%s && %s => %s]\n" \
 	} { if ($$1 in cmds) { failures++; \
 	    printf(fmt, cmds[$$1], $$2 "/main.go", $$1 "/main.go") \
