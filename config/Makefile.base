@@ -165,7 +165,7 @@ export GOBIN ?= $(GOPATH)/bin
 export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
 # Setup go to use desired and consistent go versions.
 GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
-# Function for checking and wanring about go and package version mismatches.
+# Function for checking and warning about go and package version mismatches.
 go-check-version = \
 	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
@@ -209,6 +209,9 @@ VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
 go-download-version = \
 	$(GO) mod download --json $(1) 2>/dev/null | \
 	  sed --regexp-extended --null-data $(VERSION_REGEX)
+# Function to determine the latest version of a go package.
+go-pkg-latest = \
+	go list -m -versions $(1) | awk '{print $$(1) "@" $$(NF) }'
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
       -v not="$(4)" -v version="$(5)" '$(awk-gensub) \
@@ -252,7 +255,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.121
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.122
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -1863,15 +1866,15 @@ update-go::
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  $(call emsg,warning, current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
-	fi
+	fi; \
 
 #@ check whether a new latest go version exists.
 update-go?::
 	@VERSION="$(update-go-latest)"; \
 	if ! [ "$${VERSION}" == "$(GOVERSION)" ]; then \
 	  $(call emsg,error,new golang version available [$${VERSION}]: \
-	    run 'make update-go' to update the project!); exit 1; \
-	fi
+	    run 'make update-go' to update the project!); \
+	fi; \
 
 # Functions to create the list of updates (not sure whether go list is contributing).
 update-args = \
@@ -1884,12 +1887,12 @@ update-list = \
 	) | sort --unique | sed "s/\]//g; s/\[/=> /"
 update-config = \
 	if [ "$(1)" == "current" ]; then CONFIG="$(GOMAKE_CONFIG)"; else \
-	  GOMAKE="$(call go-pkg,$(TOOLS_GO),module,^go-make$$,,$(1))"; \
-	  if [ "$(2)" == "download" ]; then \
-	    GOMAKE="$$($(call go-download-version,$${GOMAKE}))"; \
-	  fi && CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"; \
+	  GOMAKE="github.com/tkrop/go-make"; \
+	  if [ -n "$(1)" ]; then GOMAKE="$${GOMAKE}@$(1)"; else \
+	    GOMAKE="$$($(call go-pkg-latest,$${GOMAKE}))"; \
+	  fi; \
+	  CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"; \
 	fi
-
 
 # TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
@@ -1924,15 +1927,18 @@ update/go.mod?:: install-gomajor
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum
 
 update/go-make::
-	@$(call update-config,$(ARGS),download) || \
-	  ( $(call emsg,error,download $${GOMAKE}) && exit 1 )
+	@GOMAKE="github.com/tkrop/go-make"; \
+	if [ -n "$(ARGS)" ]; then GOMAKE="$${GOMAKE}@$(ARGS)"; \
+	else GOMAKE="$$($(call go-pkg-latest,$${GOMAKE}))"; fi; \
+	$(call emsg,info,updating [$${GOMAKE}]); \
+	$(GO) install $${GOMAKE} || \
+	  ( $(call emsg,error,installing [$${GOMAKE}]) && exit 1 )
 
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
 $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	if [ -z "$(ARGS)" ]; then  CONFIG="$(GOMAKE_CONFIG)"; \
-	else $(call update-config,$(ARGS),run); fi; \
+	$(call update-config,$(ARGS)); \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  $(call emsg,info,update [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
@@ -1949,7 +1955,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
 $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
-	$(call update-config,$(ARGS),run) || CONFIG="$(GOMAKE_CONFIG)"; \
+	$(call update-config,$(ARGS)); \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
 	  $(call emsg,info,update [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \

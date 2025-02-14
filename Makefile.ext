@@ -6,7 +6,7 @@ clean::
 
 #@ bump version and update Makefiles to reflect change.
 bump:: version-bump
-version-bump version-bump-reset::
+version-bump version-bump-reset:: install
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
 	  Makefile config/Makefile config/Makefile.base; \
