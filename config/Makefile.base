@@ -255,7 +255,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.123
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.124
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -418,8 +418,12 @@ ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
 else
 	CODACY_REPORTER_VERSION ?=
 endif
-CODACY_PROJECT_TOKEN ?=
 CODACY_API_TOKEN ?=
+# Hack to ensure a fake token in CDP, iff no other token is provided.
+CODACY_PROJECT_TOKEN ?= $(if $(CODACY_API_TOKEN),,$(if \
+	$(wildcard /etc/ssl/certs/cdp-proxy.pem),"fake-token"))
+$(call cdebug,using CODACY_API_TOKEN [$(CODACY_API_TOKEN)])
+$(call cdebug,using CODACY_PROJECT_TOKEN [$(CODACY_PROJECT_TOKEN)])
 $(call cdebug,using CODACY_API_BASE_URL [$(CODACY_API_BASE_URL)])
 $(call cdebug,using CODACY_REPORTER_VERSION [$(CODACY_REPORTER_VERSION)])
 
@@ -1032,19 +1036,19 @@ test-upload::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); COMMIT="$$($(GITHASH))"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
-	LARGS=("--language" "go" "--force-coverage-parser" "go"); \
-	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
-	LARGS+=("--commit-uuid" "$${COMMIT}" "--skip"); \
+	LARGS=("--language=go" "--force-coverage-parser=go"); \
+	LARGS+=("--codacy-api-base-url=$(CODACY_API_BASE_URL)"); \
+	LARGS+=("--commit-uuid=$${COMMIT}" "--skip"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
-	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
+	  LARGS+=("--project-token=$(CODACY_PROJECT_TOKEN)"); \
 	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
-	  LARGS+=("--organization-provider" "$(CODACY_PROVIDER)"); \
-	  LARGS+=("--username" "$(CODACY_USER)"); \
-	  LARGS+=("--project-name" "$(CODACY_PROJECT)"); \
-	  LARGS+=("--api-token" "$(CODACY_API_TOKEN)"); \
+	  LARGS+=("--organization-provider=$(CODACY_PROVIDER)"); \
+	  LARGS+=("--username=$(CODACY_USER)"); \
+	  LARGS+=("--project-name=$(CODACY_PROJECT)"); \
+	  LARGS+=("--api-token=$(CODACY_API_TOKEN)"); \
 	else $(call emsg,info,coverage report (skipped)); exit 0; fi; \
 	bash <(curl --silent --location $${SCRIPT}) \
-	  report "$${LARGS[@]}" --coverage-reports "$${FILE}" && \
+	  report "$${LARGS[@]}" --coverage-reports=$${FILE} && \
 	$(call emsg,info,coverage report (uploadad)) || \
 	$(call emsg,info,coverage report (failed));
 
@@ -1086,7 +1090,7 @@ test-go = \
 	      GOCHANGE="downgrade"; CHANGE="upgrade"; \
 	    fi; \
 	    $(call emsg,error,go version [$(1): $${VERSION} => $(GOVERSION)]: \
-	      run 'make update-go $${VERSION}' to adjust the project or \
+	      run 'make update-go $${GOVERSION}' to adjust the project or \
 	      $${GOCHANGE} your local go compiler version to $${VERSION}!); \
 	  fi; \
 	done
@@ -1351,13 +1355,13 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
 	  LARGS+=("--upload" "--verbose"); \
-	  LARGS+=("--project-token" "$(CODACY_PROJECT_TOKEN)"); \
+	  LARGS+=("--project-token=$(CODACY_PROJECT_TOKEN)"); \
 	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
 	  LARGS+=("--upload" "--verbose"); \
-	  LARGS+=("--provider" "$(CODACY_PROVIDER)"); \
-	  LARGS+=("--username" "$(CODACY_USER)"); \
-	  LARGS+=("--project" "$(CODACY_PROJECT)"); \
-	  LARGS+=("--api-token" "$(CODACY_API_TOKEN)"); \
+	  LARGS+=("--provider=$(CODACY_PROVIDER)"); \
+	  LARGS+=("--username=$(CODACY_USER)"); \
+	  LARGS+=("--project=$(CODACY_PROJECT)"); \
+	  LARGS+=("--api-token=$(CODACY_API_TOKEN)"); \
 	fi; \
 	CMD=("$(JRE_HOME)/bin/java" \
 	  -jar "$(GOBIN)/codacy-analysis-cli-$(CODACY_ANALYSIS-CLI_VERSION)" \
