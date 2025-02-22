@@ -46,21 +46,30 @@ endif
 
 # System dependent helper functions.
 ifeq ("$(shell uname)","Linux")
+  $(call cdebug,using UNAME $(shell uname --all))
 else ifeq ($(shell uname),Darwin)
-  path-setup = $(shell \
+  $(call cdebug,using UNAME [$(shell uname -a)])
+  path-setup = \
 	if [ "$(1)" == "opt" ]; then \
 	  XPATH="$(shell brew --prefix)/$(1)/$(2)/libexec/gnubin"; \
 	else XPATH="$(shell brew --prefix)/$(1)"; fi; \
 	test ! -e "$${XPATH}/$(3)" && brew install $(2) >&2; \
 	if [ -n "$(4)" ]; then echo -n "$${XPATH}:$(4)"; \
-	else echo -n "$${XPATH}"; fi)
-  export PATH := $(call path-setup,opt,coreutils,ls,$(PATH))
-  export PATH := $(call path-setup,opt,findutils,find,$(PATH))
-  export PATH := $(call path-setup,bin,bash,bash,$(PATH))
-#  export PATH := $(call path-setup,bin,curl,curl,$(PATH))
-  export PATH := $(call path-setup,opt,gawk,awk,$(PATH))
-  export PATH := $(call path-setup,opt,gsed,sed,$(PATH))
-  export PATH := $(call path-setup,opt,make,make,$(PATH))
+	else echo -n "$${XPATH}"; fi
+  $(call cdebug, PATH=$(call path-setup,opt,coreutils,ls,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,coreutils,ls,$(PATH)))
+  $(call cdebug, PATH=$(call path-setup,opt,findutils,find,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,findutils,find,$(PATH)))
+  $(call cdebug, PATH=$(call path-setup,bin,bash,bash,$(PATH)))
+  export PATH := $(shell $(call path-setup,bin,bash,bash,$(PATH)))
+#  $(call cdebug, PATH=$(call path-setup,bin,curl,curl,$(PATH)))
+#  export PATH := $(shell $(call path-setup,bin,curl,curl,$(PATH)))
+  $(call cdebug, PATH=$(call path-setup,opt,gawk,awk,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,gawk,awk,$(PATH)))
+  $(call cdebug, PATH=$(call path-setup,opt,gsed,sed,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,gsed,sed,$(PATH)))
+  $(call cdebug, PATH=$(call path-setup,opt,make,make,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,make,make,$(PATH)))
   # Ensure export of path to $(shell ...) in gmake 3.81.
   ifneq ($(shell echo $(MAKE_VERSION) | grep -E "^3\.[0-9]+"),)
 	export SHELL :=  PATH="$(PATH)" $(shell brew --prefix)/bin/bash
@@ -72,7 +81,7 @@ else
 endif
 
 # Log execution environment for debugging.
-$(call cdebug,$(shell uname --all))
+$(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using PATH [$${PATH}])
 $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
@@ -80,7 +89,7 @@ $(call cdebug,using AWK [$(shell awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
-	sed -e "s/^.\///g"
+	sed "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
 clean-file = $(call find-all,$(1),-type f \( $(2) \) \
 	-exec rm --verbose --force {} \;)
@@ -164,7 +173,11 @@ export GOBIN ?= $(GOPATH)/bin
 # Export private repositories that do not need to be downloaded.
 export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
 # Setup go to use desired and consistent go versions.
-GOVERSION := $(shell $(GO) version $$(which $(GO)) | sed -E "s/.*go([0-9.]+).*/\1/")
+export GOTOOLCHAIN ?= $(shell $(GO) version | \
+	sed --regexp-extended "s/.*(go[0-9.]+).*/\1/")
+$(call cdebug,using GOTOOLCHAIN [$(GOTOOLCHAIN)])
+GOVERSION ?= $(shell $(GO) version $$(which $(GO)) | \
+	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
 # Function for checking and warning about go and package version mismatches.
 go-check-version = \
 	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
@@ -255,7 +268,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.124
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.125
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -273,9 +286,10 @@ endif
 search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
 	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
-K8S_CODEGEN_VERSION ?= v0.31.0
-GOLANGCI_VERSION ?= v1.63.4
-REVIVE_VERSION ?= v1.3.3
+K8S_CODEGEN_VERSION ?= v0.32.2 # https://github.com/kubernetes/code-generator/tags
+GOLANGCI_VERSION ?= v1.64.5 # https://github.com/golangci/golangci-lint/tags
+# Version determined by Codacy: https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
+REVIVE_VERSION ?= v1.3.3 # https://github.com/mgechev/revive/tags
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
@@ -808,7 +822,7 @@ git-verify::
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
 	( "pull" | * ) MAIN="$(git-main)" && $(GIT) fetch origin "$${MAIN}" --verbose && \
 	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
-	esac | $(call git-verify,$${MODE}) > /dev/stderr
+	esac | $(call git-verify,$${MODE}) > /dev/stderr;
 
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
@@ -845,7 +859,7 @@ $(TARGETS_GIT_FIX):: git-fix%:
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@$(GIT) push --set-upstream origin \
-	  $$($(GIT) branch 2> /dev/null | sed -e '/^[^*]/d; s/* \(.*\)/\1/');
+	  $$($(GIT) branch 2> /dev/null | sed '/^[^*]/d; s/* \(.*\)/\1/');
 
 
 ## Init: targets to initialize tools and (re-)sources.
@@ -877,7 +891,7 @@ $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
 	@if [ -d "$(DIR_GIT)/hooks" ] && ! diff <(cat $@ 2>/dev/null) \
 	    <($(git-hooks-pre-commit)) >/dev/null; then \
 	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
-	fi; \
+	fi;
 
 #@ initialize the go module and package dependencies.
 init-go:: go.sum
@@ -901,7 +915,7 @@ $(MOCKS_TARGETS): go.sum $(MOCKS_SOURCES) install-mockgen install-mock
 	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
 	elif [ "$${PACKAGE}" != "_" -a "$${TARGET}" -ot "go.sum" ]; then \
 	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
-	fi; \
+	fi;
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -917,7 +931,7 @@ $(TARGETS_INIT_CODACY):: init-%:
 	  curl --silent --location --output $${FILE} \
 	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
 	  chmod 700 $${FILE}; \
-	fi; \
+	fi;
 
 # initialize java development and java runtime support.
 init-jre init-java:: init-%:
@@ -940,7 +954,7 @@ init-jre init-java:: init-%:
 	    case "$$(uname)" in (Linux) SUB="1";; (Darwin) SUB="3";; esac; \
 	    tar -C "$${DIR}" "--strip-components=$${SUB}" -zxf "$${FILE}"; \
 	  fi; \
-	fi; \
+	fi;
 
 #@ <version> # initialize project by copying config files from template.
 init-make:: $(TARGETS_INIT_MAKE)
@@ -951,11 +965,11 @@ $(TARGETS_INIT_ALL):: init/%:
 	  cp "$(GOMAKE_CONFIG)/$${FILE}" "$${DIR}/$${FILE}"; \
 	else \
 	  $(call emsg,warning,install: $${FILE} (blocked)); \
-	fi; \
+	fi;
 
 #@ <version> # initialize project by copying Makefile.base from template.
 init-make!::
-	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile"; \
+	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile";
 
 
 ## Generate: targets to generate code and documentation.
@@ -998,7 +1012,7 @@ $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
 	    --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
 	done; \
 	$(call emsg,info,update packages [$${BPKG}]); \
-	$(GO) get ./$${BPKG}/clients/...; \
+	$(GO) get ./$${BPKG}/clients/...;
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -1025,7 +1039,7 @@ test-cover::
 	  "$(TEST_BENCH)" 2>/dev/null); \
 	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
 	if [ "$(ARGS)" == "white" ]; then \
-	  sed -i 's/black/whitesmoke/g' "$${FILE}.html"; \
+	  sed --in-place 's/black/whitesmoke/g' "$${FILE}.html"; \
 	fi; \
 	sensible-browser "$${FILE}.html";
 
@@ -1084,27 +1098,26 @@ test-image::
 test-go = \
 	for VERSION in $(2); do \
 	  if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]* ]]; then \
-	    if [[ "$(GOVERSION)" < "$${VERSION}" ]]; then \
-	      GOCHANGE="upgrade"; CHANGE="downgrade"; \
-	    else \
-	      GOCHANGE="downgrade"; CHANGE="upgrade"; \
-	    fi; \
-	    $(call emsg,error,go version [$(1): $${VERSION} => $(GOVERSION)]: \
-	      run 'make update-go $${GOVERSION}' to adjust the project or \
-	      $${GOCHANGE} your local go compiler version to $${VERSION}!); \
+	    if [[ "$(GOVERSION)" < "$${VERSION}" ]]; then CHANGE="upgrade"; \
+	    else CHANGE="downgrade"; fi; \
+	    $(call emsg,warning,go version [$(1): $${VERSION} => $(GOVERSION)]: \
+	      run 'make update-go $(GOVERSION)' to adjust the project \
+	      or $${CHANGE} your go compiler to $${VERSION}!); \
 	  fi; \
 	done
 
 #@ test whether project is using the latest go-version.
 test-go::
 	@if [ ! -f "go.mod" ];  then exit 0; fi; \
-	$(call test-go,go.mod,$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' ')); \
+	VERSION="$$(grep "^go [0-9.]*$$" go.mod | cut -f2 -d' ')"; \
+	$(call test-go,go.mod,"$${VERSION}"); \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
-	    $(call test-go,$${FILE},$$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
+	    VERSION=($$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
 	      grep -Eo "[0-9.]*" | sort --unique)); \
+		$(call test-go,$${FILE},"$${VERSION[@]}"); \
 	  fi; \
-	done; if [ -n "$${GOCHANGE}" ]; then exit 1; fi
+	done;
 
 # process test arguments.
 test-args = \
@@ -1119,8 +1132,7 @@ test-args = \
 			 "$${ARGS[0]}" == *_test.go ]]; then \
 	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
 		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-		-o -name "common_test.go" -o -name "mock_*_test.go" | \
-		sed "s|^|./|"; \
+		-o -name "common_test.go" -o -name "mock_*_test.go" | sed "s|^|./|"; \
 	  echo $${ARGS[@]/\#/./}; \
 	elif [[ -d "$${ARGS[0]}" && ! -f "$${ARGS[0]}" ]]; then \
 	  echo $${ARGS[@]/\#/./}; \
@@ -1201,9 +1213,9 @@ test-self::  clean-all all-clean clean-all install-all update-all? update-all
 LINTERS_CUSTOM ?=
 LINTERS_DISABLED ?=
 LINTERS_DISCOURAGED ?= \
-	exhaustruct exportloopref gci gochecknoglobals gochecknoinits godox \
-	ireturn musttag nlreturn nonamedreturns paralleltest rowserrcheck \
-	tagliatelle varnamelen wastedassign
+	exhaustruct gci gochecknoglobals gochecknoinits godox ireturn musttag \
+	nlreturn nonamedreturns paralleltest rowserrcheck tagliatelle varnamelen \
+	wastedassign
 LINTERS_MINIMUM ?= \
 	asasalint asciicheck bidichk bodyclose dogsled dupl dupword durationcheck \
 	errchkjson funlen gocognit goconst gocyclo godot gofmt gofumpt goimports \
@@ -1216,9 +1228,8 @@ LINTERS_BASELINE ?= \
 	grouper interfacebloat lll loggercheck nakedret nilnil noctx nolintlint \
 	nosprintfhostport
 LINTERS_EXPERT ?= \
-	errcheck errorlint exhaustive gocritic err113 mnd gomoddirectives \
-	revive stylecheck tenv testableexamples testpackage thelper tparallel \
-	wrapcheck
+	errcheck errorlint exhaustive gocritic err113 mnd gomoddirectives revive \
+	stylecheck testableexamples testpackage thelper tparallel wrapcheck
 
 LINT_FILTER := $(LINTERS_CUSTOM) $(LINTERS_DISABLED)
 LINT_DISABLED ?= $(subst $(SPACE),$(COMMA),$(strip \
@@ -1287,7 +1298,7 @@ lint-config::
 	@LINT_START=$$(awk '($$0 ~ "^linters:.*"){print NR-1}' $(FILE_GOLANGCI)); \
 	LINT_STOP=$$(awk '(start && $$0 ~ "^[^ ]+:$$"){print NR; start=0} \
 	  ($$0 ~ "^linters:.*"){start=1}' $(FILE_GOLANGCI)); \
-	(sed -ne '1,'$${LINT_START}'p' $(FILE_GOLANGCI); \
+	(sed --silent '1,'$${LINT_START}'p' $(FILE_GOLANGCI); \
 	echo -e "linters:\n  enable:"; \
 	for LINTER in "# List of min-set linters (min)" $(LINTERS_MINIMUM) \
 		"# List of base-set linters (base)" $(LINTERS_BASELINE) \
@@ -1299,7 +1310,7 @@ lint-config::
 	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
-	echo; sed -ne $${LINT_STOP}',$$p' $(FILE_GOLANGCI)) | \
+	echo; sed --silent $${LINT_STOP}',$$p' $(FILE_GOLANGCI)) | \
 	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} '$(awk-gensub) \
 	  ((start == 2) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
@@ -1344,7 +1355,7 @@ lint-config::
 		for (i in array){ enable[array[i]] = 1 } \
 	    dnone = split(disabled, array, ","); \
 		for (i in array){ disable[array[i]] = 1 } \
-	  } { print $$0 }' \
+	  } { print $$0 }';
 
 #@ execute all codacy linters activated by the custom setup (all files).
 lint-codacy:: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
@@ -1366,7 +1377,7 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
 	CMD=("$(JRE_HOME)/bin/java" \
 	  -jar "$(GOBIN)/codacy-analysis-cli-$(CODACY_ANALYSIS-CLI_VERSION)" \
 	  analyze "$${LARGS[@]}" --tool $*); \
-	echo "$${CMD[@]}"; "$${CMD[@]}" || $(CODACY_CONTINUE); \
+	echo "$${CMD[@]}"; "$${CMD[@]}" || $(CODACY_CONTINUE);
 
 LINT_ARGS_GOSEC_LOCAL := -log /dev/null -exclude G307 ./...
 LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
@@ -1399,7 +1410,7 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	else \
 	  echo $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL); \
 	  $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL) || $(CODACY_CONTINUE); \
-	fi; \
+	fi;
 
 #@ execute revive linter (go-files).
 lint-revive:: init-code install-revive
@@ -1420,7 +1431,7 @@ lint-markdown:: init-code $(NVM_BIN)/markdownlint
 	      /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
 	        cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
 	  fi; \
-	fi; \
+	fi;
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
 lint-shell:: init-code
@@ -1436,7 +1447,7 @@ lint-shell:: init-code
 	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" --network host \
 	      koalaman/shellcheck:stable "$${ARGS[@]}" "$${FILES[@]}"; \
 	  fi; \
-	fi; \
+	fi;
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
 lint-leaks:: install-gitleaks
@@ -1653,7 +1664,7 @@ version-bump::
 	elif ! [[ "$${ARGS}" =~ ^[0-9]+(\.[0-9]+){0,2}(-.*)?$$ ]]; then \
 	  echo "error: invalid new version [$${ARGS}]"; exit 1; \
 	else VERSION="$${ARGS}"; fi; echo $${VERSION} >VERSION; \
-	$(call emsg,success, bumped version [$${VERSION}]); \
+	$(call emsg,success, bumped version [$${VERSION}]);
 
 
 #@ <version> # release a fixed version of the software as library.
@@ -1670,7 +1681,7 @@ version-release::
 	    $(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
 	  ) && $(call emsg,success, release version [v$${VERSION}]) || \
 	  $(call emsg,failure, release version [v$${VERSION}]); \
-	fi; \
+	fi;
 
 #@ publish the current version by enforcing a registry lookup (experimental).
 version-publish:: $(TARGETS_PUBLISH)
@@ -1777,7 +1788,7 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	trap "$(IMAGE_CMD) rm $${NAME} >/dev/null" EXIT; \
 	trap "$(IMAGE_CMD) kill $${NAME} >/dev/null" INT TERM; \
 	if [ -n "$(filter %$*,$(IMAGES))" ]; then \
-	  IMAGE="$$(echo "$(IMAGE)" | sed -e "s/:/-$*:/")"; \
+	  IMAGE="$$(echo "$(IMAGE)" | sed "s/:/-$*:/")"; \
 	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
 	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $${NAME} \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
@@ -1800,7 +1811,7 @@ $(TARGETS_RUN_CLEAN):: run-clean-%:
 	if [ -n "$$($(IMAGE_CMD) ps -a | grep "$${NAME}")" ]; then \
 	  $(IMAGE_CMD) rm $${NAME} > /dev/null && \
 	  $(call emsg,success,removed container [$${NAME}]); \
-	fi; \
+	fi;
 
 
 ## Cleanup: targets to clean up sources, tools, and containers.
@@ -1854,31 +1865,34 @@ update-go::
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
 	$(call emsg,info,update golang version [$${VERSION}]); \
-	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
-	  $(GO) mod tidy -go=$${VERSION}; $(GO) get go@$${VERSION}; \
-	  sed -E -i -e "/^toolchain.*$$/d;" go.mod; \
-	fi; \
-	if [[ "$${VERSION}" < "1.21" ]]; then \
-	  sed -E -i -e "s/$(GOMOD_REGEX)/\1$${VERSION%\.*}/;" go.mod; \
-	  $(GO) mod tidy -go=$${VERSION%\.*}; \
-	fi; \
-	for FILE in $(DELIVERY); do \
-	  if [ -f "$${FILE}" ]; then \
-	    sed -E -i -e "s/$(DELIVERY_REGEX)/\1$${VERSION}/" "$${FILE}"; \
-	  fi; \
-	done; \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  $(call emsg,warning, current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
 	fi; \
+	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
+	  $(GO) mod tidy -go=$${VERSION}; $(GO) get go@$${VERSION}; \
+	  sed --regexp-extended --in-place --expression="/^toolchain.*$$/d;" go.mod; \
+	fi; \
+	if [[ "$${VERSION}" < "1.21" ]]; then \
+	  sed --regexp-extended --in-place \
+	    --expression="s/$(GOMOD_REGEX)/\1$${VERSION%\.*}/;" go.mod; \
+	  $(GO) mod tidy -go=$${VERSION%\.*}; \
+	fi; \
+	if [ "$${VERSION}" != "$(ARGS)" ]; then VERSION="$${VERSION%\.*}"; fi; \
+	for FILE in $(DELIVERY); do \
+	  if [ -f "$${FILE}" ]; then \
+	    sed --regexp-extended --in-place \
+		  --expression="s/$(DELIVERY_REGEX)/\1$${VERSION}/" "$${FILE}"; \
+	  fi; \
+	done;
 
 #@ check whether a new latest go version exists.
 update-go?::
 	@VERSION="$(update-go-latest)"; \
 	if ! [ "$${VERSION}" == "$(GOVERSION)" ]; then \
-	  $(call emsg,error,new golang version available [$${VERSION}]: \
-	    run 'make update-go' to update the project!); \
-	fi; \
+	  $(call emsg,warning,new golang version available [$${VERSION}]: \
+	    run 'make update-go latest' to update the project!); \
+	fi;
 
 # Functions to create the list of updates (not sure whether go list is contributing).
 update-args = \
@@ -1914,14 +1928,14 @@ update/go.mod:: install-gomajor
 	        TARGET="$${ARGS[0]/$${SMAJOR}/$${TMAJOR}}"; \
 	      else TARGET="$${ARGS[0]}/$${TMAJOR}"; fi; \
 	      echo "update: $${ARGS[0]}@$${ARGS[2]} => $${TARGET}@$${ARGS[3]}"; \
-	      sed -i -e "s#$${ARGS[0]}#$${TARGET}#g" $(SOURCES); \
+	      sed --in-place --expression="s#$${ARGS[0]}#$${TARGET}#g" $(SOURCES); \
 	    else \
 	      echo "update: $${ARGS[0]}@$${ARGS[1]} => $${ARGS[3]}"; \
 	      $(GO) get "$${ARGS[0]}@$${ARGS[3]}"; \
 	    fi; \
 	  done; \
 	else $(GO) get -u ./...; fi; \
-	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1; \
+	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1;
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
@@ -1953,7 +1967,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	else \
 	  $(call emsg,info,update [$${FILE}] (updated)); \
 	  cp "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}"; \
-	fi; \
+	fi;
 
 #@ <version> # check whether updates for build environment exist.
 update-make?:: update/go-make $(TARGETS_UPDATE_MAKE?)
@@ -1967,7 +1981,7 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
 	  $(call emsg,warning,update [$${FILE}] (blocked)); \
-	else $(call emsg,info,update [$${FILE}] (updated)); fi; \
+	else $(call emsg,info,update [$${FILE}] (updated)); fi;
 
 #@ update all tools required by the project.
 update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
