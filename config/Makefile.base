@@ -43,6 +43,9 @@ endif
 ifdef BASH_COMPAT
   $(call cdebug,bash compatibility mode set [$(BASH_COMPAT)])
 endif
+# Find container image command (docker, podman, or colima).
+find-cmd-image := $(shell command -v docker || \
+	command -v podman || command -v colima)
 
 # System dependent helper functions.
 ifeq ("$(shell uname)","Linux")
@@ -51,25 +54,25 @@ else ifeq ($(shell uname),Darwin)
   $(call cdebug,using UNAME [$(shell uname -a)])
   path-setup = \
 	if [ "$(1)" == "opt" ]; then \
-	  XPATH="$(shell brew --prefix)/$(1)/$(2)/libexec/gnubin"; \
+	  XPATH="$(shell brew --prefix)/$(1)/$(2)/$(3)"; \
 	else XPATH="$(shell brew --prefix)/$(1)"; fi; \
-	test ! -e "$${XPATH}/$(3)" && brew install $(2) >&2; \
-	if [ -n "$(4)" ]; then echo -n "$${XPATH}:$(4)"; \
+	test ! -e "$${XPATH}/$(4)" && brew install $(2) >&2; \
+	if [ -n "$(5)" ]; then echo -n "$${XPATH}:$(5)"; \
 	else echo -n "$${XPATH}"; fi
-  $(call cdebug, PATH=$(call path-setup,opt,coreutils,ls,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,coreutils,ls,$(PATH)))
-  $(call cdebug, PATH=$(call path-setup,opt,findutils,find,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,findutils,find,$(PATH)))
-  $(call cdebug, PATH=$(call path-setup,bin,bash,bash,$(PATH)))
-  export PATH := $(shell $(call path-setup,bin,bash,bash,$(PATH)))
-#  $(call cdebug, PATH=$(call path-setup,bin,curl,curl,$(PATH)))
-#  export PATH := $(shell $(call path-setup,bin,curl,curl,$(PATH)))
-  $(call cdebug, PATH=$(call path-setup,opt,gawk,awk,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,gawk,awk,$(PATH)))
-  $(call cdebug, PATH=$(call path-setup,opt,gsed,sed,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,gsed,sed,$(PATH)))
-  $(call cdebug, PATH=$(call path-setup,opt,make,make,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,make,make,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,coreutils,libexec/gnubin,ls,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,findutils,libexec/gnubin,find,$(PATH)))
+  export PATH := $(shell $(call path-setup,bin,bash,libexec/gnubin,bash,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,gawk,libexec/gnubin,awk,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,gsed,libexec/gnubin,sed,$(PATH)))
+  export PATH := $(shell $(call path-setup,opt,make,libexec/gnubin,make,$(PATH)))
+  # Needs additional filters for testing.
+  # export PATH := $(shell $(call path-setup,bin,curl,bin,curl,$(PATH)))
+  # Install and start colima if no image command found.
+  ifeq ($(call find-cmd-image),)
+    # export PATH := $(shell $(call path-setup,opt,colima,bin,colima,$(PATH)))
+    # Needs additional testing to ensure colima is started.
+    # $(shell brew colima start -f >&2)
+  endif
   # Ensure export of path to $(shell ...) in gmake 3.81.
   ifneq ($(shell echo $(MAKE_VERSION) | grep -E "^3\.[0-9]+"),)
 	export SHELL :=  PATH="$(PATH)" $(shell brew --prefix)/bin/bash
@@ -366,9 +369,8 @@ TEAM ?= $(shell \
 	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
 	else echo "${GITOWNER}"; fi)
 
-# Setup container image command (supports: docker or podman).
-IMAGE_CMD ?= $(shell command -v docker || command -v podman)
 # Setup default container image name and host.
+IMAGE_CMD ?= $(call find-cmd-image)
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
     $(call cerror,invalid base image name [$(IMAGE_NAME)] \
