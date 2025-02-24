@@ -654,24 +654,14 @@ described by the [GitHub Development Convention][github-commit].
 ## Compatibility
 
 This [Makefile](config/Makefile.base) is making extensive use of GNU tools but
-is supposed to be compatible to all recent Linux and MacOS versions. Since MacOS
-is usually a couple of years behind in applying the GNU standard tools, we
-document the restrictions this creates here.
+is supposed to be compatible to all recent Linux and MacOS versions. Since
+MacOS has not update GNU tool versions since a decade, `go-make` is installing
+and applying latest versions provided via `brew`, which solves most potential
+issues.
 
-
-### Long command argument version
-
-Most MacOS standard tools do not support long argument versions that should be
-used to increase the readability of the [Makefile](config/Makefile.base). To
-counter this we introduced alias variables for often use commands using the
-long form.
-
-
-### `sed` in place substitution
-
-In MacOS we need to add `-e '<cmd>'` after `sed -i` since else the command
-section is not automatically restricted to a single argument. In linux this
-restriction is automatically applied to the first argument.
+Beside this, we `go-make` keeps in mind a small number dependency issues on
+older Ubuntu `20.04` standard installation issues that are documented in the
+following.
 
 
 ### `realpath` not supported
