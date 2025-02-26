@@ -227,7 +227,8 @@ go-download-version = \
 	  sed --regexp-extended --null-data $(VERSION_REGEX)
 # Function to determine the latest version of a go package.
 go-pkg-latest = \
-	go list -m -versions $(1) | awk '{print $$(1) "@" $$(NF) }'
+	cd /; go list -m -versions $(1) 2>/dev/null | \
+	awk '{ print $$(1) "@" $$(NF) }'; cd - >/dev/null
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
       -v not="$(4)" -v version="$(5)" '$(awk-gensub) \
@@ -271,7 +272,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.126
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.127
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)

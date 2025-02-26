@@ -70,7 +70,7 @@ jobs:
         make --file=config/Makefile.base --trace test-self;
 
 
-  macos:
+  brew:
     runs-on: macos-latest
     steps:
     # - name: Set up Docker
@@ -92,7 +92,7 @@ jobs:
         make --file=config/Makefile.base test-self;
 
 
-  macos-brewed:
+  macos:
     runs-on: macos-latest
     steps:
     # - name: Set up Docker
