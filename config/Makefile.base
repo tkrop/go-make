@@ -206,7 +206,7 @@ go-check-version = \
 # Function to warn about automated updating of go packages.
 go-update = \
 	if [ "$(3)" != "(devel)" ]; then \
-	  $(call emsg,warning,$(1) $(4): updating now!); \
+	  $(call emsg,info,$(1) $(4): updating binary now!); \
 	  $(call go-install,$(1),$(2)); \
 	else \
 	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
@@ -272,7 +272,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.127
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.128
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
@@ -290,8 +290,8 @@ endif
 search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
 	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
 
-K8S_CODEGEN_VERSION ?= v0.32.2 # https://github.com/kubernetes/code-generator/tags
-GOLANGCI_VERSION ?= v1.64.5 # https://github.com/golangci/golangci-lint/tags
+K8S_CODEGEN_VERSION ?= v0.32.3 # https://github.com/kubernetes/code-generator/tags
+GOLANGCI_VERSION ?= v1.64.7 # https://github.com/golangci/golangci-lint/tags
 # Version determined by Codacy: https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
 REVIVE_VERSION ?= v1.3.3 # https://github.com/mgechev/revive/tags
 
@@ -334,7 +334,11 @@ CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
 
-# Setup default config files to be used.
+# Setup default files with special meaning.
+FILE_IMAGE ?= Dockerfile
+FILE_DEEPCOPY ?= zz_generated.deepcopy.go
+
+# Setup dynamic config files to be used.
 FILE_MAKE ?= $(call search-default,Makefile)
 FILE_VARS ?= $(call search-default,Makefile.vars)
 FILE_GOLANGCI ?= $(call search-default,.golangci.yaml)
@@ -342,10 +346,7 @@ FILE_MARKDOWN ?= $(call search-default,.markdownlint.yaml)
 FILE_GITLEAKS ?= $(call search-default,.gitleaks.toml)
 FILE_REVIVE ?= $(call search-default,revive.toml)
 FILE_CODACY ?= $(call search-default,.codacy.yaml)
-
-FILE_IMAGE ?= Dockerfile
-FILE_DEEPCOPY ?= zz_generated.deepcopy.go
-FILE_GO_HEADER ?=
+FILE_HEADER ?=
 
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
@@ -967,7 +968,7 @@ $(TARGETS_INIT_ALL):: init/%:
 	  echo "install: $${FILE} (installed)"; \
 	  cp "$(GOMAKE_CONFIG)/$${FILE}" "$${DIR}/$${FILE}"; \
 	else \
-	  $(call emsg,warning,install: $${FILE} (blocked)); \
+	  $(call emsg,warning,installing: $${FILE} (blocked)); \
 	fi;
 
 #@ <version> # initialize project by copying Makefile.base from template.
@@ -980,41 +981,41 @@ init-make!::
 #@ generate kubernetes api clients and manifests.
 gen-kube-apis:: $(GEN_KUBE_APIS)
 $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
-	@HEADER="$(FILE_GO_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
+	@HEADER="$(FILE_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
 	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
 	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
 	    ! -name $(FILE_DEEPCOPY) -printf '%T@ %p\n' 2>/dev/null | \
 	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
-	  $(call emsg,info,generate apis skipped [$${BPKG}]); exit 0; \
-	else $(call emsg,info,generate apis [$${BPKG}]); fi; \
+	  $(call emsg,info,generating apis skipped [$${BPKG}]); exit 0; \
+	else $(call emsg,info,generating apis [$${BPKG}]); fi; \
 	\
 	$(GO) get k8s.io/api/core/v1; \
 	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
 	  MANDIR="$${BPKG}/manifests"; \
 	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
 	  CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
-	  $(call emsg,info,generate manifests [$${APKG}]); \
+	  $(call emsg,info,generating manifests [$${APKG}]); \
 	  $(GOBIN)/controller-gen crd:crdVersions=v1 paths=./$${BPKG}/apis/... \
 	    "output:crd:dir=$${MANDIR}"; \
-	  $(call emsg,info,generate deepcopy [$${APKG}]); \
-	  $(GOBIN)/deepcopy-gen --go-header-file "$${HEADER}" \
-	    --output-file $(FILE_DEEPCOPY) --bounding-dirs "$${APIBPKG}" \
+	  $(call emsg,info,generating deepcopy [$${APKG}]); \
+	  $(GOBIN)/deepcopy-gen --go-header-file="$${HEADER}" \
+	    --output-file="$(FILE_DEEPCOPY)" --bounding-dirs="$${APIBPKG}" \
 	    "$${APIPKG}"; \
-	  $(call emsg,info,generate clients [$${APKG}:clientsets]); \
-	  $(GOBIN)/client-gen --go-header-file "$${HEADER}" \
-	    --clientset-name versioned --input-base "" --input "$${APIPKG}" \
-	    --output-pkg "$${CLIPKG}/clientset" --output-dir "$${CLIDIR}/clientset"; \
-	  $(call emsg,info,generate clients [$${APKG}:listeners]); \
-	  $(GOBIN)/lister-gen --go-header-file "$${HEADER}" \
-	    --output-pkg "$${CLIPKG}/listers" --output-dir "$${CLIDIR}/listers" \
+	  $(call emsg,info,generating clients [$${APKG}:clientsets]); \
+	  $(GOBIN)/client-gen --go-header-file="$${HEADER}" \
+	    --clientset-name=versioned --input-base="" --input="$${APIPKG}" \
+	    --output-pkg="$${CLIPKG}/clientset" --output-dir="$${CLIDIR}/clientset"; \
+	  $(call emsg,info,generating clients [$${APKG}:listeners]); \
+	  $(GOBIN)/lister-gen --go-header-file="$${HEADER}" \
+	    --output-pkg="$${CLIPKG}/listers" --output-dir="$${CLIDIR}/listers" \
 	    "$${APIPKG}"; \
-	  $(call emsg,info,generate clients [$${APKG}:informers]); \
-	  $(GOBIN)/informer-gen --go-header-file "$${HEADER}" \
-	    --versioned-clientset-package "$${CLIPKG}/clientset/versioned" \
-	    --output-pkg "$${CLIPKG}/informers" --output-dir "$${CLIDIR}/informers" \
-	    --listers-package "$${CLIPKG}/listers" "$${APIPKG}"; \
+	  $(call emsg,info,generating clients [$${APKG}:informers]); \
+	  $(GOBIN)/informer-gen --go-header-file="$${HEADER}" \
+	    --versioned-clientset-package="$${CLIPKG}/clientset/versioned" \
+	    --output-pkg="$${CLIPKG}/informers" --output-dir="$${CLIDIR}/informers" \
+	    --listers-package="$${CLIPKG}/listers" "$${APIPKG}"; \
 	done; \
-	$(call emsg,info,update packages [$${BPKG}]); \
+	$(call emsg,info,updating packages [$${BPKG}]); \
 	$(GO) get ./$${BPKG}/clients/...;
 
 
@@ -1063,11 +1064,11 @@ test-upload::
 	  LARGS+=("--username=$(CODACY_USER)"); \
 	  LARGS+=("--project-name=$(CODACY_PROJECT)"); \
 	  LARGS+=("--api-token=$(CODACY_API_TOKEN)"); \
-	else $(call emsg,info,coverage report (skipped)); exit 0; fi; \
+	else $(call emsg,info,uploading coverage report (skipped)); exit 0; fi; \
 	bash <(curl --silent --location $${SCRIPT}) \
 	  report "$${LARGS[@]}" --coverage-reports=$${FILE} && \
-	$(call emsg,info,coverage report (uploadad)) || \
-	$(call emsg,info,coverage report (failed));
+	$(call emsg,info,uploading coverage report (uploadad)) || \
+	$(call emsg,info,uploading coverage report (failed));
 
 #@ test whether project creates conflicting program names.
 test-build::
@@ -1682,8 +1683,8 @@ version-release::
 	    $(GIT) config user.email "$$($(GIT) log -n 1 --pretty=format:%ae)" && \
 	    $(GIT) tag --message "tag: new version $${VERSION}" "v$${VERSION}" && \
 	    $(GIT) push --follow-tags --verbose origin "v$${VERSION}" \
-	  ) && $(call emsg,success, release version [v$${VERSION}]) || \
-	  $(call emsg,failure, release version [v$${VERSION}]); \
+	  ) && $(call emsg,success, releasing version [v$${VERSION}]) || \
+	  $(call emsg,failure, releasing version [v$${VERSION}]); \
 	fi;
 
 #@ publish the current version by enforcing a registry lookup (experimental).
@@ -1699,17 +1700,17 @@ $(TARGETS_PUBLISH): version-publish-%:
 	TARGET="$(GITURL)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOST)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
-	    $(call emsg,info,publish via curl [$${TARGET}]); \
+	    $(call emsg,info,publishing via curl [$${TARGET}]); \
 	    curl  --silent --show-error --fail --location \
 	      https://sum.golang.org/lookup/$${TARGET} && \
-	    $(call emsg,success,publish via curl [$${TARGET}]) || \
-	    $(call emsg,failure,publish via curl [$${TARGET}]); \
+	    $(call emsg,success,publishing via curl [$${TARGET}]) || \
+	    $(call emsg,failure,publishing via curl [$${TARGET}]); \
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
-	    $(call emsg,info,publish go install [$${TARGET}]); \
+	    $(call emsg,info,publishing go install [$${TARGET}]); \
 	    $(GO) install $(INSTALL_FLAGS) $${TARGET}; \
-	    $(call emsg,success,publish go install [$${TARGET}]) || \
-	    $(call emsg,failure,publish go install [$${TARGET}]); \
+	    $(call emsg,success,publishing go install [$${TARGET}]) || \
+	    $(call emsg,failure,publishing go install [$${TARGET}]); \
 	  fi; \
 	fi;
 
@@ -1747,12 +1748,12 @@ run-db:: $(DIR_RUN)
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
-	$(call emsg,info,ensure $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
+	$(call emsg,info,ensuring $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  no docker command - continue without [aws/localstack]); exit 0; \
 	elif [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
-	  $(call emsg,info,ports allocated, useing existing [aws/localstack]); \
+	  $(call emsg,info,ports allocated, using existing [aws/localstack]); \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
@@ -1804,7 +1805,7 @@ run-clean:: $(TARGETS_RUN_CLEAN)
 #@ run-clean-*: kill and remove the container image of the matched command.
 $(TARGETS_RUN_CLEAN):: run-clean-%:
 	@NAME="$(IMAGE_ARTIFACT)-$*"; \
-	$(call emsg,info,clean container [$${NAME}]); \
+	$(call emsg,info,cleaning container [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
 	  no docker command - aborting [$${NAME}]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
@@ -1867,9 +1868,9 @@ update-go::
 	if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
-	$(call emsg,info,update golang version [$${VERSION}]); \
+	$(call emsg,info,updating golang version [$${VERSION}]); \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
-	  $(call emsg,warning, current compiler differs \
+	  $(call emsg,warning,current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
 	fi; \
 	if ! [[ "$(GOVERSION)" < "1.21" ]]; then \
@@ -1961,14 +1962,14 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
 	$(call update-config,$(ARGS)); \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
-	  $(call emsg,info,update [$${FILE}] (untracked)); \
+	  $(call emsg,info,updating [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
-	  $(call emsg,info,update [$${FILE}] (skipped)); \
+	  $(call emsg,info,updating [$${FILE}] (skipped)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
-	  $(call emsg,warning,update [$${FILE}] (blocked)); \
+	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
 	else \
-	  $(call emsg,info,update [$${FILE}] (updated)); \
+	  $(call emsg,info,updating [$${FILE}] (updated)); \
 	  cp "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}"; \
 	fi;
 
@@ -1978,13 +1979,13 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	@DIR="$${PWD}"; FILE="$*"; FILE="$${FILE##$${DIR}/}"; \
 	$(call update-config,$(ARGS)); \
 	if [ ! -e "$${DIR}/$${FILE}" ]; then \
-	  $(call emsg,info,update [$${FILE}] (untracked)); \
+	  $(call emsg,info,updating [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
-	  $(call emsg,info,update [$${FILE}] (unchanged)); \
+	  $(call emsg,info,updating [$${FILE}] (unchanged)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
-	  $(call emsg,warning,update [$${FILE}] (blocked)); \
-	else $(call emsg,info,update [$${FILE}] (updated)); fi;
+	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
+	else $(call emsg,info,updating [$${FILE}] (updated)); fi;
 
 #@ update all tools required by the project.
 update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
