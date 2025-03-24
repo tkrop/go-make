@@ -1,7 +1,7 @@
 go-make/config/Makefile.base: update target 'go-make/config/run'
 if [ ! -d "go-make/config/run" ]; then mkdir --parents go-make/config/run; fi;
 go-make/config/Makefile.base: update target 'go-make/config/run/targets'
-echo -e "\033[1;96minfo:\033[0m updating targets [go-make/config/run/targets]" > /dev/stderr; \
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/config/run/targets]" > /dev/stderr; \
 make --no-builtin-rules --no-builtin-variables --print-data-base \
   --question --makefile="go-make/config/Makefile.base"  2>/dev/null | \
   awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished Make data base/ { if ($1 !~ "^[#.]") { print $1 } }' | LC_ALL=C sort --unique | egrep --invert-match --regexp='^[^[:alnum:]]' > "go-make/config/run/targets";
