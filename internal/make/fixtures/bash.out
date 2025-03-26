@@ -1,7 +1,11 @@
 ### bash completion for go-make
+function go-make-targets() {
+	local DIR=$(git rev-parse --show-toplevel | sed "s|${HOME}||");
+	cat "${HOME}/.config/go-make/${DIR}/targets";
+	go-make show-targets >/dev/null 2>&1 &
+};
 function __complete_go-make() {
-	COMPREPLY=($(compgen -W "$(go-make show-targets 2>/dev/null)" \
-		-- "${COMP_WORDS[COMP_CWORD]}"));
-}
+	COMPREPLY=($(compgen -W "$(go-make-targets)" -- "${COMP_WORDS[COMP_CWORD]}"));
+};
 complete -F __complete_go-make go-make;
 

@@ -27,16 +27,21 @@ const (
 	Makefile = "Makefile.base"
 	// bashCompletion provides the bash completion script for go-make.
 	BashCompletion = "### bash completion for go-make\n" +
+		"function go-make-targets() {\n" +
+		"	local DIR=$(git rev-parse --show-toplevel | sed \"s|${HOME}||\");\n" +
+		"	cat \"${HOME}/.config/go-make/${DIR}/targets\";\n" +
+		"	go-make show-targets >/dev/null 2>&1 &\n" +
+		"};\n" +
 		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make show-targets 2>/dev/null)\" \\\n" +
-		"		-- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
-		"}\n" +
+		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
+		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"};\n" +
 		"complete -F __complete_go-make go-make;\n"
 	ZshCompletion = "### zsh completion for go-make\n" +
 		"zstyle ':completion:*:*:make:*' tag-order 'targets'\n" +
 		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make show-targets 2>/dev/null)\" \\\n" +
-		"		-- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
+		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
 		"}\n" +
 		"complete -F __complete_go-make go-make;\n"
 )
