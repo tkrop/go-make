@@ -274,7 +274,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.129
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.130
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -859,7 +859,8 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
-	  gh pr create --draft --title "$${MESSAGE}"; \
+	  gh pr create --base "$(git-branch)" --head "$${BRANCH}" \
+	    --draft --assignee "@me" --title "$${MESSAGE}"; \
 	fi || $(GIT) checkout $${BRANCH}; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
