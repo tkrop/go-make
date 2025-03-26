@@ -23,10 +23,11 @@ COLOR-cmd := 1;95
 COLOR-target := 1;96
 
 # Finding: \$\(call *[ce]*msg
-ts = $(shell date '+%F %T.%3N')
+ts = $$(date '+%F %T.%3N')
 xifeq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4))
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
-cmsg = $(ts) $(call msg,$(1),$(1):,$(2))
+amsg = (("date '"'"'+%F %T.%3N'"'"'" | getline _msg_) > 0 ? \
+	_msg_ : strftime("%F %T.000")) " $(call msg,$(1),$(1):,$(2))"
 emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" > /dev/stderr)
 dmsg = $(if $(findstring --trace,$(MAKEFLAGS)),$(call emsg,$(1),$(2)),echo -n)
 
@@ -52,32 +53,31 @@ ifeq ("$(shell uname)","Linux")
   $(call cdebug,using UNAME $(shell uname --all))
 else ifeq ($(shell uname),Darwin)
   $(call cdebug,using UNAME [$(shell uname -a)])
+  BREW_PREFIX ?= $(shell brew --prefix)
   path-setup = \
-	if [ "$(1)" == "opt" ]; then \
-	  XPATH="$(shell brew --prefix)/$(1)/$(2)/$(3)"; \
-	else XPATH="$(shell brew --prefix)/$(1)"; fi; \
-	test ! -e "$${XPATH}/$(4)" && brew install $(2) >&2; \
-	if [ -n "$(5)" ]; then echo -n "$${XPATH}:$(5)"; \
-	else echo -n "$${XPATH}"; fi
-  export PATH := $(shell $(call path-setup,opt,coreutils,libexec/gnubin,ls,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,findutils,libexec/gnubin,find,$(PATH)))
-  export PATH := $(shell $(call path-setup,bin,bash,libexec/gnubin,bash,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,gawk,libexec/gnubin,awk,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,gsed,libexec/gnubin,sed,$(PATH)))
-  export PATH := $(shell $(call path-setup,opt,make,libexec/gnubin,make,$(PATH)))
+    if [ "$(1)" == "opt" ]; then \
+      XPATH="$(BREW_PREFIX)/$(1)/$(2)/$(3)"; \
+    else XPATH="$(BREW_PREFIX)/$(1)"; fi; echo -n "$${XPATH}:"; \
+    if [ ! -e "$${XPATH}/$(4)" ]; then brew install $(2) >&2; fi;
+  export PATH := $(shell $(call path-setup,bin,bash,,bash) \
+    $(call path-setup,opt,coreutils,libexec/gnubin,ls) \
+    $(call path-setup,opt,findutils,libexec/gnubin,find) \
+    $(call path-setup,opt,gawk,libexec/gnubin,awk) \
+    $(call path-setup,opt,gsed,libexec/gnubin,sed) \
+    $(call path-setup,opt,make,libexec/gnubin,make))$(PATH)
   # Needs additional filters for testing.
-  # export PATH := $(shell $(call path-setup,bin,curl,bin,curl,$(PATH)))
+  # export PATH := $(shell $(call path-setup,bin,curl,bin,curl))$(PATH)
   # Install and start colima if no image command found.
-  ifeq ($(call find-cmd-image),)
-    # export PATH := $(shell $(call path-setup,opt,colima,bin,colima,$(PATH)))
+  #ifeq ($(call find-cmd-image),)
+    # export PATH := $(shell $(call path-setup,opt,colima,bin,colima))$(PATH)
     # Needs additional testing to ensure colima is started.
     # $(shell brew colima start -f >&2)
-  endif
+  #endif
   # Ensure export of path to $(shell ...) in gmake 3.81.
   ifneq ($(shell echo $(MAKE_VERSION) | grep -E "^3\.[0-9]+"),)
-	export SHELL :=  PATH="$(PATH)" $(shell brew --prefix)/bin/bash
+    export SHELL :=  PATH="$(PATH)" $(BREW_PREFIX)/bin/bash
   else
-	export SHELL := $(shell brew --prefix)/bin/bash
+    export SHELL := $(BREW_PREFIX)/bin/bash
   endif
 else
   $(call cerror,unsupported operating system [$(shell uname --all)])
@@ -188,23 +188,25 @@ go-check-version = \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
-		$(call go-update,$(1),$${MODULE},$${GOVERSION}, \
+		$(call go-check-update,$(1),$${MODULE},$${GOVERSION}, \
 		  build [$${CHECK}], or install matching compiler version); \
 	  fi; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
 	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
-	    MVERSION="$$($(GO) version -m "$(GOBIN)/$(1)" | \
-	      grep -E "^\s*(mod|dep)\s*$${MPATH}" | cut -f 4)"; \
+	    MVERSION="$$($(call go-check-module,$(1),$${MPATH}))"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
-	      $(call go-update,$(1),$${MODULE},$${MVERSION}, \
+	      $(call go-check-update,$(1),$${MODULE},$${MVERSION}, \
 	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
 	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); \
 	elif [ -f "$(GOBIN)/$(1)" ]; then $(call go-install-module,$(1),$(2)); fi
+# Function to check go modules version.
+go-check-module = $(GO) version -m "$(GOBIN)/$(1)" | \
+	grep -E "^\s*(mod|dep)\s*$(2)" | cut -f 4
 # Function to warn about automated updating of go packages.
-go-update = \
+go-check-update = \
 	if [ "$(3)" != "(devel)" ]; then \
 	  $(call emsg,info,$(1) $(4): updating binary now!); \
 	  $(call go-install,$(1),$(2)); \
@@ -272,23 +274,31 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.128
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.129
+GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
 $(call cdebug,using GOMAKE_CONFIG [$(GOMAKE_CONFIG)])
-gomake-version = $(shell if [ ! -f "$(GOBIN)/go-make" ]; then \
-	echo "(devel)"; else $(GO) version -m "$(GOBIN)/go-make" | \
-	grep -E "^\s*(mod|dep)\s*github.com/tkrop/go-make" | cut -f 4; fi)
 
-# Ensure that we can find default config files.
-ifeq ($(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/),)
-  $(shell $(GO) install $(GOMAKE_DEP) >/dev/null 2>&1)
-endif
-# Function to search for default config files.
-search-default = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
-	$(wildcard $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config/$(1))))
+# Function to determine the actual go-make version.
+gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
+		$(call go-check-module,go-make,github.com/tkrop/go-make); \
+	else echo "(devel)"; fi)
+# Function to install the go-make version - if not available.
+gomake-install = if [ ! -d "$(GOMAKE_PATH)" ] && \
+	! [[ "$(GOMAKE_MAKEFILE)" =~ .*/config/Makefile.base ]]; then \
+		$(GO) install $(GOMAKE_DEP) >/dev/null 2>&1 && \
+		$(call emsg,info,installing go-make [$(GOMAKE_DEP)]) || \
+		$(call emsg,failure,installing go-make [$(GOMAKE_DEP)]); \
+	fi
+# Function to search for default go-make config files.
+gomake-search = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
+	$(wildcard $(GOMAKE_PATH)/$(1))))
+# Call to ensure that we can find default config files.
+
+$(shell $(gomake-install))
 
 K8S_CODEGEN_VERSION ?= v0.32.3 # https://github.com/kubernetes/code-generator/tags
 GOLANGCI_VERSION ?= v1.64.7 # https://github.com/golangci/golangci-lint/tags
@@ -325,7 +335,8 @@ NVM_BIN ?=
 
 
 # Check for the actually used go-make version.
-$(call cdebug, go-check-version = $(call escape,$(call go-check-version,go-make,)))
+#$(call cdebug, go-check-version = $(call \
+	escape,$(call go-check-version,go-make,)))
 $(shell $(call go-check-version,go-make,))
 
 # Setup sensible defaults for workflow configuration variables.
@@ -339,13 +350,13 @@ FILE_IMAGE ?= Dockerfile
 FILE_DEEPCOPY ?= zz_generated.deepcopy.go
 
 # Setup dynamic config files to be used.
-FILE_MAKE ?= $(call search-default,Makefile)
-FILE_VARS ?= $(call search-default,Makefile.vars)
-FILE_GOLANGCI ?= $(call search-default,.golangci.yaml)
-FILE_MARKDOWN ?= $(call search-default,.markdownlint.yaml)
-FILE_GITLEAKS ?= $(call search-default,.gitleaks.toml)
-FILE_REVIVE ?= $(call search-default,revive.toml)
-FILE_CODACY ?= $(call search-default,.codacy.yaml)
+FILE_MAKE ?= $(call gomake-search,Makefile)
+FILE_VARS ?= $(call gomake-search,Makefile.vars)
+FILE_GOLANGCI ?= $(call gomake-search,.golangci.yaml)
+FILE_MARKDOWN ?= $(call gomake-search,.markdownlint.yaml)
+FILE_GITLEAKS ?= $(call gomake-search,.gitleaks.toml)
+FILE_REVIVE ?= $(call gomake-search,revive.toml)
+FILE_CODACY ?= $(call gomake-search,.codacy.yaml)
 FILE_HEADER ?=
 
 # Setup custom delivery files to be scanned for updating go versions.
@@ -713,23 +724,31 @@ GITLOG ?= $(GIT) log --pretty=format
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
+git-number = \
+	if command -v gh >/dev/null 2>&1; then \
+	  ( gh pr list --state all --json "number" --limit 1; \
+	  gh issue list --state all --json "number" --limit 1 ) | \
+	  jq --slurp --raw-output '.[] | .[].number'; \
+	else \
+	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
+	fi | sort --numeric-sort --reverse | head --lines=1
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
-	  COMMIT="$$($(GITLOG):"%s" | grep -Eo "[^() ]*\#[0-9]+" | sort -n -u)"; \
-	  NUMBER="$${COMMIT\#\#*\#}"; CONTEXT="$${COMMIT%%\#*}"; \
-	  MESSAGE="$${MESSAGE} ($${CONTEXT}\#$$((NUMBER+$(2))))"; \
+	  NUMBER="$$($(git-number))"; MESSAGE="$${MESSAGE} (\#$$((NUMBER+$(2))))"; \
 	fi
-git-main = \
-	$$($(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | cut -d ' ' -f 5)
+git-branch = \
+	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
+	else $(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | \
+	  cut -d ' ' -f 5; fi)
 git-clean = \
 	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
 	  TIP="$$($(GITTIP) "$${BRANCH}")"; \
 	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
-	  elif [ "$(ARGS)" == "all" ]; then \
+	  elif [ "$(2)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
 	  else $(call emsg,info,keeping branch [$${BRANCH}]); \
 	  fi; \
@@ -752,29 +771,29 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	  msg = gensub("((:?\\n)\#[^\\n]*|\\n)*$$", "", "g", msg); \
 	  title = (i = index(msg,"\n")) ? substr(msg, 0, i - 1) : msg; \
 	  if (title !~ re_type_missing) { \
-	    printf("$(call cmsg,error,commit type missing \
-		  [title=%s])\n", title); errors++ \
+	    printf($(call amsg,error,commit type missing \
+		  [title=%s]\n), title); errors++ \
 	  } else if (title !~ re_type_invalid) { \
-	    printf("$(call cmsg,error,commit type invalid \
-		  [title=%s])\n", title); errors++ \
+	    printf($(call amsg,error,commit type invalid \
+		  [title=%s]\n), title); errors++ \
 	  } \
 	  if (title !~ re_issue_missing) { \
-	    printf("$(call cmsg,error,issue missing \
-		  [titel=%s])\n", title); errors++ \
+	    printf($(call amsg,error,issue missing \
+		  [titel=%s]\n), title); errors++ \
 	  } else if (title !~ re_issue_invalid) { \
-	    printf("$(call cmsg,error,issue invalid \
-		  [titel=%s])\n", title); errors++ \
+	    printf($(call amsg,error,issue invalid \
+		  [titel=%s]\n), title); errors++ \
 	  } \
 	  sign = (i = index(msg, signed_by)) ? substr(msg, i) : ""; \
 	  if (sign !~ re_signed_missing) { \
-	    printf("$(call cmsg,error,signed-off-by missing \
-		  [msg=%s])\n", msg); errors++ \
+	    printf($(call amsg,error,signed-off-by missing \
+		  [msg=%s]\n), msg); errors++ \
 	  } else if (sign !~ "^" re_signed_missing) { \
-		printf("$(call cmsg,error,signed-off-by by to many \
-		  [sign=%s])\n", sign); errors++ \
+		printf($(call amsg,error,signed-off-by by to many \
+		  [sign=%s]\n), sign); errors++ \
 	  } else if (mode == "message" && sign !~ re_signed_author) { \
-		printf("$(call cmsg,error,signed-off-by not the author \
-		  [sign=%s; author=%s])\n", sign, author); errors++ \
+		printf($(call amsg,error,signed-off-by not the author \
+		  [sign=%s; author=%s]\n), sign, author); errors++ \
 	  } msg = "" \
 	} \
 	(mode == "message") { \
@@ -790,11 +809,11 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	(mode != "message") { if (msg) { verify(); } } \
 	END { \
 	  if (mode == "message" || msg) { verify(); } if (errors) { \
-	    printf("$(call cmsg,failure,git-verify $(ARGS) \
-		  [errors=%d])\n", errors); exit 1 \
+	    printf($(call amsg,failure,git-verify $(ARGS) \
+		  [errors=%d]\n), errors); exit 1 \
 	  } \
-	  printf("$(call cmsg,success,git-verify $(ARGS) \
-	    [errors=%d])\n", errors) \
+	  printf($(call amsg,success,git-verify $(ARGS) \
+	    [errors=%d]\n), errors) \
 	}'
 
 GITFORMAT ?= "%Cred%h %t %Cgreen%ad%Creset | %s %C(bold blue)[%an]%Creset%C(yellow)%d%Creset"
@@ -806,17 +825,17 @@ git-graph::
 	@$(GIT) log --graph --date=iso --pretty=format:$(GITFORMAT) --all;
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
-	@BRANCH="$$($(GITBRANCH))"; MAIN="$(git-main)"; \
-	$(call git-clean,$${MAIN}\|$${BRANCH});
+	@BRANCH="$$($(GITBRANCH))"; MAIN="$(call git-branch,$(ARGS))"; \
+	$(call git-clean,$${MAIN}\|$${BRANCH},$(ARGS));
 #@ [all] # checks out default branch and cleans up the git history removing merged branches.
 git-reset::
-	@BRANCH="$$($(GITBRANCH))"; MAIN="$(git-main)"; \
+	@BRANCH="$$($(GITBRANCH))"; MAIN="$(call git-branch,$(ARGS))"; \
 	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
 	  $(GIT) checkout "$${MAIN}" && $(GIT) pull || ( \
 	    $(GIT) stash && $(GIT) checkout "$${MAIN}" && \
 		$(GIT) pull && $(GIT) stash apply \
 	  ) \
-	fi || exit 1; $(call git-clean,$${MAIN});
+	fi || exit 1; $(call git-clean,$${MAIN},$(ARGS));
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
 git-verify::
 	@$(call dmsg,info,git-verify); MODE="$(firstword $(ARGS))"; \
@@ -824,7 +843,8 @@ git-verify::
 	( "log" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "message" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
-	( "pull" | * ) MAIN="$(git-main)" && $(GIT) fetch origin "$${MAIN}" --verbose && \
+	( "pull" | * ) MAIN="$(call git-branch,$(wordlist 2,2,$(ARGS)))" && \
+	  $(GIT) fetch origin "$${MAIN}" --verbose && \
 	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
 	esac | $(call git-verify,$${MODE}) > /dev/stderr;
 
@@ -833,13 +853,14 @@ git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
 $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	@BRANCH="$(firstword $(ARGS))"; \
-	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
-	$(call git-message,$*,1); \
-	$(GIT) checkout -B "$${BRANCH}" && \
+	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
+	$(call git-message,$*,1); $(GIT) checkout -B "$${BRANCH}" && \
 	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
-	$(GIT) push --set-upstream origin "$${BRANCH}" || \
-	$(GIT) checkout $${BRANCH}; exit 0;
+	$(GIT) push --set-upstream origin "$${BRANCH}" && \
+	if command -v gh >/dev/null 2>&1; then \
+	  gh pr create --draft --title "$${MESSAGE}"; \
+	fi || $(GIT) checkout $${BRANCH}; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
@@ -1073,7 +1094,7 @@ test-upload::
 #@ test whether project creates conflicting program names.
 test-build::
 	@echo -e "$(COMMANDS_PKG)" | awk 'BEGIN{ RS=" "; FS="="; \
-	  fmt = "$(call cmsg,error,program conflict) [%s && %s => %s]\n" \
+	  fmt = $(call amsg,error,program conflict [%s && %s => %s]\n) \
 	} { if ($$1 in cmds) { failures++; \
 	    printf(fmt, cmds[$$1], $$2 "/main.go", $$1 "/main.go") \
 	} cmds[$$1] = $$2 } END { exit failures }';
@@ -1093,7 +1114,7 @@ image-name = echo -e "$(1)" | awk '$(awk-gensub) \
 #@ test whether project creates conflicting container image names.
 test-image::
 	@$(call image-name,$(IMAGES)) | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
-	  fmt = "$(call cmsg,error,image conflict) [%s && %s => %s]\n" \
+	  fmt = $(call amsg,error,image conflict [%s && %s => %s]\n) \
 	} { if ($$1 in imgs) { failures++; \
 	  printf(fmt, imgs[$$1], $$2, $$1) \
 	} imgs[$$1] = $$2 } END { exit failures }';
@@ -1440,8 +1461,9 @@ lint-markdown:: init-code $(NVM_BIN)/markdownlint
 #@ execute shellcheck to find potential shell script issues (sh-files).
 lint-shell:: init-code
 	@$(call emsg,info,linting [shellcheck]); \
-	mapfile -t FILES < <(find -name "*.sh"); ARGS="--color=always"; \
-	if [ -n "$(ARGS)" ]; then ARGS=(${ARGS} $(ARGS)); fi; \
+	mapfile -t FILES < <(find -name "*.sh"); \
+	ARGS=("--color=always" "--external-sources"); \
+	if [ -n "$(ARGS)" ]; then ARGS+=($(ARGS)); fi; \
 	if  [ -n "$${FILES}" ]; then \
 	  if command -v shellcheck &> /dev/null; then \
 	    shellcheck "$${ARGS[@]}" "$${FILES[@]}"; \

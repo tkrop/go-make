@@ -585,9 +585,9 @@ types](#commit-types):
 ```bash
 make git-list          # shows the git log as pretty printed list
 make git-graph         # shows the git log as pretty printed graph
-make git-clean [all]   # cleans up git history by removing merged branches
-make git-reset [all]   # checks out default branch and cleans up git history
-make git-create(-*)    # creates and pushes a branch with the current changes
+make git-clean [all|.] # cleans up git history by removing merged branches
+make git-reset [all|.] # checks out default branch and cleans up git history
+make git-create(-*)    # creates a pull request with the current changes
 make git-commit(-*)    # commits the current change set to the current branch
 make git-fix(-*) [...] # pushes the latest changes to the previous commit
 make git-push          # pushes the current branch to the upstream repository
@@ -603,7 +603,8 @@ argument is enriched, but reusing the previous issue type.
 
 The `git-reset` and `git-clean` targets support an optional `all` argument
 to define whether also pushed branches should be cleaned up instead of only
-merged branches.
+merged branches. Alternatively, you can also define a target branch you like
+to switch to while cleaning up and resetting your repository.
 
 The `git-fix` target supports `(no-)edit` and `(no)-verify` arguments to enable
 and disable commit verification and comment editing. By default, it is enabling

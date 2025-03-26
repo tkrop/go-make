@@ -33,18 +33,18 @@ sync::
 ## Experiment:
 
 #@ test function for git message creation.
-test-git-message:: test-git-message-fix
+test-git-message:: test-git-message-chore
 $(addprefix test-git-message-,$(COMMIT_CONVENTION)):: test-git-message-%:
-	@MESSAGE="$(RUNARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
+	@MESSAGE="$(ARGS)"; $(call git-message,$*,1); echo "$${MESSAGE}";
 
 
 #@ test function for go package version evaluation.
 test-check-version::
-	@$(call go-check-version,go-make,$(RUNARGS),)
+	@$(call go-check-version,go-make,$(ARGS),)
 
 #@ test function for test argument evaluation.
 test-args::
-	@$(call test-args,$(RUNARGS))
+	@$(call test-args,$(ARGS))
 
 # TODO: fix ordering issue.
 test-test-args::
@@ -65,4 +65,3 @@ test-compat::
 	COMPAT="$$(BASH_COMPAT=3.2 make --makefile=$(GOMAKE_MAKEFILE) test-self 2>&1)" && \
 	DIFF="$$(diff <(echo "$${ACTUAL}") <(echo "$${COMPAT}"))" && \
 	echo "info: test-compat finished successful!!" || echo "$${DIFF}";
-
