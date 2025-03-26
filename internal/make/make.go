@@ -25,25 +25,23 @@ const (
 	// Makefile provides the name of the base makefile to be executed by
 	// go-make.
 	Makefile = "Makefile.base"
-	// bashCompletion provides the bash completion script for go-make.
-	BashCompletion = "### bash completion for go-make\n" +
+	// CompleteFunc provides the common completion function for go-make.
+	CompleteFunc = "function __complete_go-make() {\n" +
+		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
+		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"};\n" +
 		"function go-make-targets() {\n" +
 		"	local DIR=$(git rev-parse --show-toplevel | sed \"s|${HOME}||\");\n" +
 		"	cat \"${HOME}/.config/go-make/${DIR}/targets\";\n" +
 		"	go-make show-targets >/dev/null 2>&1 &\n" +
-		"};\n" +
-		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
-		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
-		"};\n" +
+		"};\n"
+	// CompleteBash provides the bash completion setup for go-make.
+	CompleteBash = "### bash completion for go-make\n" + CompleteFunc +
 		"complete -F __complete_go-make go-make;\n"
-	ZshCompletion = "### zsh completion for go-make\n" +
-		"zstyle ':completion:*:*:make:*' tag-order 'targets'\n" +
-		"function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
-		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
-		"}\n" +
-		"complete -F __complete_go-make go-make;\n"
+	// CompleteZsh provides the zsh completion setup for go-make.
+	CompleteZsh = "### zsh completion for go-make\n" + CompleteFunc +
+		"complete -F __complete_go-make go-make;\n" +
+		"zstyle ':completion:*:*:make:*' tag-order 'targets';\n"
 )
 
 // Available exit code constants.
@@ -256,11 +254,11 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 			return 0, nil
 
 		case strings.HasPrefix(arg, "--completion=bash"):
-			gm.Logger.Message(gm.Stdout, BashCompletion)
+			gm.Logger.Message(gm.Stdout, CompleteBash)
 			return 0, nil
 
 		case strings.HasPrefix(arg, "--completion=zsh"):
-			gm.Logger.Message(gm.Stdout, ZshCompletion)
+			gm.Logger.Message(gm.Stdout, CompleteZsh)
 			return 0, nil
 
 		case strings.HasPrefix(arg, "--config="):

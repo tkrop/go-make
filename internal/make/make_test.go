@@ -201,14 +201,14 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make completion bash": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", make.BashCompletion),
+			LogMessage("stdout", make.CompleteBash),
 		),
 		info: infoBase,
 		args: argsBash,
 	},
 	"go-make completion zsh": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", make.ZshCompletion),
+			LogMessage("stdout", make.CompleteZsh),
 		),
 		info: infoBase,
 		args: argsZsh,
@@ -346,7 +346,7 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsBashTrace),
 			LogInfo("stderr", infoBase, false),
-			LogMessage("stdout", make.BashCompletion),
+			LogMessage("stdout", make.CompleteBash),
 		),
 		info: infoBase,
 		args: argsBashTrace,
@@ -355,7 +355,7 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsZshTrace),
 			LogInfo("stderr", infoBase, false),
-			LogMessage("stdout", make.ZshCompletion),
+			LogMessage("stdout", make.CompleteZsh),
 		),
 		info: infoBase,
 		args: argsZshTrace,
@@ -526,6 +526,18 @@ var testMakeExecParams = map[string]MakeExecParams{
 		args:         []string{"go-make", "--trace", "--completion=bash"},
 		expectStdout: ReadFile(fixtures, "fixtures/bash.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/bash-trace.err"),
+	},
+
+	"go-make zsh": {
+		info:         infoBase,
+		args:         []string{"go-make", "--completion=zsh"},
+		expectStdout: ReadFile(fixtures, "fixtures/zsh.out"),
+	},
+	"go-make zsh trace": {
+		info:         infoBase,
+		args:         []string{"go-make", "--trace", "--completion=zsh"},
+		expectStdout: ReadFile(fixtures, "fixtures/zsh.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/zsh-trace.err"),
 	},
 
 	"go-make show targets": {

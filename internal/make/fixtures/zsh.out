@@ -1,4 +1,4 @@
-### bash completion for go-make
+### zsh completion for go-make
 function __complete_go-make() {
 	COMPREPLY=($(compgen -W "$(go-make-targets)" -- "${COMP_WORDS[COMP_CWORD]}"));
 };
@@ -8,4 +8,5 @@ function go-make-targets() {
 	go-make show-targets >/dev/null 2>&1 &
 };
 complete -F __complete_go-make go-make;
+zstyle ':completion:*:*:make:*' tag-order 'targets';
 
