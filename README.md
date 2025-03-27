@@ -216,14 +216,17 @@ important. Most linux systems come with a good sell integration that supports
 auto-completion for `make` showing the targets provided via the wrapper
 `Makefile`. However, the vanilla MacOS has its limits.
 
-To set up command completion for [`go-make`][go-make], add the following
-snippet to your [`.bashrc`][bashrc].
+To set up command `TAB`-completion for [`go-make`][go-make], add the following
+snippet to your [`.bashrc`][bash-manual] or your [`.zshrc`][zsh-manual] - also
+for MacOS.
 
-```bash
+```sh
 source <(go-make --completion=bash)
+source <(go-make --completion=zsh)
 ```
 
-[bashrc]: <https://www.gnu.org/software/bash/manual/bash.html>
+[bash-manual]: <https://www.gnu.org/software/bash/manual/bash.html>
+[zsh-manual]: <https://zsh.sourceforge.io/Doc/Release/index.html>
 
 
 ## Makefile development

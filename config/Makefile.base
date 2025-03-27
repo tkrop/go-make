@@ -48,7 +48,9 @@ endif
 find-cmd-image := $(shell command -v docker || \
 	command -v podman || command -v colima)
 
-# System dependent helper functions.
+# Setup system default variables.
+TMPDIR ?= /tmp
+# Setup System dependent default variables.
 ifeq ("$(shell uname)","Linux")
   $(call cdebug,using UNAME $(shell uname --all))
 else ifeq ($(shell uname),Darwin)
@@ -111,11 +113,11 @@ MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
 DIR_GIT := $(CURDIR)/.git
-DIR_CONFIG := $(abspath $(HOME)/.config/go-make/$(CURDIR:$(HOME)/%=%))
 DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
-$(call cdebug,using DIR_CONFIG [$(DIR_CONFIG)])
+DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(realpath $(CURDIR))
+$(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
   include Makefile.vars
@@ -274,7 +276,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.131
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.132
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -331,7 +333,6 @@ TOOLS_SH += \
 	github.com/anchore/grype
 TOOLS_NPM += \
 	markdownlint-cli
-NVM_BIN ?=
 
 
 # Check for the actually used go-make version.
@@ -399,6 +400,7 @@ else
 endif
 IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
 $(call cdebug,using IMAGE [$(IMAGE)])
+
 
 # Setup default database connection.
 DB_HOST ?= 127.0.0.1
@@ -636,7 +638,7 @@ help:: show-help
 call::;	@$(ARGS)
 
 
-$(DIR_CONFIG) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
+$(DIR_TEMP) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir --parents $@; fi;
 
 
@@ -684,16 +686,15 @@ show-vars = awk ' \
 	  comment = ""; var = 0; next \
 	}'
 show-targets = awk -v RS= -F: ' \
-	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished Make data base/ { \
-	  if ($$1 !~ "^[\#.]") { print $$1 } \
-	}' | LC_ALL=C sort --unique | \
-	egrep --invert-match --regexp='^[^[:alnum:]]'
+	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished / { \
+	  if ($$1 !~ "^[\#./]") { print $$1 } \
+	}' | LC_ALL=C sort --unique
 
-$(DIR_CONFIG)/targets: $(DIR_CONFIG) $(GOMAKE_MAKEFILES)
-	@$(call emsg,info,updating targets [$(DIR_CONFIG)/targets]); \
+$(DIR_TEMP)/targets: $(DIR_TEMP) $(GOMAKE_MAKEFILES)
+	@$(call emsg,info,updating targets [$(DIR_TEMP)/targets]); \
 	$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile="$(GOMAKE_MAKEFILE)"  2>/dev/null | \
-	  $(show-targets) > "$(DIR_CONFIG)/targets";
+	  --question --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null | \
+	  $(show-targets) > "$(DIR_TEMP)/targets";
 
 #@ shows this short extracted help about main target families.
 show-help::
@@ -702,8 +703,8 @@ show-help::
 show-vars:
 	@cat $(GOMAKE_MAKEFILE) | $(show-vars) || true;
 #@ shows all supported targets (without prerequesites).
-show-targets: $(DIR_CONFIG)/targets
-	@cat $(DIR_CONFIG)/targets || true;
+show-targets: $(DIR_TEMP)/targets
+	@cat $(DIR_TEMP)/targets || true;
 #@ shows the raw base makefile as implemented.
 show-raw:
 	@cat $(GOMAKE_MAKEFILE) || true;
@@ -1443,7 +1444,7 @@ lint-revive:: init-code install-revive
 	revive -formatter friendly -config=revive.toml $(SOURCES) || $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
-lint-markdown:: init-code $(NVM_BIN)/markdownlint
+lint-markdown:: init-code $(GOBIN)/markdownlint
 	@$(call emsg,info,linting [markdownlint]); \
 	echo "markdownlint --config .markdownlint.yaml ."; \
 	if  [ -n "$$(find -name "*.md")" ]; then \
@@ -1628,8 +1629,8 @@ $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
 	    sh -s -- -b $(GOBIN); \
 	fi;
 # install npm tools used by the project.
-$(TARGETS_INSTALL_NPM):: install-%: $(NVM_BIN)/%
-$(addprefix $(NVM_BIN)/,$(TOOLS_NPM:-cli=)): $(NVM_BIN)/%:
+$(TARGETS_INSTALL_NPM):: install-%: $(GOBIN)/%
+$(addprefix $(GOBIN)/,$(TOOLS_NPM:-cli=)): $(GOBIN)/%:
 	@if command -v npm &> /dev/null && ! command -v $*; then \
 	  echo "npm install --global ^$*$$"; \
 	  npm install --global $(filter $*-cli,$(TOOLS_NPM)); \
@@ -2031,7 +2032,7 @@ debug-make::
 	echo 'SHELL $(SHELL)'; \
 	echo "BASH $(shell echo "$${0} - $${BASH_VERSION}")"; \
 	echo 'AWK $(shell awk --version | head -n 1)'; \
-	echo 'DIR_CONFIG $(DIR_CONFIG))';
+	echo 'DIR_TEMP $(DIR_TEMP))';
 
 debug-bash::
 	@echo "PATH $${PATH}"; \

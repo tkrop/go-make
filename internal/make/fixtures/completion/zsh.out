@@ -1,0 +1,19 @@
+### zsh completion for go-make
+go-make-targets() {
+    local DIR="${TMPDIR:-/tmp}/go-make-${USER}/${PWD}";
+    if [ -f "${DIR}/targets" ]; then cat "${DIR}/targets"; fi;
+    ( if [ ! -d "${DIR}" ]; then mkdir -p "${DIR}"; fi;
+        make --no-builtin-rules --no-builtin-variables --print-data-base\
+            --question 2>/dev/null | awk -v RS="" -F":" \
+            '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
+                if ($1 !~ "^[#./]") { print $1 } \
+            }' | LC_ALL=C sort --unique >"${DIR}/targets"
+    ) &>/dev/null;
+};
+__complete_go-make() {
+    local targets=($(go-make-targets));
+    _describe 'Makefile target' targets;
+};
+compdef __complete_go-make go-make;
+compdef __complete_go-make make;
+

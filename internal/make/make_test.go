@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -40,9 +39,9 @@ var (
 	dirWork = "."
 	// dirRoot contains an arbitrary root directory (use go-make root).
 	dirRoot = filepath.Dir(filepath.Dir(make.AbsPath(dirWork)))
-	// dirConfig contains the user directory where config is stored.
-	dirConfig = path.Join(os.Getenv("HOME"), ".config", "go-make",
-		strings.TrimPrefix(make.AbsPath("../.."), os.Getenv("HOME")))
+	// goMakeTemp contains the temporary cache for go-make user data.
+	goMakeTemp = filepath.Join(make.AbsPath(make.GetEnvDefault("TMPDIR", "/tmp")),
+		"go-make-"+os.Getenv("USER"), make.EvalSymlinks(make.AbsPath("../..")))
 	// infoBase with version and revision.
 	infoBase = info.New(goMakePath,
 		"v0.0.25",
@@ -454,9 +453,9 @@ var (
 	// regexGoMakeDebug is used to remove all `go-make` platform dependent
 	// debug information.
 	regexGoMakeDebug = regexp.MustCompile(`(?m).*debug:.*\n`)
-	// regexGoMakeConfig is used to remove the `go-make` config specific path
+	// regexGoMakeTemp is used to remove the `go-make` config specific path
 	// information.
-	regexGoMakeConfig = regexp.MustCompile(`(?m)` + make.AbsPath(dirConfig))
+	regexGoMakeTemp = regexp.MustCompile(`(?m)` + goMakeTemp)
 	// regexGoMakeSource is used to remove the `go-make` source specific path
 	// information.
 	regexGoMakeSource = regexp.MustCompile(`(?m)` + make.AbsPath(dirRoot))
@@ -469,6 +468,10 @@ var (
 	// target update message that changes between make 4.3 and make 4.4.
 	regexMakeTarget = regexp.MustCompile(
 		`(?m)(go-make/config/Makefile.base:).*('.*').*`)
+	// regexGoBinPath is used to match the `GOBIN`-path in the output and to
+	// replace it against a common prefix.
+	regexGoBinPath = regexp.MustCompile(
+		`(?m)(^` + make.AbsPath(os.Getenv("GOBIN")) + `)`)
 	// replaceFixture replaces the placeholders in the fixture with the values
 	// provided to the replacer.
 	replacerFixture = strings.NewReplacer(
@@ -482,8 +485,9 @@ func FilterMakeOutput(str string) string {
 	str = regexMakeTimestamp.ReplaceAllString(str, "")
 	str = regexGoMakeWarning.ReplaceAllString(str, "")
 	str = regexGoMakeDebug.ReplaceAllString(str, "")
+	str = regexGoMakeTemp.ReplaceAllString(str, "go-make")
 	str = regexGoMakeSource.ReplaceAllString(str, "go-make")
-	str = regexGoMakeConfig.ReplaceAllString(str, "go-make/config")
+	str = regexGoBinPath.ReplaceAllString(str, "go/bin")
 	str = regexMakeTrace.ReplaceAllString(str, "$1")
 	str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
 	return str
@@ -519,25 +523,25 @@ var testMakeExecParams = map[string]MakeExecParams{
 	"go-make bash": {
 		info:         infoBase,
 		args:         []string{"go-make", "--completion=bash"},
-		expectStdout: ReadFile(fixtures, "fixtures/bash.out"),
+		expectStdout: ReadFile(fixtures, "fixtures/completion/bash.out"),
 	},
 	"go-make bash trace": {
 		info:         infoBase,
 		args:         []string{"go-make", "--trace", "--completion=bash"},
-		expectStdout: ReadFile(fixtures, "fixtures/bash.out"),
-		expectStderr: ReadFile(fixtures, "fixtures/bash-trace.err"),
+		expectStdout: ReadFile(fixtures, "fixtures/completion/bash.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/completion/bash.err"),
 	},
 
 	"go-make zsh": {
 		info:         infoBase,
 		args:         []string{"go-make", "--completion=zsh"},
-		expectStdout: ReadFile(fixtures, "fixtures/zsh.out"),
+		expectStdout: ReadFile(fixtures, "fixtures/completion/zsh.out"),
 	},
 	"go-make zsh trace": {
 		info:         infoBase,
 		args:         []string{"go-make", "--trace", "--completion=zsh"},
-		expectStdout: ReadFile(fixtures, "fixtures/zsh.out"),
-		expectStderr: ReadFile(fixtures, "fixtures/zsh-trace.err"),
+		expectStdout: ReadFile(fixtures, "fixtures/completion/zsh.out"),
+		expectStderr: ReadFile(fixtures, "fixtures/completion/zsh.err"),
 	},
 
 	"go-make show targets": {
@@ -607,7 +611,7 @@ func TestMakeExec(t *testing.T) {
 		RunSeq(func(t test.Test, param MakeExecParams) {
 			// Remove common cache config directory.
 			cmd = exec.Command("rm", "--recursive", "--force",
-				filepath.Join(dirConfig, "run"))
+				filepath.Join(goMakeTemp, "run"))
 			assert.NoError(t, cmd.Run())
 
 			// Given

@@ -1,0 +1,17 @@
+### bash completion for go-make
+function go-make-targets() {
+    local DIR="${TMPDIR:-/tmp}/go-make-${USER}/${PWD}";
+    if [ -f "${DIR}/targets" ]; then cat "${DIR}/targets"; fi;
+    ( if [ ! -d "${DIR}" ]; then mkdir -p "${DIR}"; fi;
+        make --no-builtin-rules --no-builtin-variables --print-data-base\
+            --question 2>/dev/null | awk -v RS="" -F":" \
+            '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
+                if ($1 !~ "^[#./]") { print $1 } \
+            }' | LC_ALL=C sort --unique >"${DIR}/targets"
+    ) &>/dev/null;
+};
+function __complete_go-make() {
+    COMPREPLY=($(compgen -W "$(go-make-targets)" -- "${COMP_WORDS[COMP_CWORD]}"));
+};
+complete -F __complete_go-make go-make;
+
