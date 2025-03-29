@@ -25,23 +25,35 @@ const (
 	// Makefile provides the name of the base makefile to be executed by
 	// go-make.
 	Makefile = "Makefile.base"
-	// CompleteFunc provides the common completion function for go-make.
-	CompleteFunc = "function __complete_go-make() {\n" +
-		"	COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
-		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
-		"};\n" +
-		"function go-make-targets() {\n" +
-		"	local DIR=$(git rev-parse --show-toplevel | sed \"s|${HOME}||\");\n" +
-		"	cat \"${HOME}/.config/go-make/${DIR}/targets\";\n" +
-		"	go-make show-targets >/dev/null 2>&1 &\n" +
+	// CompleteTargetFunc provides the common completion function for go-make.
+	CompleteTargetFunc = "go-make-targets() {\n" +
+		"    local DIR=\"${TMPDIR:-/tmp}/go-make-${USER}/${PWD}\";\n" +
+		"    if [ -f \"${DIR}/targets\" ]; then cat \"${DIR}/targets\"; fi;\n" +
+		"    ( if [ ! -d \"${DIR}\" ]; then mkdir -p \"${DIR}\"; fi;\n" +
+		"        make --no-builtin-rules --no-builtin-variables --print-data-base\\\n" +
+		"            --question 2>/dev/null | awk -v RS=\"\" -F\":\" \\\n" +
+		"            '/(^|\\n)# Files(\\n|$)/,/(^|\\n)# Finished / { \\\n" +
+		"                if ($1 !~ \"^[#./]\") { print $1 } \\\n" +
+		"            }' | LC_ALL=C sort --unique >\"${DIR}/targets\"\n" +
+		"    ) &>/dev/null;\n" +
 		"};\n"
 	// CompleteBash provides the bash completion setup for go-make.
-	CompleteBash = "### bash completion for go-make\n" + CompleteFunc +
+	CompleteBash = "### bash completion for go-make\n" +
+		"function " + CompleteTargetFunc +
+		"function __complete_go-make() {\n" +
+		"    COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
+		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"};\n" +
 		"complete -F __complete_go-make go-make;\n"
 	// CompleteZsh provides the zsh completion setup for go-make.
-	CompleteZsh = "### zsh completion for go-make\n" + CompleteFunc +
-		"complete -F __complete_go-make go-make;\n" +
-		"zstyle ':completion:*:*:make:*' tag-order 'targets';\n"
+	CompleteZsh = "### zsh completion for go-make\n" +
+		CompleteTargetFunc +
+		"__complete_go-make() {\n" +
+		"    local targets=($(go-make-targets));\n" +
+		"    _describe 'Makefile target' targets;\n" +
+		"};\n" +
+		"compdef __complete_go-make go-make;\n" +
+		"compdef __complete_go-make make;\n"
 )
 
 // Available exit code constants.
@@ -52,8 +64,14 @@ const (
 )
 
 // AbsPath returns the absolute path of given directory.
-func AbsPath(dir string) string {
-	path, _ := filepath.Abs(dir)
+func AbsPath(path string) string {
+	path, _ = filepath.Abs(path)
+	return path
+}
+
+// EvalSymlinks returns the evaluated path of given directory.
+func EvalSymlinks(path string) string {
+	path, _ = filepath.EvalSymlinks(path)
 	return path
 }
 
