@@ -35,7 +35,7 @@ const (
 		"            '/(^|\\n)# Files(\\n|$)/,/(^|\\n)# Finished / { \\\n" +
 		"                if ($1 !~ \"^[#./]\") { print $1 } \\\n" +
 		"            }' | LC_ALL=C sort --unique >\"${DIR}/targets\"\n" +
-		"    ) &>/dev/null;\n" +
+		"    ) >/dev/null &\n" +
 		"};\n"
 	// CompleteBash provides the bash completion setup for go-make.
 	CompleteBash = "### bash completion for go-make\n" +

@@ -8,7 +8,7 @@ function go-make-targets() {
             '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
                 if ($1 !~ "^[#./]") { print $1 } \
             }' | LC_ALL=C sort --unique >"${DIR}/targets"
-    ) &>/dev/null;
+    ) >/dev/null &
 };
 function __complete_go-make() {
     COMPREPLY=($(compgen -W "$(go-make-targets)" -- "${COMP_WORDS[COMP_CWORD]}"));

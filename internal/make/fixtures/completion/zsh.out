@@ -8,7 +8,7 @@ go-make-targets() {
             '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
                 if ($1 !~ "^[#./]") { print $1 } \
             }' | LC_ALL=C sort --unique >"${DIR}/targets"
-    ) &>/dev/null;
+    ) >/dev/null &
 };
 __complete_go-make() {
     local targets=($(go-make-targets));
