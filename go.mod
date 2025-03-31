@@ -6,7 +6,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tkrop/go-config v0.0.14
-	github.com/tkrop/go-testing v0.0.24
+	github.com/tkrop/go-testing v0.0.25
 )
 
 require (
