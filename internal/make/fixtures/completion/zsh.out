@@ -1,18 +1,27 @@
-### zsh completion for go-make
-go-make-targets() {
-    local DIR="${TMPDIR:-/tmp}/go-make-${USER}/${PWD}";
-    if [ -f "${DIR}/targets" ]; then cat "${DIR}/targets"; fi;
-    ( if [ ! -d "${DIR}" ]; then mkdir -p "${DIR}"; fi;
-        make --no-builtin-rules --no-builtin-variables --print-data-base\
-            --question 2>/dev/null | awk -v RS="" -F":" \
-            '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
-                if ($1 !~ "^[#./]") { print $1 } \
-            }' | LC_ALL=C sort --unique >"${DIR}/targets"
-    ) >/dev/null &
+### zsh completion for make/go-make
+_go-make-targets() {
+    if [ -z "$(grep '$(GOBIN)/go-make show-targets' Makefile)" ]; then
+        mkdir -p "$(dirname ${1})";
+        make --no-builtin-rules --no-builtin-variables \
+            --print-data-base --question | awk -v RS="" -F":" '
+        /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / {
+            if ($1 !~ "^[#./]") { print $1 }
+        }' | LC_ALL=C sort --unique | tee ${1};
+    else go-make show-targets; fi 2>/dev/null;
+};
+_go-make-filter() {
+    sed --regexp-extended "s|^(${1}[^/-]*[-/]?)?.*|\1|g" | sort --unique;
 };
 __complete_go-make() {
-    local targets=($(go-make-targets));
-    _describe 'Makefile target' targets;
+    local targets=();
+    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets";
+    if [ -f "${FILE}" ]; then
+        targets=($(cat "${FILE}" | _go-make-filter "${words[-1]}"));
+        ( _go-make-targets "${FILE}" >/dev/null & ) 2>/dev/null;
+    else
+        targets=($(_go-make-targets "${FILE}" | _go-make-filter "${words[-1]}"));
+    fi;
+    _describe 'go-make' targets;
 };
 compdef __complete_go-make go-make;
 compdef __complete_go-make make;

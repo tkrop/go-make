@@ -1,17 +1,27 @@
 ### bash completion for go-make
-function go-make-targets() {
-    local DIR="${TMPDIR:-/tmp}/go-make-${USER}/${PWD}";
-    if [ -f "${DIR}/targets" ]; then cat "${DIR}/targets"; fi;
-    ( if [ ! -d "${DIR}" ]; then mkdir -p "${DIR}"; fi;
-        make --no-builtin-rules --no-builtin-variables --print-data-base\
-            --question 2>/dev/null | awk -v RS="" -F":" \
-            '/(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { \
-                if ($1 !~ "^[#./]") { print $1 } \
-            }' | LC_ALL=C sort --unique >"${DIR}/targets"
-    ) >/dev/null &
+function _go-make-targets() {
+    if [ -z "$(grep '$(GOBIN)/go-make show-targets' Makefile)" ]; then
+        mkdir -p "$(dirname ${1})";
+        make --no-builtin-rules --no-builtin-variables \
+            --print-data-base --question | awk -v RS="" -F":" '
+        /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / {
+            if ($1 !~ "^[#./]") { print $1 }
+        }' | LC_ALL=C sort --unique | tee ${1};
+    else go-make show-targets; fi 2>/dev/null;
+};
+function _go-make-filter() {
+    sed --regexp-extended "s|^(${1}[^/-]*[-/]?)?.*|\1|g" | sort --unique;
 };
 function __complete_go-make() {
-    COMPREPLY=($(compgen -W "$(go-make-targets)" -- "${COMP_WORDS[COMP_CWORD]}"));
+    local WORD="${COMP_WORDS[COMP_CWORD]}";
+    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets";
+    if [ -f "${FILE}" ]; then
+        local WORDS="$(cat "${FILE}" | _go-make-filter "${WORD}")";
+        ( _go-make-targets "${FILE}" >/dev/null & ) 2>/dev/null;
+    else
+        local WORDS="$(_go-make-targets "${FILE}" | _go-make-filter "${WORD}")";
+    fi;
+    COMPREPLY=($(compgen -W "${WORDS}" -- "${WORD}"));
 };
 complete -F __complete_go-make go-make;
 

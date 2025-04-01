@@ -50,9 +50,17 @@ find-cmd-image := $(shell command -v docker || \
 
 # Setup system default variables.
 TMPDIR ?= /tmp
+# Setup default go compiler environment.
+export GO ?= go
+export GOPATH ?= $(shell $(GO) env GOPATH)
+export GOBIN ?= $(GOPATH)/bin
+# Export private repositories that do not need to be downloaded.
+export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
+
 # Setup System dependent default variables.
+export PATH := $(GOBIN):$(PATH)
 ifeq ("$(shell uname)","Linux")
-  $(call cdebug,using UNAME $(shell uname --all))
+  $(call cdebug,using UNAME [$(shell uname --all)])
 else ifeq ($(shell uname),Darwin)
   $(call cdebug,using UNAME [$(shell uname -a)])
   BREW_PREFIX ?= $(shell brew --prefix)
@@ -93,8 +101,8 @@ $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
 $(call cdebug,using AWK [$(shell awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
-find-all = find $(1) ! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
-	sed "s/^.\///g"
+find-all = find $(1) ! -path "./.git/*" ! -path "./run/*" ! -path "./build/*" \
+	\( $(2) \) 2>/dev/null | sed "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
 clean-file = $(call find-all,$(1),-type f \( $(2) \) \
 	-exec rm --verbose --force {} \;)
@@ -128,7 +136,7 @@ endif
 # Setup default browser command to open coverage reports.
 BROWSER ?= xdg-open
 # Setup default verions used for building, releasing, and publishing.
-VERSION ?= snapshot
+VERSION ?= latest
 IMAGE_VERSION ?= $(VERSION)
 ifeq ($(wildcard VERSION),VERSION)
   BUILD_VERSION := v$(shell cat VERSION)
@@ -136,7 +144,7 @@ else
   BUILD_VERSION ?= $(VERSION)
 endif
 
-mod-readonly = $(call xifeq,$(IMAGE_VERSION),snapshot,,-mod=readonly)
+mod-readonly = $(call xifeq,$(IMAGE_VERSION),latest,,-mod=readonly)
 
 # Setup default variables for building, linking, and installing.
 LDFLAGS ?=
@@ -171,14 +179,9 @@ else
   awk-gensub =
 endif
 
-# Setup default go compiler environment.
-export GO ?= go
-export GOPATH ?= $(shell $(GO) env GOPATH)
-export GOBIN ?= $(GOPATH)/bin
-# Export private repositories that do not need to be downloaded.
-export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
+
 # Setup go to use desired and consistent go versions.
-export GOTOOLCHAIN ?= $(shell $(GO) version | \
+GOTOOLCHAIN ?= $(shell $(GO) version | \
 	sed --regexp-extended "s/.*(go[0-9.]+).*/\1/")
 $(call cdebug,using GOTOOLCHAIN [$(GOTOOLCHAIN)])
 GOVERSION ?= $(shell $(GO) version $$(which $(GO)) | \
@@ -276,7 +279,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.133
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.134
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -388,7 +391,7 @@ IMAGE_CMD ?= $(call find-cmd-image)
 ifdef IMAGE_NAME
   ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
     $(call cerror,invalid base image name [$(IMAGE_NAME)] \
-      - image name format is repo/team/name!)
+      - image name format [repo/team/name]!)
   endif
   IMAGE_HOST := $(word 1,$(subst /, ,$(IMAGE_NAME)))
   IMAGE_TEAM := $(word 2,$(subst /, ,$(IMAGE_NAME)))
@@ -400,6 +403,35 @@ else
 endif
 IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
 $(call cdebug,using IMAGE [$(IMAGE)])
+
+# Function to determine the image name from the image file name.
+image-name = echo -e "$(1)" | awk '$(awk-gensub) \
+	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") }; \
+	($$0) { \
+	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
+	    infix = "-" substr($$(NF), length("$(FILE_IMAGE)")+2); \
+	  } else if ($$0 ~ "/$(FILE_IMAGE)$$") { infix = "-" $$(NF-1); \
+	  } else { infix = ""; }; \
+	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
+	  add = (file != 0) ? "=" $$0: ""; \
+	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
+	}'
+image-build-deps = awk -v names="$(1)" ' \
+	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
+	  while (idx <= len) { files[a[idx]] = a[idx+2]; idx = idx+3; }; \
+	  for (image in files) { file = files[image]; cmd = "cat " file; \
+	    while ((cmd |& getline) > 0) { if ($$1 == "FROM") { \
+	      image = gensub(":.*", "", 1, ($$2 !~ "^--platform=") ? $$2 : $$3); \
+	      if (image in files) { \
+	        print "image-build/" file "::image-build/" files[image] ";"; \
+		  }; \
+	    }; }; close(cmd); \
+	  }; \
+	};'
+
+# Setup default image variables.
+IMAGE_FILES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
+IMAGE_NAMES := $(shell $(call image-name,$(IMAGE_FILES)))
 
 
 # Setup default database connection.
@@ -424,7 +456,7 @@ JRE_HOME ?= $(GOBIN)/jre-$(JRE_VERSION)
 
 # Setup codacy integration.
 CODACY ?= enabled
-ifeq ($(IMAGE_VERSION),snapshot)
+ifeq ($(IMAGE_VERSION),latest)
   CODACY_CONTINUE ?= false
 else
   CODACY_CONTINUE ?= true
@@ -532,7 +564,6 @@ COMMANDS_PKG := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f
 	    print $$field "=" target; break; \
 	  } \
 	} }')
-IMAGES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
 
 # Setup of runtime arguments for commands that support arguments.
 CMDWORDS ?= call show git- test- lint run- version- update
@@ -590,8 +621,8 @@ TARGETS_INIT_CODACY := $(addprefix init-, $(CODACY_BINARIES) analysis-cli)
 TARGETS_TEST_INIT := test-clean init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-, $(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-, $(CODACY_BINARIES))
-TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(IMAGES))
-TARGETS_IMAGE_PUSH := $(addprefix image-push/, $(IMAGES))
+TARGETS_IMAGE_BUILD := $(addprefix image-build/, $(IMAGE_FILES))
+TARGETS_IMAGE_PUSH := $(addprefix image-push/, $(IMAGE_FILES))
 TARGETS_BUILD := $(addprefix build-, $(COMMANDS))
 TARGETS_BUILD_LINUX := $(addprefix $(DIR_BUILD)/linux/, $(COMMANDS))
 TARGETS_INSTALL := $(addprefix install-, $(COMMANDS))
@@ -611,10 +642,10 @@ TARGETS_UNINSTALL_ALL := \
 	$(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY))
 TARGETS_RUN := $(addprefix run-, $(COMMANDS))
 TARGETS_RUN_GO := $(addprefix run-go-, $(COMMANDS))
-TARGETS_RUN_IMAGE := $(addprefix run-image-,$(if $(IMAGES),$(COMMANDS)))
-TARGETS_RUN_CLEAN := $(addprefix run-clean-,$(if $(IMAGES),$(COMMANDS)) db aws)
+TARGETS_RUN_IMAGE := $(addprefix run-image-,$(if $(IMAGE_FILES),$(COMMANDS)))
+TARGETS_RUN_CLEAN := $(addprefix run-clean-,$(if $(IMAGE_FILES),$(COMMANDS)) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
-TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(if $(IMAGES),$(COMMANDS)) db aws)
+TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(if $(IMAGE_FILES),$(COMMANDS)) db aws)
 TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
@@ -1101,21 +1132,9 @@ test-build::
 	    printf(fmt, cmds[$$1], $$2 "/main.go", $$1 "/main.go") \
 	} cmds[$$1] = $$2 } END { exit failures }';
 
-# Function to determine the image name from the image file name.
-image-name = echo -e "$(1)" | awk '$(awk-gensub) \
-	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") } { \
-	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-	    infix = "-" substr($$(NF), length("$(FILE_IMAGE)")+2); } \
-	  else if ($$0 ~ "/$(FILE_IMAGE)$$") { infix = "-" $$(NF-1); } \
-	  else { infix = ""; } \
-	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
-	  add = (file != 0) ? "=" $$0: ""; \
-	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
-	}'
-
 #@ test whether project creates conflicting container image names.
 test-image::
-	@$(call image-name,$(IMAGES)) | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
+	@echo -e "$(IMAGE_NAMES)" | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
 	  fmt = $(call amsg,error,image conflict [%s && %s => %s]\n) \
 	} { if ($$1 in imgs) { failures++; \
 	  printf(fmt, imgs[$$1], $$2, $$1) \
@@ -1182,15 +1201,15 @@ TEST_DEPS ?=
 
 # actuall targets for testing.
 $(TEST_ALL):: $(SOURCES) init-code $(TEST_DEPS) $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), \
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ $(TEST_ARGS);)
 $(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), \
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short $(TEST_ARGS);)
 $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), \
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
 
@@ -1202,7 +1221,7 @@ TEST_CDP_TARGETS ?= test-cdp-base test-cdp-go test-cdp-java
 $(TEST_CDP_TARGETS):: test-cdp-%:
 	@$(call emsg,info,testing in cdp container [$*]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
-		no docker command - aborting!); exit 1; fi; \
+		aborting - no docker command [$*]!); exit 1; fi; \
 	CDP_IMAGE="pierone.stups.zalan.do/cdp-runtime/$*:$(TAG)"; \
 	if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
 	DIR=$$(mktemp --directory); mkdir --parents $${DIR}/.ssh; \
@@ -1309,6 +1328,8 @@ endif
 
 #@ <fix|linter> # execute all linters for the custom code quality level.
 lint:: $(TARGETS_LINT)
+#@ <fix|linter> # execute golangci linters for the custom code quality level.
+lint-code:: lint-$(CODE_QUALITY)
 #@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
 lint-min:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_MIN))
 #@ <fix|linter> # execute golangci linters for base code quality level (go-files).
@@ -1451,7 +1472,7 @@ lint-markdown:: init-code $(GOBIN)/markdownlint
 	  if command -v markdownlint &> /dev/null; then \
 	    markdownlint --config .markdownlint.yaml .; \
 	  elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-		no docker command - continue without markdownlint!); \
+		continuing - no docker command [markdownlint]!); \
 	  else \
 	    $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
 	      container-registry.zalando.net/library/node-18-alpine:latest \
@@ -1571,15 +1592,18 @@ image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 #@ build container images.
 image-build:: test-image $(TARGETS_IMAGE_BUILD)
 
+# Setup custom image build target dependencies.
+$(foreach line,$(shell $(call image-build-deps,$(IMAGE_NAMES))),$(eval $(line)))
+# Setup custom image build targets.
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
-	  we never build images, aborting [$${IMAGE}]); exit 0; \
+	  aborting - we never build images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command, continuing without [$${IMAGE}]!); exit 0; \
+	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
-	REVISION=$$($(GIT) rev-parse HEAD 2>/dev/null); \
-	BASE=$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2); \
+	REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
+	BASE="$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2)"; \
 	$(call emsg,info,building image [$${IMAGE}] from [$${FILE}]); \
 	$(IMAGE_CMD) build --tag $${IMAGE} --file=$${FILE} . \
 	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
@@ -1595,14 +1619,14 @@ image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	@IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
-	  we never push images, aborting [$${IMAGE}]); exit 0; \
-	elif [ "$${VERSION}" == "snapshot" ]; then $(call emsg,info, \
-	  we never push snapshot images, aborting [$${IMAGE}]); exit 0; \
+	  aborting - we never push images [$${IMAGE}]); exit 0; \
+	elif [ "$${VERSION}" == "latest" ]; then $(call emsg,info, \
+	  aborting - we never push latest images [$${IMAGE}]); exit 0; \
 	elif [[ "$${VERSION}" =~ ^pr-.*$$ ]] && \
 	    [ "$(IMAGE_PUSH)" != "pulls" ]; then $(call emsg,info, \
-	  we never push pull request images, aborting [$${IMAGE}]); exit 0; \
+	  aborting - we never push pull request images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command, continuing without [$${IMAGE}]); exit 0; \
+	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
 	$(IMAGE_CMD) push $${IMAGE};
 
@@ -1748,9 +1772,9 @@ run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
 	$(call emsg,info,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command - continue without [postgres]); exit 0; fi; \
+	  continuing - no docker command [postgres]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
-	  $(call emsg,info,port allocated, using existing [postgres]); exit 0; fi; \
+	  $(call emsg,info,port allocated - using existing [postgres]); exit 0; fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-db \
 	  --network host --publish $(HOST):$(DB_PORT):5432 \
@@ -1774,10 +1798,10 @@ run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
 	$(call emsg,info,ensuring $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-	  no docker command - continue without [aws/localstack]); exit 0; \
+	  continuing - no docker command [aws/localstack]!); exit 0; \
 	elif [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
-	  $(call emsg,info,ports allocated, using existing [aws/localstack]); \
+	  $(call emsg,info,ports allocated - using existing [aws/localstack]); \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
 	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
@@ -1812,10 +1836,10 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@NAME="$(IMAGE_ARTIFACT)-$*"; \
 	$(call emsg,info,running image [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
-		no docker command, aborting [$${NAME}]!); exit 1; fi; \
+		aborting - no docker command [$${NAME}]!); exit 1; fi; \
 	trap "$(IMAGE_CMD) rm $${NAME} >/dev/null" EXIT; \
 	trap "$(IMAGE_CMD) kill $${NAME} >/dev/null" INT TERM; \
-	if [ -n "$(filter %$*,$(IMAGES))" ]; then \
+	if [ -n "$(filter %$*,$(IMAGE_FILES))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed "s/:/-$*:/")"; \
 	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
 	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $${NAME} \
@@ -1831,7 +1855,7 @@ $(TARGETS_RUN_CLEAN):: run-clean-%:
 	@NAME="$(IMAGE_ARTIFACT)-$*"; \
 	$(call emsg,info,cleaning container [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
-	  no docker command - aborting [$${NAME}]!); exit 0; fi; \
+	  aborting - no docker command [$${NAME}]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
 	  $(IMAGE_CMD) kill $${NAME} > /dev/null && \
 	  $(call emsg,success,killed container [$${NAME}]); \
@@ -2064,9 +2088,10 @@ debug-mocks::
 
 debug-image::
 	@echo 'IMAGE $(IMAGE)'; \
-	echo 'IMAGES $(IMAGES)'; \
 	echo 'IMAGE_CMD $(IMAGE_CMD)'; \
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
+	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
+	echo 'IMAGE_NAMES $(IMAGE_NAMES)'; \
 
 debug-targets::
 	@echo 'TARGETS_ALL $(TARGETS_ALL)'; \
