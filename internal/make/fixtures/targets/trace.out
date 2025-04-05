@@ -137,6 +137,7 @@ lint-all
 lint-apis
 lint-base
 lint-codacy
+lint-code
 lint-config
 lint-gocognit
 lint-gocyclo

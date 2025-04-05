@@ -25,32 +25,56 @@ const (
 	// Makefile provides the name of the base makefile to be executed by
 	// go-make.
 	Makefile = "Makefile.base"
-	// CompleteTargetFunc provides the common completion function for go-make.
-	CompleteTargetFunc = "go-make-targets() {\n" +
-		"    local DIR=\"${TMPDIR:-/tmp}/go-make-${USER}/${PWD}\";\n" +
-		"    if [ -f \"${DIR}/targets\" ]; then cat \"${DIR}/targets\"; fi;\n" +
-		"    ( if [ ! -d \"${DIR}\" ]; then mkdir -p \"${DIR}\"; fi;\n" +
-		"        make --no-builtin-rules --no-builtin-variables --print-data-base\\\n" +
-		"            --question 2>/dev/null | awk -v RS=\"\" -F\":\" \\\n" +
-		"            '/(^|\\n)# Files(\\n|$)/,/(^|\\n)# Finished / { \\\n" +
-		"                if ($1 !~ \"^[#./]\") { print $1 } \\\n" +
-		"            }' | LC_ALL=C sort --unique >\"${DIR}/targets\"\n" +
-		"    ) >/dev/null &\n" +
+	// GoMakeTargetsFile provides the name of the file to store the go-make
+	// targets.
+	GoMakeTargetsFile = "${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets"
+	// CompleteTargetFunc provides the common target function to create
+	// go-make targets for completion.
+	CompleteTargetFunc = "_go-make-targets() {\n" +
+		"    if [ -z \"$(grep '$(GOBIN)/go-make show-targets' Makefile)\" ]; then\n" +
+		"        mkdir -p \"$(dirname ${1})\";\n" +
+		"        make --no-builtin-rules --no-builtin-variables \\\n" +
+		"            --print-data-base --question | awk -v RS=\"\" -F\":\" '\n" +
+		"        /(^|\\n)# Files(\\n|$)/,/(^|\\n)# Finished / {\n" +
+		"            if ($1 !~ \"^[#./]\") { print $1 }\n" +
+		"        }' | LC_ALL=C sort --unique | tee ${1};\n" +
+		"    else go-make show-targets; fi 2>/dev/null;\n" +
+		"};\n"
+	// CompleteFilterFunc provides the common filter function to filter
+	// go-make targets before applying completion.
+	CompleteFilterFunc = "_go-make-filter() {\n" +
+		"    sed --regexp-extended \"s|^(${1}[^/-]*[-/]?)?.*|\\1|g\"" +
+		" | sort --unique;\n" +
 		"};\n"
 	// CompleteBash provides the bash completion setup for go-make.
 	CompleteBash = "### bash completion for go-make\n" +
 		"function " + CompleteTargetFunc +
+		"function " + CompleteFilterFunc +
 		"function __complete_go-make() {\n" +
-		"    COMPREPLY=($(compgen -W \"$(go-make-targets)\"" +
-		" -- \"${COMP_WORDS[COMP_CWORD]}\"));\n" +
+		"    local WORD=\"${COMP_WORDS[COMP_CWORD]}\";\n" +
+		"    local FILE=\"" + GoMakeTargetsFile + "\";\n" +
+		"    if [ -f \"${FILE}\" ]; then\n" +
+		"        local WORDS=\"$(cat \"${FILE}\" | _go-make-filter \"${WORD}\")\";\n" +
+		"        ( _go-make-targets \"${FILE}\" >/dev/null & ) 2>/dev/null;\n" +
+		"    else\n" +
+		"        local WORDS=\"$(_go-make-targets \"${FILE}\" | _go-make-filter \"${WORD}\")\";\n" +
+		"    fi;\n" +
+		"    COMPREPLY=($(compgen -W \"${WORDS}\" -- \"${WORD}\"));\n" +
 		"};\n" +
 		"complete -F __complete_go-make go-make;\n"
 	// CompleteZsh provides the zsh completion setup for go-make.
-	CompleteZsh = "### zsh completion for go-make\n" +
-		CompleteTargetFunc +
+	CompleteZsh = "### zsh completion for make/go-make\n" +
+		CompleteTargetFunc + CompleteFilterFunc +
 		"__complete_go-make() {\n" +
-		"    local targets=($(go-make-targets));\n" +
-		"    _describe 'Makefile target' targets;\n" +
+		"    local targets=();\n" +
+		"    local FILE=\"" + GoMakeTargetsFile + "\";\n" +
+		"    if [ -f \"${FILE}\" ]; then\n" +
+		"        targets=($(cat \"${FILE}\" | _go-make-filter \"${words[-1]}\"));\n" +
+		"        ( _go-make-targets \"${FILE}\" >/dev/null & ) 2>/dev/null;\n" +
+		"    else\n" +
+		"        targets=($(_go-make-targets \"${FILE}\" | _go-make-filter \"${words[-1]}\"));\n" +
+		"    fi;\n" +
+		"    _describe 'go-make' targets;\n" +
 		"};\n" +
 		"compdef __complete_go-make go-make;\n" +
 		"compdef __complete_go-make make;\n"

@@ -350,6 +350,7 @@ linting according to different quality levels, i.e. `min`,`base` (default),
 
 ```bash
 make lint          # short cut to execute default lint targets
+make lint-code     # lints the go-code using the default custom config
 make lint-min      # lints the go-code using a minimal config
 make lint-base     # lints the go-code using a baseline config
 make lint-plus     # lints the go-code using an advanced config
