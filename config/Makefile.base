@@ -279,13 +279,15 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.134
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.135
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
 	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
+GOMAKE_MODE ?=
 $(call cdebug,using GOMAKE_CONFIG [$(GOMAKE_CONFIG)])
+$(call cdebug,using GOMAKE_MODE [$(GOMAKE_MODE)])
 
 # Function to determine the actual go-make version.
 gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
@@ -416,11 +418,11 @@ image-name = echo -e "$(1)" | awk '$(awk-gensub) \
 	  add = (file != 0) ? "=" $$0: ""; \
 	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
 	}'
-image-build-deps = awk -v names="$(1)" ' \
+image-build-deps = echo | awk -v names="$(1)" ' \
 	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
 	  while (idx <= len) { files[a[idx]] = a[idx+2]; idx = idx+3; }; \
 	  for (image in files) { file = files[image]; cmd = "cat " file; \
-	    while ((cmd |& getline) > 0) { if ($$1 == "FROM") { \
+	    while ((cmd | getline) > 0) { if ($$1 == "FROM") { \
 	      image = gensub(":.*", "", 1, ($$2 !~ "^--platform=") ? $$2 : $$3); \
 	      if (image in files) { \
 	        print "image-build/" file "::image-build/" files[image] ";"; \
@@ -941,13 +943,13 @@ git-hooks-pre-commit = echo -ne '\#!/bin/sh\n\n\
 	GOBIN=$(GOBIN) $(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) && \\\n\
 	$(GOBIN)/go-make commit;\n' | sed 's/^ *//g'
 $(DIR_GIT)/hooks/commit-msg: $(MAKEFILE_LIST)
-	@if [ -d "$(DIR_GIT)/hooks" ] && ! diff <(cat $@ 2>/dev/null) \
-	    <($(git-hooks-commit-msg)) >/dev/null; then \
+	@if ! [[ ":$(GOMAKE_MODE):" =~ .*":no-hooks:".* ]] && [ -d "$(DIR_GIT)/hooks" ] && \
+		! diff <(cat $@ 2>/dev/null) <($(git-hooks-commit-msg)) >/dev/null; then \
 	  $(git-hooks-commit-msg) >$@; chmod 755 $@; \
 	fi;
 $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
-	@if [ -d "$(DIR_GIT)/hooks" ] && ! diff <(cat $@ 2>/dev/null) \
-	    <($(git-hooks-pre-commit)) >/dev/null; then \
+	@if ! [[ ":$(GOMAKE_MODE):" =~ .*":no-hooks:".* ]] && [ -d "$(DIR_GIT)/hooks" ] && \
+		! diff <(cat $@ 2>/dev/null) <($(git-hooks-pre-commit)) >/dev/null; then \
 	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
 	fi;
 
@@ -1584,7 +1586,6 @@ $(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-code $(SOURCES) $(DIR_BUILD)
 #@ build container image (alias for image-build).
 build-image:: image-build
 
-
 ## Image: targets to build and push container images.
 
 #@ build and push container images - if setup.
@@ -1876,7 +1877,8 @@ clean-all:: $(TARGETS_CLEAN_ALL)
 clean-init:: clean-hooks
 #@ clean up all hooks created by initialization.
 clean-hooks::
-	@rm --verbose --force .git/hooks/pre-commit;
+	@rm --verbose --force $(DIR_GIT)/hooks/pre-commit;
+	@rm --verbose --force $(DIR_GIT)/hooks/commit-msg;
 #@ clean up all resources created by building and testing.
 clean-build::
 	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
