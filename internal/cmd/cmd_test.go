@@ -36,7 +36,7 @@ var testExecParams = map[string]ExecParams{
 	},
 	"bash stderr": {
 		args:         []string{"bash"},
-		stdin:        "echo Hello, World! > /dev/stderr\n",
+		stdin:        "echo Hello, World! >&2\n",
 		expectStderr: "Hello, World!\n",
 	},
 }

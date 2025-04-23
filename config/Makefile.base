@@ -28,7 +28,7 @@ xifeq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 amsg = (("date '"'"'+%F %T.%3N'"'"'" | getline _msg_) > 0 ? \
 	_msg_ : strftime("%F %T.000")) " $(call msg,$(1),$(1):,$(2))"
-emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" > /dev/stderr)
+emsg = $(if $(2),echo -e "$(ts) $(call msg,$(1),$(1):,$(2))" >&2)
 dmsg = $(if $(findstring --trace,$(MAKEFLAGS)),$(call emsg,$(1),$(2)),echo -n)
 
 escape = $(subst $$,\$$,$(subst ",\",$(subst \",\\",$(1))))
@@ -222,7 +222,7 @@ go-check-update = \
 go-install-module = \
 	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
-	echo $(GO) install $(INSTALL_FLAGS) "$(2)" >/dev/stderr 2>&1; \
+	echo $(GO) install $(INSTALL_FLAGS) "$(2)" >&2 2>&1; \
 	if [ -z "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
 	  rm --verbose --force  "$(GOBIN)/$(1)"; \
 	fi; $(GO) install $(INSTALL_FLAGS) "$(2)"
@@ -279,7 +279,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.135
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.136
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -880,7 +880,7 @@ git-verify::
 	( "pull" | * ) MAIN="$(call git-branch,$(wordlist 2,2,$(ARGS)))" && \
 	  $(GIT) fetch origin "$${MAIN}" --verbose && \
 	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
-	esac | $(call git-verify,$${MODE}) > /dev/stderr;
+	esac | $(call git-verify,$${MODE}) >&2;
 
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
@@ -954,14 +954,13 @@ $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
 	fi;
 
 #@ initialize the go module and package dependencies.
-init-go:: go.sum
-go.sum: go.mod
-	@$(call emsg,info,updating [go.sum]);
-	$(if $(SOURCES),$(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
-	  touch go.sum && $(GO) mod download;)
-go.mod:
-	@$(call emsg,info,updating [go.mod]);
-	$(if $(SOURCES),$(GO) mod init "$(GITURL)";)
+init-go:: go.mod
+go.mod: go.sum
+go.sum: $(SOURCES)
+	@$(call emsg,info,updating [go.mod&go.sum]);
+	$(if $(SOURCES),$(if go.mod,,$(GO) mod init "$(GITURL)" &&) \
+	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
+	  touch go.mod go.sum && $(GO) mod download;)
 
 #@ initialize the generated sources.
 init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
@@ -1996,7 +1995,7 @@ update-deps?:: test-go update/go.mod?
 update/go.mod?:: install-gomajor
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
 	$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
-	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum
+	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
 
 update/go-make::
 	@GOMAKE="github.com/tkrop/go-make"; \
