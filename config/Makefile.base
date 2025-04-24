@@ -238,7 +238,7 @@ go-pkg-latest = \
 	awk '{ print $$(1) "@" $$(NF) }'; cd - >/dev/null
 # Function for go-package handling (TODO: check spliting and simplifying).
 go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
-      -v not="$(4)" -v version="$(5)" '$(awk-gensub) \
+      -v not="$(4)" -v version="$(5)" ' \
 	BEGIN { FS = "[/@]"; RS = "[ \n\r]" } \
 	function package(vindex) { \
 	  if (vindex) { \
@@ -279,7 +279,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.136
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.137
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -418,7 +418,7 @@ image-name = echo -e "$(1)" | awk '$(awk-gensub) \
 	  add = (file != 0) ? "=" $$0: ""; \
 	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
 	}'
-image-build-deps = echo | awk -v names="$(1)" ' \
+image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
 	  while (idx <= len) { files[a[idx]] = a[idx+2]; idx = idx+3; }; \
 	  for (image in files) { file = files[image]; cmd = "cat " file; \
@@ -1603,16 +1603,16 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
 	REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
-	BASE="$$(grep "^FROM[[:space:]]" $${FILE} | tail -n1 | cut -d" " -f2)"; \
+	BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
 	$(call emsg,info,building image [$${IMAGE}] from [$${FILE}]); \
-	$(IMAGE_CMD) build --tag $${IMAGE} --file=$${FILE} . \
+	$(IMAGE_CMD) build --tag "$${IMAGE}" --file="$${FILE}" . \
 	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
-	  --label=org.opencontainers.image.vendor=zalando/$(TEAM) \
-	  --label=org.opencontainers.image.source=$(GITURL) \
-	  --label=org.opencontainers.image.version=$${IMAGE##*:} \
-	  --label=org.opencontainers.image.revision=$${REVISION} \
-	  --label=org.opencontainers.image.base.name=$${BASE} \
-	  --label=org.opencontainers.image.ref.name=$${IMAGE};
+	  --label=org.opencontainers.image.vendor="zalando/$(TEAM)" \
+	  --label=org.opencontainers.image.source="$(GITURL)" \
+	  --label=org.opencontainers.image.version="$${IMAGE##*:}" \
+	  --label=org.opencontainers.image.revision="$${REVISION}" \
+	  --label=org.opencontainers.image.base.name="$${BASE}" \
+	  --label=org.opencontainers.image.ref.name="$${IMAGE}";
 
 #@ push contianer images - if setup and allowed.
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
@@ -1628,7 +1628,7 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
-	$(IMAGE_CMD) push $${IMAGE};
+	$(IMAGE_CMD) push "$${IMAGE}";
 
 
 ## Install: targets to (un-)install software and tools.
@@ -2093,6 +2093,7 @@ debug-image::
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
 	echo 'IMAGE_NAMES $(IMAGE_NAMES)'; \
+	echo 'IMAGE_DEPS $(shell $(call image-build-deps,$(IMAGE_NAMES)))'; \
 
 debug-targets::
 	@echo 'TARGETS_ALL $(TARGETS_ALL)'; \
