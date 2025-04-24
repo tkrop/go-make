@@ -279,7 +279,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.137
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.138
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -1612,7 +1612,8 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	  --label=org.opencontainers.image.version="$${IMAGE##*:}" \
 	  --label=org.opencontainers.image.revision="$${REVISION}" \
 	  --label=org.opencontainers.image.base.name="$${BASE}" \
-	  --label=org.opencontainers.image.ref.name="$${IMAGE}";
+	  --label=org.opencontainers.image.ref.name="$${IMAGE}"; \
+	$(IMAGE_CMD) tag "$${IMAGE}" "$${IMAGE%%:*}:latest";
 
 #@ push contianer images - if setup and allowed.
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
