@@ -10,7 +10,7 @@ _go-make-targets() {
     else go-make show-targets; fi 2>/dev/null;
 };
 _go-make-filter() {
-    sed --regexp-extended "s|^(${1}[^/-]*[-/]?)?.*|\1|g" | sort --unique;
+    sed -E -e "s|^(${1}[^/-]*[-/]?)?.*|\1|g" | sort --unique;
 };
 __complete_go-make() {
     local targets=();

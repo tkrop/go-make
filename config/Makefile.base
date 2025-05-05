@@ -1,4 +1,4 @@
-## Maintained by: github.com/tkrop/go-make@v0.0.139
+## Maintained by: github.com/tkrop/go-make@v0.0.140
 ## Manual: http://github.com/tkrop/go-make/MANUAL.md
 SHELL := /bin/bash
 
@@ -280,7 +280,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.139
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.140
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -2018,7 +2018,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (skipped)); \
 	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
-		[ -z "$(grep -E "github.com/tkrop/go-make@v[0-9.]+$" "$${FILE}")"]; then \
+		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")"]; then \
 	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ] && \
 	     [ "$(ARGS)" != "current" ]; then \
@@ -2041,7 +2041,7 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	     "$(ARGS)" != "current" ]; then \
 	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
 	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
-		[ -z "$(grep -E "github.com/tkrop/go-make@v[0-9.]+$" "$${FILE}")"]; then \
+		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")"]; then \
 	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	else $(call emsg,info,updating [$${FILE}] (updated)); fi;
 
