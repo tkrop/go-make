@@ -1,3 +1,4 @@
+## Maintained by: github.com/tkrop/go-make@v0.0.139
 ## Manual: http://github.com/tkrop/go-make/MANUAL.md
 SHELL := /bin/bash
 
@@ -279,7 +280,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.138
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.139
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -1697,7 +1698,8 @@ $(TARGETS_UNINSTALL):: uninstall-%:
 version-bump = \
 	$$(awk -v arg="$(1)" '{ \
 	  op["major"] = 1; op["minor"] = 2; op["patch"] = 3; \
-	  if ((pos = op[substr(arg,1,5)]) == 0) { \
+	  if (arg ~ "^[0-9]") { printf("%s", arg); exit 0; \
+	  } else if ((pos = op[substr(arg,1,5)]) == 0) { \
 	    if (length(arg) <= 3) { pos = 4 - length(arg) }; \
 	  } else { arg = substr(arg,6); } \
 	  patsplit($$0, v, "[0-9-]*", seps); len = length(seps); \
@@ -2015,8 +2017,11 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	  $(call emsg,info,updating [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (skipped)); \
-	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
-	     "$(ARGS)" != "current" ]; then \
+	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
+		[ -z "$(grep -E "github.com/tkrop/go-make@v[0-9.]+$" "$${FILE}")"]; then \
+	  $(call emsg,info,updating [$${FILE}] (aborted)); \
+	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ] && \
+	     [ "$(ARGS)" != "current" ]; then \
 	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
 	else \
 	  $(call emsg,info,updating [$${FILE}] (updated)); \
@@ -2035,6 +2040,9 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
 	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
+	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
+		[ -z "$(grep -E "github.com/tkrop/go-make@v[0-9.]+$" "$${FILE}")"]; then \
+	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	else $(call emsg,info,updating [$${FILE}] (updated)); fi;
 
 #@ update all tools required by the project.

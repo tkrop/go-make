@@ -8,8 +8,8 @@ clean::
 bump:: version-bump
 version-bump version-bump-reset:: install
 	@VERSION="$$(cat VERSION)"; \
-	sed -i -e "s#\(github.com[/:]tkrop/go-make@v\)[^ ]*#\1$${VERSION}#" \
-	  Makefile config/Makefile config/Makefile.base; \
+	sed -i -E "s|(github.com[/:]tkrop/go-make@v)[0-9.]+|\1$${VERSION}|" \
+	  $(FILE_MAKE) $(FILE_REVIVE) $(FILE_MARKDOWN) $$(find config -type f); \
 
 # customize commit target with config file synchronization check.
 commit:: sync-check
