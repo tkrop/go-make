@@ -9,7 +9,8 @@ bump:: version-bump
 version-bump version-bump-reset:: install
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -E "s|(github.com[/:]tkrop/go-make@v)[0-9.]+|\1$${VERSION}|" \
-	  $(FILE_MAKE) $(FILE_REVIVE) $(FILE_MARKDOWN) $$(find config -type f); \
+	  $(FILE_MAKE) $(FILE_REVIVE) $(FILE_MARKDOWN) $(FILE_CODACY) \
+	  $$(find config -type f); \
 
 # customize commit target with config file synchronization check.
 commit:: sync-check
