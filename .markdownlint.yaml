@@ -1,3 +1,5 @@
+## Maintained by: github.com/tkrop/go-make@v0.0.139
+
 # Default state for all rules
 default: true
 
