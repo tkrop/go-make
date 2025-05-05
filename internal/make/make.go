@@ -43,7 +43,7 @@ const (
 	// CompleteFilterFunc provides the common filter function to filter
 	// go-make targets before applying completion.
 	CompleteFilterFunc = "_go-make-filter() {\n" +
-		"    sed --regexp-extended \"s|^(${1}[^/-]*[-/]?)?.*|\\1|g\"" +
+		"    sed -E -e \"s|^(${1}[^/-]*[-/]?)?.*|\\1|g\"" +
 		" | sort --unique;\n" +
 		"};\n"
 	// CompleteBash provides the bash completion setup for go-make.
