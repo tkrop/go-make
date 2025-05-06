@@ -1,4 +1,4 @@
-## Maintained by: github.com/tkrop/go-make@v0.0.140
+## Maintained by: github.com/tkrop/go-make
 ## Manual: http://github.com/tkrop/go-make/MANUAL.md
 SHELL := /bin/bash
 
@@ -18,12 +18,12 @@ TMPDIR ?= /tmp
 # Setup default go-make installation flags.
 INSTALL_FLAGS ?= -mod=readonly -buildvcs=auto
 # Setup go-make version to use desired build and config scripts.
-GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.140
+GOMAKE_DEP ?= github.com/tkrop/go-make@v0.0.141
 # Request targets from go-make show-targets target.
 TARGETS := $(shell command -v $(GOBIN)/go-make >/dev/null || \
 	$(GO) install $(INSTALL_FLAGS) $(GOMAKE_DEP) >&2 && \
 	DIR="$(abspath $(TMPDIR))/go-make-$(USER)$(realpath $(CURDIR))" && \
-	cat "${DIR}/targets" 2>/dev/null; \
+	cat "$${DIR}/targets" 2>/dev/null; \
 	MAKEFLAGS="" $(GOBIN)/go-make show-targets >/dev/null 2>&1 &)
 # Declare all targets phony to make them available for auto-completion.
 .PHONY:: $(TARGETS)
