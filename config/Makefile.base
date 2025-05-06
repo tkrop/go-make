@@ -1,4 +1,4 @@
-## Maintained by: github.com/tkrop/go-make@v0.0.140
+## Maintained by: github.com/tkrop/go-make
 ## Manual: http://github.com/tkrop/go-make/MANUAL.md
 SHELL := /bin/bash
 
@@ -280,7 +280,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.140
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.141
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
@@ -2004,9 +2004,12 @@ update/go-make::
 	@GOMAKE="github.com/tkrop/go-make"; \
 	if [ -n "$(ARGS)" ]; then GOMAKE="$${GOMAKE}@$(ARGS)"; \
 	else GOMAKE="$$($(call go-pkg-latest,$${GOMAKE}))"; fi; \
-	$(call emsg,info,updating [$${GOMAKE}]); \
-	$(GO) install $${GOMAKE} || \
-	  ( $(call emsg,error,installing [$${GOMAKE}]) && exit 1 )
+	if [ "$(ARGS)" != "current" ] || [ -z "$(ARGS)" ] && \
+	    [ "$(gomake-version)" != "(devel)" ] ; then \
+	  $(call emsg,info,updating [$${GOMAKE}]); \
+	  $(GO) install $${GOMAKE} || \
+	    ( $(call emsg,error,installing [$${GOMAKE}]) && exit 1 ) \
+	fi;
 
 #@ <version> # update this build environment to latest version.
 update-make:: update/go-make $(TARGETS_UPDATE_MAKE)
@@ -2018,7 +2021,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (skipped)); \
 	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
-		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")"]; then \
+		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ] && \
 	     [ "$(ARGS)" != "current" ]; then \
