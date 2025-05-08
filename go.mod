@@ -1,12 +1,12 @@
 module github.com/tkrop/go-make
 
-go 1.24.2
+go 1.24.3
 
 require (
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0
-	github.com/tkrop/go-config v0.0.14
-	github.com/tkrop/go-testing v0.0.25
+	github.com/tkrop/go-config v0.0.15
+	github.com/tkrop/go-testing v0.0.26
 )
 
 require (
