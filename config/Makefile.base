@@ -99,7 +99,7 @@ $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using PATH [$${PATH}])
 $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
-$(call cdebug,using AWK [$(shell awk -W version 2>/dev/null)])
+$(call cdebug,using AWK [$(shell which awk)])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./.git/*" ! -path "./run/*" ! -path "./build/*" \
