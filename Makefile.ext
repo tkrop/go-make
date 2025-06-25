@@ -27,7 +27,7 @@ sync-check::
 sync::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
-	    echo "sync: $${FILE#*/} => $${FILE}"; cp "$${FILE#*/}" "$${FILE}"; \
+	    echo "sync: $${FILE} => $${FILE#*/}"; cp "$${FILE}" "$${FILE#*/}"; \
 	  fi; \
 	done;
 

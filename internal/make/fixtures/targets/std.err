@@ -1,3 +1,2 @@
-[1;93mwarning:[0m please customize variables in go-make/run/Makefile.vars
 [1;96minfo:[0m executing [make show-targets ARGS="param"]
 [1;96minfo:[0m updating targets [go-make/run/targets]

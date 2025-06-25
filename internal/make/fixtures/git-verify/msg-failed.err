@@ -1,4 +1,3 @@
-[1;93mwarning:[0m please customize variables in go-make/run/Makefile.vars
 [1;96minfo:[0m executing [make git-verify ARGS="message ../internal/make/fixtures/git-verify/msg-failed.in"]
 [1;91merror:[0m commit type missing [title=feat{wrong}: all is somehow wrong (org#1)]
 [1;91merror:[0m issue missing [titel=feat{wrong}: all is somehow wrong (org#1)]
