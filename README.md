@@ -197,13 +197,14 @@ not the least [`bash`][bash]. For certain non-core-features it also requires
 [awk]: <https://www.gnu.org/software/awk/>
 [sed]: <https://www.gnu.org/software/sed/>
 
-**Not:** [go-make][go-make] automatically installs `pre-commit` and `commit-msg`
-[hooks][git-hooks] overwriting and deleting pre-existing hooks (see also
-[Customizing Git - Git Hooks][git-hooks]). The `pre-commit` hook calls
-`make commit` as an alias for executing  `test-go`, `test-unit`, `lint-<level>`,
-and `lint-markdown` to enforce successful testing and linting. The `commit-msg`
-hook calls `make git-verify message` for validating whether the commit message
-is following the [conventional commit][convent-commit] best practice.
+**Note:** [go-make][go-make] automatically installs `pre-commit` and
+`commit-msg` [hooks][git-hooks] overwriting and deleting pre-existing hooks
+(see also [Customizing Git - Git Hooks][git-hooks]). The `pre-commit` hook
+calls `make commit` as an alias for executing  `test-go`, `test-unit`,
+`lint-<level>`, and `lint-markdown` to enforce successful testing and
+linting. The `commit-msg` hook calls `make git-verify message` for
+validating whether the commit message is following the [conventional
+commit][convent-commit] best practice.
 
 [git-hooks]: <https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks>
 [convent-commit]: <https://www.conventionalcommits.org/en/v1.0.0/>

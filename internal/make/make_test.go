@@ -624,7 +624,7 @@ func TestMakeExec(t *testing.T) {
 			// is to prevent the parent options to influence the test results
 			// - in particular the '--trace' flag.
 			env := param.env
-			env = append(env, "MAKEFLAGS=", "MFLAGS=")
+			env = append(env, "MAKEFLAGS=", "MFLAGS=", "GOMAKE_MODE=no-config")
 
 			// When
 			exit := make.Make(stdin, stdout, stderr, info,

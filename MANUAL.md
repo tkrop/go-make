@@ -118,7 +118,7 @@ CODE_QUALITY := base
 
 # Setup codacy integration (default: enabled [enabled, disabled]).
 CODACY := enabled
-# Customizing codacy server (default: https://codacy.bus.zalan.do).
+# Customizing codacy server (default: https://api.codacy.com).
 CODACY_API_BASE_URL := https://api.codacy.com
 # (default: false / true [cdp-pipeline])
 #CODACY_CONTINUE := true
@@ -327,7 +327,6 @@ make test-upload # uploads the test coverage files
 make test-clean  # cleans up the test files
 make test-build  # test conflicts in program names
 make test-image  # test conflicts in container image names
-make test-cdp    # test cdp-runtime execution locally to debug scripts
 make test-go     # test go versions
 ```
 
@@ -488,6 +487,11 @@ update is available instead of executing it directly.
 * For `update(-make)` also `current` can be supplied as version to update the
   the config files to the version determined by the currently executed
   `Makefile`.
+
+**Note:** if you are developing new versions of `go-make`, you may want to
+test the locally installed version on other local repositories. You can than
+enforce updating to the development version using `make update current` to
+prepare releases.
 
 
 ### Cleanup targets
@@ -677,5 +681,4 @@ preferred command in Linux, but for compatibility would be still acceptable.
 
 Some build systems are not providing a recent `gawk` version, but provide
 `mawk`as alternative, which is know to miss support for `gensub`. We have
-substituted the usage of `gensub` in some essential functions that would
-else fail.
+implemented a `gensub` function that can be included for such cases.

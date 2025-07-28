@@ -17,6 +17,8 @@ clean-run-db
 commit
 debug-bash
 debug-commands
+debug-dirs
+debug-files
 debug-gen
 debug-image
 debug-make
@@ -157,10 +159,6 @@ test
 test-all
 test-bench
 test-build
-test-cdp
-test-cdp-base
-test-cdp-go
-test-cdp-java
 test-clean
 test-cover
 test-go

@@ -157,7 +157,7 @@ linters-settings:
       # Restricted alias naming conflicts with '.'-imports.
       - name: import-alias-naming
         disabled: true
-      # Exluding '.'-import makes test package separation unnecessary difficult.
+      # Excluding '.'-import makes test package separation unnecessary difficult.
       - name: dot-imports
         disabled: true
       # Fails to disable writers that actually cannot return errors.

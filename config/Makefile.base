@@ -1,5 +1,8 @@
 ## Maintained by: github.com/tkrop/go-make
 ## Manual: http://github.com/tkrop/go-make/MANUAL.md
+##
+## You can provide custom variables in \x1b[1;95mMakefile.vars\x1b[0m
+## You can provide custom targets in \x1b[1;95mMakefile.ext\x1b[0m
 SHELL := /bin/bash
 
 # Setup variables for special purposes.
@@ -45,9 +48,38 @@ endif
 ifdef BASH_COMPAT
   $(call cdebug,bash compatibility mode set [$(BASH_COMPAT)])
 endif
+
+
+# Setup default browser command to open coverage reports.
+BROWSER ?= xdg-open
+
+# Setup default versions used for building, releasing, and publishing.
+VERSION ?= latest
+IMAGE_VERSION ?= $(VERSION)
+ifeq ($(wildcard VERSION),VERSION)
+  BUILD_VERSION := v$(shell cat VERSION)
+else
+  BUILD_VERSION ?= $(VERSION)
+endif
+
+# Setup default module mode for building and testing.
+mod-readonly = $(call xifeq,$(VERSION),latest,,-mod=readonly)
+
+# Setup default variables for building, linking, and installing.
+LDFLAGS ?=
+LD_FLAGS ?= $(strip $(LDFLAGS))
+LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
+TESTFLAGS ?=
+TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
+BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
+BUILD_FLAGS ?=  $(strip $(mod-readonly) -buildvcs=auto -trimpath $(BUILDFLAGS))
+INSTALLFLAGS ?=
+INSTALL_FLAGS ?= $(strip $(mod-readonly) -buildvcs=auto $(INSTALLFLAGS))
+
 # Find container image command (docker, podman, or colima).
 find-cmd-image := $(shell command -v docker || \
 	command -v podman || command -v colima)
+IMAGE_CMD ?= $(call find-cmd-image)
 
 # Setup system default variables.
 TMPDIR ?= /tmp
@@ -56,7 +88,7 @@ export GO ?= go
 export GOPATH ?= $(shell $(GO) env GOPATH)
 export GOBIN ?= $(GOPATH)/bin
 # Export private repositories that do not need to be downloaded.
-export GOPRIVATE ?= github.bus.zalan.do,github.com/zalando-*
+export GOPRIVATE ?=
 
 # Setup System dependent default variables.
 export PATH := $(GOBIN):$(PATH)
@@ -99,7 +131,7 @@ $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using PATH [$${PATH}])
 $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
-$(call cdebug,using AWK [$(shell awk -W version 2>/dev/null)])
+$(call cdebug,using AWK [$(shell echo | awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./.git/*" ! -path "./run/*" ! -path "./build/*" \
@@ -121,42 +153,68 @@ MAKEFLAGS += --not-keep-going
 MAKEFLAGS := $(sort $(MAKEFLAGS))
 
 # Setup default directories of projects.
+DIR_REAL := $(realpath $(CURDIR))
 DIR_GIT := $(CURDIR)/.git
 DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
-DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(realpath $(CURDIR))
+DIR_CONFIG := $(HOME)/.config/go-make
+DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
-ifneq ("$(wildcard $(CURDIR)/Makefile.vars)","")
-  include Makefile.vars
-else
-  $(shell $(call emsg,warning,please customize variables in $(CURDIR)/Makefile.vars))
-endif
+# Setup go-make to use desired build and config scripts.
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.143
+GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
+GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
+GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
+GOMAKE_MODE ?=
+$(call cdebug,using GOMAKE_PATH [$(GOMAKE_PATH)])
+$(call cdebug,using GOMAKE_CONFIG [$(GOMAKE_CONFIG)])
+$(call cdebug,using GOMAKE_MODE [$(GOMAKE_MODE)])
 
-# Setup default browser command to open coverage reports.
-BROWSER ?= xdg-open
-# Setup default verions used for building, releasing, and publishing.
-VERSION ?= latest
-IMAGE_VERSION ?= $(VERSION)
-ifeq ($(wildcard VERSION),VERSION)
-  BUILD_VERSION := v$(shell cat VERSION)
-else
-  BUILD_VERSION ?= $(VERSION)
-endif
+# Function to install the go-make version - if not available.
+gomake-install = if [ ! -d "$(GOMAKE_PATH)" ] && \
+	! [[ "$(GOMAKE_MAKEFILE)" =~ .*/config/Makefile.base ]]; then \
+		$(GO) install $(GOMAKE_DEP) >/dev/null 2>&1 && \
+		$(call emsg,info,installing go-make [$(GOMAKE_DEP)]) || \
+		$(call emsg,failure,installing go-make [$(GOMAKE_DEP)]); \
+	fi
+# Call to ensure that we can find default config files.
+$(shell $(gomake-install))
 
-mod-readonly = $(call xifeq,$(IMAGE_VERSION),latest,,-mod=readonly)
+# Function to find files or return a fallback files.
+find-fallback = $(if $(strip $(1)),$(strip $(1)),$(strip $(2)))
+# Function to search for multiple files for inclusion.
+find-make = $(call find-fallback,$(wildcard $(if \
+		$(findstring :no-config:,:$(GOMAKE_MODE):),, \
+		$(DIR_CONFIG)/$(1) $(DIR_CONFIG)$(DIR_REAL)/$(1)) $(1)), \
+	$(firstword $(wildcard $(GOMAKE_CONFIG)/$(1) $(GOMAKE_PATH)/$(1))))
 
-# Setup default variables for building, linking, and installing.
-LDFLAGS ?=
-LD_FLAGS ?= $(strip $(LDFLAGS))
-LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
-TESTFLAGS ?=
-TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
-BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
-BUILD_FLAGS ?=  $(strip $(mod-readonly) -buildvcs=auto -trimpath $(BUILDFLAGS))
-INSTALLFLAGS ?=
-INSTALL_FLAGS ?= $(strip $(mod-readonly) -buildvcs=auto $(INSTALLFLAGS))
+# Setup all default makefiles to be included.
+MAKEFILE ?= $(call find-make,Makefile)
+MAKEFILE_VARS ?= $(call find-make,Makefile.vars)
+MAKEFILE_EXTS ?= $(call find-make,Makefile.ext)
+$(call cdebug,using MAKEFILE_VARS [$(MAKEFILE_VARS)])
+$(call cdebug,using MAKEFILE_EXTS [$(MAKEFILE_EXTS)])
+
+# Include makefiles with custom variables.
+include $(MAKEFILE_VARS)
+
+# Function to search for default go-make config files.
+find-config = $(firstword $(wildcard $(1) $(DIR_CONFIG)$(DIR_REAL)/$(1) \
+	$(DIR_CONFIG)/$(1) $(GOMAKE_CONFIG)/$(1) $(GOMAKE_PATH)/$(1)))
+
+# Setup dynamic config files to be used.
+FILE_GOLANGCI ?= $(call find-config,.golangci.yaml)
+FILE_MARKDOWN ?= $(call find-config,.markdownlint.yaml)
+FILE_GITLEAKS ?= $(call find-config,.gitleaks.toml)
+FILE_REVIVE ?= $(call find-config,revive.toml)
+FILE_CODACY ?= $(call find-config,.codacy.yaml)
+FILE_HEADER ?=
+
+# Setup default files with special meaning.
+FILE_IMAGE ?= Dockerfile
+FILE_DEEPCOPY ?= zz_generated.deepcopy.go
 
 
 # Function to ensure compatibility of gawk and mawk.
@@ -179,6 +237,10 @@ ifneq ($(awk-gensub),true)
 else
   awk-gensub =
 endif
+awk-color = $(awk-gensub) \
+	function color(str) { \
+	  return gensub("\\\\(033|x1b)", "\x1b", "g", str) \
+	} \
 
 
 # Setup go to use desired and consistent go versions.
@@ -278,40 +340,18 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 	  } \
 	}' <<<"$(1)")
 
-
-# Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.142
-GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
-GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
-GOMAKE_MAKEFILES := $(GOMAKE_MAKEFILE) \
-	$(wildcard Makefile.vars) $(wildcard Makefile.ext)
-GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
-GOMAKE_MODE ?=
-$(call cdebug,using GOMAKE_CONFIG [$(GOMAKE_CONFIG)])
-$(call cdebug,using GOMAKE_MODE [$(GOMAKE_MODE)])
-
 # Function to determine the actual go-make version.
 gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
 		$(call go-check-module,go-make,github.com/tkrop/go-make); \
 	else echo "(devel)"; fi)
-# Function to install the go-make version - if not available.
-gomake-install = if [ ! -d "$(GOMAKE_PATH)" ] && \
-	! [[ "$(GOMAKE_MAKEFILE)" =~ .*/config/Makefile.base ]]; then \
-		$(GO) install $(GOMAKE_DEP) >/dev/null 2>&1 && \
-		$(call emsg,info,installing go-make [$(GOMAKE_DEP)]) || \
-		$(call emsg,failure,installing go-make [$(GOMAKE_DEP)]); \
-	fi
-# Function to search for default go-make config files.
-gomake-search = $(firstword $(wildcard $(1)) $(wildcard $(GOMAKE_CONFIG)/$(1) \
-	$(wildcard $(GOMAKE_PATH)/$(1))))
-# Call to ensure that we can find default config files.
 
-$(shell $(gomake-install))
-
-K8S_CODEGEN_VERSION ?= v0.32.3 # https://github.com/kubernetes/code-generator/tags
-GOLANGCI_VERSION ?= v1.64.7 # https://github.com/golangci/golangci-lint/tags
-# Version determined by Codacy: https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
-REVIVE_VERSION ?= v1.3.3 # https://github.com/mgechev/revive/tags
+# https://github.com/kubernetes/code-generator/tags
+K8S_CODEGEN_VERSION ?= v0.33.3
+# https://github.com/golangci/golangci-lint/tags
+GOLANGCI_VERSION ?= v1.64.8
+# https://github.com/mgechev/revive/tags
+# https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
+REVIVE_VERSION ?= v1.7.0
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
@@ -351,21 +391,6 @@ IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
 
-
-# Setup default files with special meaning.
-FILE_IMAGE ?= Dockerfile
-FILE_DEEPCOPY ?= zz_generated.deepcopy.go
-
-# Setup dynamic config files to be used.
-FILE_MAKE ?= $(call gomake-search,Makefile)
-FILE_VARS ?= $(call gomake-search,Makefile.vars)
-FILE_GOLANGCI ?= $(call gomake-search,.golangci.yaml)
-FILE_MARKDOWN ?= $(call gomake-search,.markdownlint.yaml)
-FILE_GITLEAKS ?= $(call gomake-search,.gitleaks.toml)
-FILE_REVIVE ?= $(call gomake-search,revive.toml)
-FILE_CODACY ?= $(call gomake-search,.codacy.yaml)
-FILE_HEADER ?=
-
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
 DELIVERY_REGEX ?= (cdp-runtime\/go-|go-version: \^?)[0-9.]*
@@ -381,31 +406,9 @@ GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
 GITHOST := $(word 1,$(subst /, ,$(GITURL)))
 GITOWNER := $(word 2,$(subst /, ,$(GITURL)))
 GITREPO := $(word 3,$(subst /, ,$(GITURL)))
+GITNAME := $(GITOWNER)-$(GITREPO)
 $(call cdebug,using GITURL [$(GITURL)])
 
-TEAM ?= $(shell \
-	if [ -f ".zappr.yaml" ]; then \
-	  grep "X-Zalando-Team:" .zappr.yaml | \
-	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
-	else echo "${GITOWNER}"; fi)
-
-# Setup default container image name and host.
-IMAGE_CMD ?= $(call find-cmd-image)
-ifdef IMAGE_NAME
-  ifneq ($(words $(subst /, ,$(IMAGE_NAME))),3)
-    $(call cerror,invalid base image name [$(IMAGE_NAME)] \
-      - image name format [repo/team/name]!)
-  endif
-  IMAGE_HOST := $(word 1,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_TEAM := $(word 2,$(subst /, ,$(IMAGE_NAME)))
-  IMAGE_ARTIFACT := $(word 3,$(subst /, ,$(IMAGE_NAME)))
-else
-  IMAGE_HOST ?= pierone.stups.zalan.do
-  IMAGE_TEAM ?= $(TEAM)
-  IMAGE_ARTIFACT ?= $(GITREPO)
-endif
-IMAGE := $(IMAGE_HOST)/$(IMAGE_TEAM)/$(IMAGE_ARTIFACT):$(IMAGE_VERSION)
-$(call cdebug,using IMAGE [$(IMAGE)])
 
 # Function to determine the image name from the image file name.
 image-name = echo -e "$(1)" | awk '$(awk-gensub) \
@@ -431,6 +434,26 @@ image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	    }; }; close(cmd); \
 	  }; \
 	};'
+
+#
+# Legacy (Zalando-specific) team and image setup.
+#
+export ZALLY_URL ?= https://infrastructure-api-linter.zalandoapis.com
+export ZALLY_TOKEN ?=  $$(ztoken)
+export TEAM ?= $(shell \
+	if [ -f ".zappr.yaml" ]; then \
+	  grep "X-Zalando-Team:" .zappr.yaml | \
+	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
+	else echo "${GITOWNER}"; fi)
+export IMAGE_NAME ?= pierone.stups.zalan.do/$(TEAM)/$(GITREPO)
+
+# Setup default container image from image name.
+ifneq ($(words $(subst :, ,$(subst /, ,$(IMAGE_NAME)))),3)
+  $(call cerror,invalid base image name [$(IMAGE_NAME)] \
+    - image name format [repo/team/name]!)
+endif
+IMAGE := $(IMAGE_NAME):$(IMAGE_VERSION)
+$(call cdebug,using IMAGE [$(IMAGE)])
 
 # Setup default image variables.
 IMAGE_FILES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
@@ -467,18 +490,22 @@ endif
 CODACY_PROVIDER ?= ghe
 CODACY_USER ?= $(GITOWNER)
 CODACY_PROJECT ?= $(GITREPO)
-CODACY_API_BASE_URL ?= https://codacy.bus.zalan.do
+CODACY_API_BASE_URL ?= https://api.codacy.com
 CODACY_CLIENTS ?= aligncheck
 CODACY_BINARIES ?= gosec staticcheck
 ifdef CODACY_JRE_HOME
   JRE_HOME := $(CODACY_JRE_HOME)
 endif
-CODACY_GOSEC_VERSION ?= 0.4.5
+# https://github.com/codacy/codacy-gosec/tags
+CODACY_GOSEC_VERSION ?= 1.0.0
 CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
-CODACY_STATICCHECK_VERSION ?= 3.0.12
+# https://github.com/codacy/codacy-staticcheck/tags
+CODACY_STATICCHECK_VERSION ?= 3.0.18
 CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
-CODACY_ANALYSIS-CLI_VERSION ?= 7.9.13
-CODACY_ANALYSIS-CLI_EXTENSION ?= assembly-$(CODACY_ANALYSIS-CLI_VERSION).jar
+# https://github.com/codacy/codacy-analysis-cli/tags
+CODACY_ANALYSIS-CLI_VERSION ?= 7.9.25
+CODACY_ANALYSIS-CLI_EXTENSION ?= assembly.jar
+# https://github.com/codacy/codacy-coverage-reporter
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
 	CODACY_REPORTER_VERSION ?= 13.13.13
 else
@@ -513,9 +540,9 @@ TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
 TARGETS_CLEAN ?= clean-build
 TARGETS_UPDATE ?= update-go update-deps update-make
 
-INIT_MAKE ?= $(notdir $(FILE_MAKE) $(FILE_VARS) $(FILE_MARKDOWN) \
+INIT_MAKE ?= $(notdir $(MAKEFILE) $(MAKEFILE_VARS) $(FILE_MARKDOWN) \
     $(FILE_CODACY) $(FILE_REVIVE))
-UPDATE_MAKE ?=  $(notdir $(FILE_MAKE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
+UPDATE_MAKE ?=  $(notdir $(MAKEFILE) $(FILE_GOLANGCI) $(FILE_MARKDOWN) \
     $(FILE_GITLEAKS) $(FILE_CODACY) $(FILE_REVIVE))
 
 
@@ -668,7 +695,7 @@ all-clean:: clean clean-run all
 commit:: $(TARGETS_COMMIT)
 #@ show short cut for show-help.
 help:: show-help
-##@ executes the given arguments as commands (for testing).
+# executes the given arguments as commands (for testing).
 call::;	@$(ARGS)
 
 
@@ -677,23 +704,23 @@ $(DIR_TEMP) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 
 
 ## Make-Support: targets to support user understanding the functionality.
-show-help = awk ' \
+show-help = awk ' $(awk-color) \
 	BEGIN { \
 	  printf("\n$(call msg,topic,Usage:,) $(call msg,cmd,(go-)make, \
 		) $(call msg,target,<target>,)\n") \
 	} \
-	/^\#\# .*/ { \
+	/^\#\#/ { \
 	  if (i = index($$0, ":")) { \
 	    printf("\n$(call msg,topic,%s,)%s\n", \
-	      substr($$0, 4, i - 4), substr($$0, i)) \
+	      color(substr($$0, 4, i - 4)), color(substr($$0, i))) \
 	  } else { \
-	    printf("\n$(call msg,topic,%s,)\n", substr($$0, 4)) \
+	    print color(substr($$0, 4)) \
 	  } next \
 	} \
 	/^\#@ / { \
 	  if (i = index($$0, ":")) { \
 	    printf("  $(call msg,target,%-25s,) %s\n", \
-	      substr($$0, 4, i - 4), substr($$0, i + 2)) \
+	      color(substr($$0, 4, i - 4)), color(substr($$0, i + 2))) \
 	  } else { line = substr($$0, 4) } next \
 	} \
 	/^[a-zA-Z_0-9?-]+:/ { \
@@ -703,7 +730,7 @@ show-help = awk ' \
 	      target = target " " substr(line, 1, i - 1); \
 	      line = substr(line, i + 3) \
 	    } \
-	    printf("  $(call msg,target,%-25s,) %s\n", target, line); \
+	    printf("  $(call msg,target,%-25s,) %s\n", target, color(line)); \
 	    line = "" \
 	  } \
 	}'
@@ -724,7 +751,7 @@ show-targets = awk -v RS= -F: ' \
 	  if ($$1 !~ "^[\#./]") { print $$1 } \
 	}' | LC_ALL=C sort --unique
 
-$(DIR_TEMP)/targets: $(DIR_TEMP) $(GOMAKE_MAKEFILES)
+$(DIR_TEMP)/targets: $(DIR_TEMP) $(MAKEFILE_LIST)
 	@$(call emsg,info,updating targets [$(DIR_TEMP)/targets]); \
 	$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
 	  --question --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null | \
@@ -732,16 +759,16 @@ $(DIR_TEMP)/targets: $(DIR_TEMP) $(GOMAKE_MAKEFILES)
 
 #@ shows this short extracted help about main target families.
 show-help::
-	@cat $(MAKEFILE_LIST) | $(show-help) || true;
+	@cat "$(MAKEFILE_LIST)" | $(show-help) || true;
 #@ shows all supported (customizable) variable (with defaults).
 show-vars:
-	@cat $(GOMAKE_MAKEFILE) | $(show-vars) || true;
+	@cat "$(GOMAKE_MAKEFILE)" | $(show-vars) || true;
 #@ shows all supported targets (without prerequesites).
 show-targets: $(DIR_TEMP)/targets
-	@cat $(DIR_TEMP)/targets || true;
+	@cat "$(DIR_TEMP)/targets" || true;
 #@ shows the raw base makefile as implemented.
 show-raw:
-	@cat $(GOMAKE_MAKEFILE) || true;
+	@cat "$(GOMAKE_MAKEFILE)" || true;
 #@ shows the effective makefile as evaluated by make.
 show-make:
 	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
@@ -1040,7 +1067,7 @@ $(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
 	@HEADER="$(FILE_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
 	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
 	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
-	    ! -name $(FILE_DEEPCOPY) -printf '%T@ %p\n' 2>/dev/null | \
+	    ! -name "$(FILE_DEEPCOPY)" -printf '%T@ %p\n' 2>/dev/null | \
 	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
 	  $(call emsg,info,generating apis skipped [$${BPKG}]); exit 0; \
 	else $(call emsg,info,generating apis [$${BPKG}]); fi; \
@@ -1215,37 +1242,6 @@ $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
 
-TAG ?= latest
-
-#@ test building in continuous integration container.
-test-cdp: test-cdp-go
-TEST_CDP_TARGETS ?= test-cdp-base test-cdp-go test-cdp-java
-$(TEST_CDP_TARGETS):: test-cdp-%:
-	@$(call emsg,info,testing in cdp container [$*]); \
-	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
-		aborting - no docker command [$*]!); exit 1; fi; \
-	CDP_IMAGE="pierone.stups.zalan.do/cdp-runtime/$*:$(TAG)"; \
-	if tty -s; then TTY="--tty"; fi; DIRUSER=root; \
-	DIR=$$(mktemp --directory); mkdir --parents $${DIR}/.ssh; \
-	( cat $${HOME}/.gitconfig; \
-	  echo -e '[safe]\n\tdirectory = /workspace' \
-	  echo -e '[safe]\n\tdirectory = /go-make' \
-	) >> $${DIR}/.gitconfig; \
-	cp ${HOME}/.ssh/{id_*,config,known_hosts} $${DIR}/.ssh; \
-	sudo chown --recursive root:root $${DIR}; \
-	trap "sudo rm --force --recursive $${DIR}" EXIT INT TERM; \
-	$(IMAGE_CMD) run $${TTY} --interactive --rm \
-	  --privileged --network host --workdir="/workspace" \
-	  --env SSH_AUTH_SOCK=/ssh-agent \
-	  --mount type=bind,source=$${SSH_AUTH_SOCK},target=/ssh-agent \
-	  --volume=/var/run/docker.sock:/var/run/docker.sock \
-	  --volume=$${DIR}/.gitconfig:/$${DIRUSER}/.gitconfig \
-	  --volume=$${DIR}/.ssh:/$${DIRUSER}/.ssh \
-	  --volume=$(dir $(GOMAKE_CONFIG)):/go-make \
-	  --volume=/tmp:/tmp \
-	  --volume=$${PWD}:/workspace \
-	  $${CDP_IMAGE} /bin/bash "$${ARGS[@]}";
-
 #@ execute a kind of self-test running the main targets.
 test-self::  clean-all all-clean clean-all install-all update-all? update-all
 	@$(call emsg,success,test-self finished successfully!);
@@ -1290,7 +1286,7 @@ LINT_EXPERT ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_BASELINE) \
 	$(filter-out $(LINT_FILTER),$(LINTERS_EXPERT))))
 
 ifeq ($(shell ls $(FILE_GOLANGCI) 2>/dev/null), $(FILE_GOLANGCI))
-  LINT_CONFIG := --config $(FILE_GOLANGCI)
+  LINT_CONFIG := --config "$(FILE_GOLANGCI)"
 endif
 
 LINT_MIN := --enable $(LINT_MINIMUM) --disable $(LINT_DISABLED)
@@ -1345,10 +1341,10 @@ lint-all:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_A
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
-	@LINT_START=$$(awk '($$0 ~ "^linters:.*"){print NR-1}' $(FILE_GOLANGCI)); \
+	@LINT_START=$$(awk '($$0 ~ "^linters:.*"){print NR-1}' "$(FILE_GOLANGCI)"); \
 	LINT_STOP=$$(awk '(start && $$0 ~ "^[^ ]+:$$"){print NR; start=0} \
-	  ($$0 ~ "^linters:.*"){start=1}' $(FILE_GOLANGCI)); \
-	(sed --silent '1,'$${LINT_START}'p' $(FILE_GOLANGCI); \
+	  ($$0 ~ "^linters:.*"){start=1}' "$(FILE_GOLANGCI)"); \
+	(sed --silent '1,'$${LINT_START}'p' "$(FILE_GOLANGCI)"; \
 	echo -e "linters:\n  enable:"; \
 	for LINTER in "# List of min-set linters (min)" $(LINTERS_MINIMUM) \
 		"# List of base-set linters (base)" $(LINTERS_BASELINE) \
@@ -1360,7 +1356,7 @@ lint-config::
 	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
-	echo; sed --silent $${LINT_STOP}',$$p' $(FILE_GOLANGCI)) | \
+	echo; sed --silent $${LINT_STOP}',$$p' "$(FILE_GOLANGCI)") | \
 	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} '$(awk-gensub) \
 	  ((start == 2) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
@@ -1455,8 +1451,7 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	  ( $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_UPLOAD) | \
 	    $(GOBIN)/codacy-$*-$${VERSION} | \
 	    curl "$${LARGS[@]}" --data @- "$${BASE}/issuesRemoteResults"; echo; \
-	    curl "$${LARGS[@]}" "$${BASE}/resultsFinal"; echo ) || \
-	      $(CODACY_CONTINUE); \
+	    curl "$${LARGS[@]}" "$${BASE}/resultsFinal"; echo ) || $(CODACY_CONTINUE); \
 	else \
 	  echo $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL); \
 	  $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL) || $(CODACY_CONTINUE); \
@@ -1464,7 +1459,7 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 
 #@ execute revive linter (go-files).
 lint-revive:: init-code install-revive
-	revive -formatter friendly -config=revive.toml $(SOURCES) || $(CODACY_CONTINUE);
+	revive -formatter friendly -config="$(FILE_REVIVE)" $(SOURCES) || $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
 lint-markdown:: init-code $(GOBIN)/markdownlint
@@ -1530,12 +1525,11 @@ lint-gocyclo lint-gocognit:: lint-%: install-%
 
 #@ execute zally api-linter to find API issues (yaml-files).
 lint-apis:: install-zally
-	@LINTER="https://infrastructure-api-linter.zalandoapis.com"; \
-	if ! curl --silent $${LINTER}; then \
-	  $(call emsg,warning,API linter not available); exit 0; \
+	@if ! curl --silent "$(ZALLY_URL)"; then \
+	  $(call emsg,warning,API linter not available [$(ZALLY_URL)]); exit 0; \
 	else $(call emsg,info,linting [zally]); fi; \
-	ARGS=("--linter-service" "$${LINTER}"); \
-	if command -v ztoken > /dev/null; then ARGS+=("--token" "$$(ztoken)"); fi; \
+	ARGS=("--linter-service" "$(ZALLY_URL)"); \
+	if command -v ztoken > /dev/null; then ARGS+=("--token" "$(ZALLY_TOKEN)"); fi; \
 	if [ -z "$(filter %.yaml,$(ARGS))" ]; then \
 	   FILES="$$(find zalando-apis -name "*.yaml" 2>/dev/null)"; \
 	else FILES="$(filter %.yaml,$(ARGS))"; fi; \
@@ -1778,8 +1772,8 @@ run-db:: $(DIR_RUN)
 	  continuing - no docker command [postgres]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
 	  $(call emsg,info,port allocated - using existing [postgres]); exit 0; fi; \
-	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-db 2>/dev/null || ( \
-	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-db \
+	$(IMAGE_CMD) start $(GITNAME)-db 2>/dev/null || ( \
+	$(IMAGE_CMD) run --detach --tty --name $(GITNAME)-db \
 	  --network host --publish $(HOST):$(DB_PORT):5432 \
 	  --env POSTGRES_USER="$(DB_USER)" \
 	  --env POSTGRES_PASSWORD="$(DB_PASSWORD)" \
@@ -1789,12 +1783,12 @@ run-db:: $(DIR_RUN)
         -c 'pg_stat_statements.track=all' \
 	  $(ARGS) 2>&1 & \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
-	  $(IMAGE_ARTIFACT)-db 2>/dev/null)" == "true" ]; \
+	  $(GITNAME)-db 2>/dev/null)" == "true" ]; \
 	do $(call emsg,info,waiting for db container); sleep 1; done && \
-	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-db \
+	until $(IMAGE_CMD) exec $(GITNAME)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
 	do $(call emsg,info,waiting for db service); sleep 1; done) | \
-	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-db;
+	tee -a $(DIR_RUN)/$(GITNAME)-db;
 
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
@@ -1807,36 +1801,36 @@ run-aws:: $(DIR_RUN)
 	  $(call emsg,info,ports allocated - using existing [aws/localstack]); \
 	  $(call run-setup-aws) || exit 1 && exit 0 ; \
 	fi; \
-	$(IMAGE_CMD) start ${IMAGE_ARTIFACT}-aws 2>/dev/null || ( \
-	$(IMAGE_CMD) run --detach --tty --name ${IMAGE_ARTIFACT}-aws \
+	$(IMAGE_CMD) start $(GITNAME)-aws 2>/dev/null || ( \
+	$(IMAGE_CMD) run --detach --tty --name $(GITNAME)-aws \
 	  --network host --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
-	  $(IMAGE_ARTIFACT)-aws 2>/dev/null)" == "true" ]; \
+	  $(GITNAME)-aws 2>/dev/null)" == "true" ]; \
 	do $(call emsg,info,waiting for aws container); sleep 1; done && \
-	until $(IMAGE_CMD) exec $(IMAGE_ARTIFACT)-aws \
+	until $(IMAGE_CMD) exec $(GITNAME)-aws \
 	  curl --silent http://$(HOST):4566; \
 	do $(call emsg,info,waiting for aws service); sleep 1; done && \
 	$(call run-setup-aws) || exit 1) | \
-	tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-aws.log;
+	tee -a $(DIR_RUN)/$(GITNAME)-aws.log;
 
 #@ run-*: start the matched command using the native binary.
 $(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
 	  $(DIR_BUILD)/$* $(ARGS) 2>&1 | \
-	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
+	  tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-go-*: start the matched command using go run.
 $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
 	  $(GO) run cmd/$*/main.go $(ARGS) 2>&1 | \
-	  tee -a $(DIR_RUN)/$(IMAGE_ARTIFACT)-$*.log; \
+	  tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
 	exit $${PIPESTATUS[0]};
 
 #@ run-image-*: start the matched command via the container images.
 $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
-	@NAME="$(IMAGE_ARTIFACT)-$*"; \
+	@NAME="$(GITNAME)-$*"; \
 	$(call emsg,info,running image [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
 		aborting - no docker command [$${NAME}]!); exit 1; fi; \
@@ -1855,7 +1849,7 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 run-clean:: $(TARGETS_RUN_CLEAN)
 #@ run-clean-*: kill and remove the container image of the matched command.
 $(TARGETS_RUN_CLEAN):: run-clean-%:
-	@NAME="$(IMAGE_ARTIFACT)-$*"; \
+	@NAME="$(GITNAME)-$*"; \
 	$(call emsg,info,cleaning container [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
 	  aborting - no docker command [$${NAME}]!); exit 0; fi; \
@@ -2020,7 +2014,7 @@ $(TARGETS_UPDATE_MAKE):: update/%:
 	  $(call emsg,info,updating [$${FILE}] (untracked)); \
 	elif [ -z "$$(diff "$${CONFIG}/$${FILE}" "$${DIR}/$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (skipped)); \
-	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
+	elif [ "$${FILE}" == "$(MAKEFILE)" ] && \
 		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")" ]; then \
 	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" ] && \
@@ -2043,7 +2037,7 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	elif [ -n "$$($(GIT) diff $${DIR}/$${FILE})" -a \
 	     "$(ARGS)" != "current" ]; then \
 	  $(call emsg,warning,updating [$${FILE}] (blocked)); \
-	elif [ "$${FILE}" == "$(FILE_MAKE)" ] && \
+	elif [ "$${FILE}" == "$(MAKEFILE)" ] && \
 		[ -z "$$(grep -E "github.com/tkrop/go-make@v[0-9.]+$$" "$${FILE}")"]; then \
 	  $(call emsg,info,updating [$${FILE}] (aborted)); \
 	else $(call emsg,info,updating [$${FILE}] (updated)); fi;
@@ -2059,33 +2053,59 @@ $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
 
 
 ## Custom: custom extension targets.
-# Include custom targets to extend scripts.
-ifneq ("$(wildcard Makefile.ext)","")
-  include Makefile.ext
-endif
+# Include makefiles with custom targets.
+include $(MAKEFILE_EXTS)
 
+## Debug: targets to debug the build environment and project.
+#@ debug the make environment variables.
 debug-make::
 	@echo 'PATH $(PATH)'; \
 	echo 'SHELL $(SHELL)'; \
 	echo "BASH $(shell echo "$${0} - $${BASH_VERSION}")"; \
-	echo 'AWK $(shell awk --version | head -n 1)'; \
-	echo 'DIR_TEMP $(DIR_TEMP))';
+	echo 'AWK $(shell echo | awk -W version | head -n 1)'; \
+	echo 'MAKEFILE_EXTS $(MAKEFILE_EXTS)'; \
+	echo 'MAKEFILE_VARS $(MAKEFILE_VARS)'; \
 
+#@ deubg the bash environment variables.
 debug-bash::
 	@echo "PATH $${PATH}"; \
 	echo "SHELL $${SHELL}"; \
 	echo "BASH $${0} - $${BASH_VERSION}"; \
-	echo "AWK $$(awk --version | head -n 1)"; \
+	echo "AWK $$(echo | awk -W version | head -n 1)"; \
 
+#@ debug the directory environment variables.
+debug-dirs::
+	@echo 'DIR_REAL $(DIR_REAL)'; \
+	echo 'DIR_GIT $(DIR_GIT)'; \
+	echo 'DIR_BUILD $(DIR_BUILD)'; \
+	echo 'DIR_RUN $(DIR_RUN)'; \
+	echo 'DIR_CRED $(DIR_CRED)'; \
+	echo 'DIR_CONFIG $(DIR_CONFIG)'; \
+	echo 'DIR_TEMP $(DIR_TEMP)'; \
+
+#@ debug the file environment variables.
+debug-files::
+	@echo 'FILE_GOLANGCI $(FILE_GOLANGCI)'; \
+	echo 'FILE_MARKDOWN $(FILE_MARKDOWN)'; \
+	echo 'FILE_GITLEAKS $(FILE_GITLEAKS)'; \
+	echo 'FILE_REVIVE $(FILE_REVIVE)'; \
+	echo 'FILE_CODACY $(FILE_CODACY)'; \
+	echo 'FILE_IMAGE $(FILE_IMAGE)'; \
+	echo 'FILE_DEEPCOPY $(FILE_DEEPCOPY)'; \
+	echo 'FILE_HEADER $(FILE_HEADER)'; \
+
+#@ debug the source and module environment variables.
 debug-sources::
 	@echo 'SOURCES $(SOURCES)'; \
 	echo 'MODULES $(MODULES)'; \
 
+#@ debug then generated directories, sources, and targets.
 debug-gen::
 	@echo 'GEN_DIRS $(GEN_DIRS)'; \
 	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
 	echo 'GEN_TARGETS $(GEN_TARGETS)';
 
+#@ debug the command environment variables.
 debug-commands::
 	@echo 'COMMANDS $(COMMANDS)'; \
 	echo 'COMMANDS_REGEX $(COMMANDS_REGEX)'; \
@@ -2093,12 +2113,14 @@ debug-commands::
 	echo 'COMMANDS_GO $(COMMANDS_GO)'; \
 	echo 'COMMANDS_PKG $(COMMANDS_PKG)';
 
+#@debug the mock environment variables.
 debug-mocks::
 	@echo 'MOCKS $(MOCKS)'; \
 	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
 	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
 	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)';
 
+#@ debug the image environment variables.
 debug-image::
 	@echo 'IMAGE $(IMAGE)'; \
 	echo 'IMAGE_CMD $(IMAGE_CMD)'; \
@@ -2107,6 +2129,7 @@ debug-image::
 	echo 'IMAGE_NAMES $(IMAGE_NAMES)'; \
 	echo 'IMAGE_DEPS $(shell $(call image-build-deps,$(IMAGE_NAMES)))'; \
 
+#@ debug the target environment variables.
 debug-targets::
 	@echo 'TARGETS_ALL $(TARGETS_ALL)'; \
 	echo 'TARGETS_INIT $(TARGETS_INIT)'; \
@@ -2116,29 +2139,35 @@ debug-targets::
 	echo 'TARGETS_CLEAN $(TARGETS_CLEAN)'; \
 	echo 'TARGETS_UPDATE $(TARGETS_UPDATE)';
 
+#@ debug the init target environment variables.
 debug-targets-init::
 	@echo 'TARGETS_INIT $(TARGETS_INIT)'; \
 	echo 'TARGETS_INIT_ALL $(TARGETS_INIT_ALL)'; \
 	echo 'TARGETS_INIT_MAKE $(TARGETS_INIT_MAKE)'; \
 	echo 'TARGETS_INIT_CODACY $(TARGETS_INIT_CODACY)';
 
+#@ debug the test target environment variables.
 debug-targets-test::
 	@echo 'TARGETS_TEST $(TARGETS_TEST)'; \
 	echo 'TARGETS_TEST_INIT $(TARGETS_TEST_INIT)';
 
+#@ debug the lint target environment variables.
 debug-targets-lint::
 	@echo 'TARGETS_LINT $(TARGETS_LINT)'; \
 	echo 'TARGETS_LINT_CODACY_CLIENTS $(TARGETS_LINT_CODACY_CLIENTS)'; \
 	echo 'TARGETS_LINT_CODACY_BINARIES $(TARGETS_LINT_CODACY_BINARIES)';
 
+#@ debug the build target environment variables.
 debug-targets-build::
 	@echo 'TARGETS_BUILD $(TARGETS_BUILD)'; \
 	echo 'TARGETS_BUILD_LINUX $(TARGETS_BUILD_LINUX)';
 
+#@ debug the image target environment variables.
 debug-targets-image::
 	@echo 'TARGETS_IMAGE_BUILD $(TARGETS_IMAGE_BUILD)'; \
 	echo 'TARGETS_IMAGE_PUSH $(TARGETS_IMAGE_PUSH)'; \
 
+#@ debug the install target environment variables.
 debug-targets-install::
 	@echo 'TARGETS_INSTALL $(TARGETS_INSTALL)'; \
 	echo 'TARGETS_INSTALL_GO $(TARGETS_INSTALL_GO)'; \
@@ -2146,6 +2175,7 @@ debug-targets-install::
 	echo 'TARGETS_INSTALL_NPM $(TARGETS_INSTALL_NPM)'; \
 	echo 'TARGETS_INSTALL_ALL $(TARGETS_INSTALL_ALL)';
 
+#@ debug the uninstall target environment variables.
 debug-targets-uninstall::
 	@echo 'TARGETS_UNINSTALL $(TARGETS_UNINSTALL)'; \
 	echo 'TARGETS_UNINSTALL_GO $(TARGETS_UNINSTALL_GO)'; \
@@ -2155,17 +2185,20 @@ debug-targets-uninstall::
 	echo 'TARGETS_UNINSTALL_ALL $(TARGETS_UNINSTALL_ALL)'; \
 	echo 'GOMAKE_VERSION $(gomake-version)';
 
+#@ debug the run target environment variables.
 debug-targets-run::
 	@echo 'TARGETS_RUN $(TARGETS_RUN)'; \
 	echo 'TARGETS_RUN_GO $(TARGETS_RUN_GO)'; \
 	echo 'TARGETS_RUN_IMAGE $(TARGETS_RUN_IMAGE)'; \
 	echo 'TARGETS_RUN_CLEAN $(TARGETS_RUN_CLEAN)';
 
+#@ debug the clean target environment variables.
 debug-targets-clean::
 	@echo 'TARGETS_CLEAN $(TARGETS_CLEAN)'; \
 	echo 'TARGETS_CLEAN_ALL $(TARGETS_CLEAN_ALL)'; \
 	echo 'TARGETS_CLEAN_RUN $(TARGETS_CLEAN_RUN)';
 
+#@ debug the update target environment variables.
 debug-targets-update::
 	@echo 'TARGETS_UPDATE $(TARGETS_UPDATE)'; \
 	echo 'TARGETS_UPDATE? $(TARGETS_UPDATE?)'; \
