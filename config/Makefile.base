@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.143
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.144
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -759,7 +759,7 @@ $(DIR_TEMP)/targets: $(DIR_TEMP) $(MAKEFILE_LIST)
 
 #@ shows this short extracted help about main target families.
 show-help::
-	@cat "$(MAKEFILE_LIST)" | $(show-help) || true;
+	@cat $(MAKEFILE_LIST) | $(show-help) || true;
 #@ shows all supported (customizable) variable (with defaults).
 show-vars:
 	@cat "$(GOMAKE_MAKEFILE)" | $(show-vars) || true;
@@ -2052,10 +2052,6 @@ $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
 	@$(call go-install-module,$*,$(ARGS));
 
 
-## Custom: custom extension targets.
-# Include makefiles with custom targets.
-include $(MAKEFILE_EXTS)
-
 ## Debug: targets to debug the build environment and project.
 #@ debug the make environment variables.
 debug-make::
@@ -2207,3 +2203,8 @@ debug-targets-update::
 	echo 'TARGETS_UPDATE_MAKE? $(TARGETS_UPDATE_MAKE?)'; \
 	echo 'TARGETS_UPDATE_ALL $(TARGETS_UPDATE_ALL)'; \
 	echo 'TARGETS_UPDATE_ALL? $(TARGETS_UPDATE_ALL?)'; \
+
+
+## Custom: custom extension targets.
+# Include makefiles with custom targets.
+include $(MAKEFILE_EXTS)

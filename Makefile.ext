@@ -5,11 +5,11 @@ clean::
 	find -name "__debug_bin*" -exec rm -vrf {} \;;
 
 #@ bump version and update Makefiles to reflect change.
-bump:: version-bump
-version-bump version-bump-reset:: install
+bump:: version-bump install
+version-bump version-bump-reset::
 	@VERSION="$$(cat VERSION)"; \
 	sed -i -E "s|(github.com[/:]tkrop/go-make@v)[0-9.]+|\1$${VERSION}|" \
-	  $(FILE_MAKE) $(FILE_REVIVE) $(FILE_MARKDOWN) $(FILE_CODACY) \
+	  Makefile $(FILE_REVIVE) $(FILE_MARKDOWN) $(FILE_CODACY) \
 	  $$(find config -type f); \
 
 # customize commit target with config file synchronization check.
@@ -31,7 +31,7 @@ sync::
 	  fi; \
 	done;
 
-## Experiment:
+## Experiment: experimental targets.
 
 #@ test function for git message creation.
 test-git-message:: test-git-message-chore
