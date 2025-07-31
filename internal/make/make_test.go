@@ -468,6 +468,10 @@ var (
 	// target update message that changes between make 4.3 and make 4.4.
 	regexMakeTarget = regexp.MustCompile(
 		`(?m)(go-make/config/Makefile.base:).*('.*').*`)
+	// regexMakeOptions is used to match the `go-make` options output and to
+	// remove the options that have added between make 4.3 and make 4.4.
+	regexMakeOptions = regexp.MustCompile(
+		`(?m)(^--(shuffle|jobserver-style)=?)\n`)
 	// regexGoBinPath is used to match the `GOBIN`-path in the output and to
 	// replace it against a common prefix.
 	regexGoBinPath = regexp.MustCompile(
@@ -490,6 +494,7 @@ func FilterMakeOutput(str string) string {
 	str = regexGoBinPath.ReplaceAllString(str, "go/bin")
 	str = regexMakeTrace.ReplaceAllString(str, "$1")
 	str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
+	str = regexMakeOptions.ReplaceAllString(str, "")
 	return str
 }
 

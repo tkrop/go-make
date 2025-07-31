@@ -28,52 +28,113 @@ const (
 	// GoMakeTargetsFile provides the name of the file to store the go-make
 	// targets.
 	GoMakeTargetsFile = "${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets"
-	// CompleteTargetFunc provides the common target function to create
-	// go-make targets for completion.
-	CompleteTargetFunc = "_go-make-targets() {\n" +
-		"    if [ -z \"$(grep '$(GOBIN)/go-make show-targets' Makefile)\" ]; then\n" +
-		"        mkdir -p \"$(dirname ${1})\";\n" +
-		"        make --no-builtin-rules --no-builtin-variables \\\n" +
-		"            --print-data-base --question | awk -v RS=\"\" -F\":\" '\n" +
-		"        /(^|\\n)# Files(\\n|$)/,/(^|\\n)# Finished / {\n" +
-		"            if ($1 !~ \"^[#./]\") { print $1 }\n" +
-		"        }' | LC_ALL=C sort --unique | tee ${1};\n" +
-		"    else go-make show-targets; fi 2>/dev/null;\n" +
-		"};\n"
+	// GoMakeOptions provides the common options for the go-make command.
+	GoMakeOptions = "--async --completion= --config="
+	// GoMakeCompletion provides the common completion options for the
+	// go-make command.
+	GoMakeCompletion = "bash zsh"
+	// GoMakeOutputSync provides the common output sync options for the
+	// go-make command.
+	GoMakeOutputSync = "none line target recurse"
 	// CompleteFilterFunc provides the common filter function to filter
 	// go-make targets before applying completion.
 	CompleteFilterFunc = "_go-make-filter() {\n" +
-		"    sed -E -e \"s|^(${1}[^/-]*[-/]?)?.*|\\1|g\"" +
-		" | sort --unique;\n" +
+		"    awk -v prefix=^${1} -v pat=\"[-/]\" '\n" +
+		"        function min(x, y, l) {\n" +
+		"            while (substr(x, 0, l) != substr(y, 0, l)) { l--; }\n" +
+		"            return l;\n" +
+		"        }\n" +
+		"        function short(x, l) {\n" +
+		"            return (substr(x, 0, 2) == \"--\") ? x :\n" +
+		"                (m = match(substr(x, l+1), pat)) ? substr(x, 0, l+m) : x;\n" +
+		"        }\n" +
+		"        ($0 ~ prefix) {\n" +
+		"            if (n == 0) { array[n++] = $0; l = length($0); next; }\n" +
+		"            k = min(array[n-1], $0, l); y = short($0, k); a = 0;\n" +
+		"            for (i = n-1; i >= 0; i--) {\n" +
+		"                if (l != k) {\n" +
+		"                    x = short(array[i], k); array[i] = x;\n" +
+		"                } else { x = array[i]; }\n" +
+		"                if (x == y) { a++; }\n" +
+		"            }\n" +
+		"            if (a == 0) { array[n++] = y; }; l = k;\n" +
+		"         }\n" +
+		"         END {\n" +
+		"             for (key in array) print array[key];\n" +
+		"         }';\n" +
+		"};\n"
+	// CompleteShowTargetsFunc provides the common target function to create
+	// go-make targets for completion.
+	CompleteShowTargetsFunc = "_go-make-show-targets() {\n" +
+		"    if [ ${COMP_WORDS[0]} != \"go-make\" ]; then\n" +
+		"       go-make show-targets-make;\n" +
+		"    else go-make show-targets; fi 2>/dev/null;\n" +
+		"};\n"
+	// CompleteReadTargetsFunc provides the common function for reading targets
+	// from cache before executing the go-make show targets command.
+	CompleteReadTargetsFunc = "_go-make-read-targets() {\n" +
+		"    local FILE=\"${1}\"; local WORD=\"${2:-${WORD}}\"\n" +
+		"    if [ -f \"${FILE}\" ]; then cat \"${FILE}\";\n" +
+		"        ( _go-make-show-targets \"${FILE}\" >/dev/null & ) 2>/dev/null;\n" +
+		"    else _go-make-show-targets \"${FILE}\"; fi | _go-make-filter \"${WORD}\";\n" +
+		"};\n"
+	// CompleteCPUCountFunc provides the common function to get the number of
+	// CPUs available on the system used for parallel execution of `--jobs`.
+	CompleteCPUCountFunc = "_go-make-cpu-count() {\n" +
+		"    case \"$(uname -s)\" in\n" +
+		"        ( Linux* ) nproc;;\n" +
+		"        ( Darwin* ) sysctl -n hw.ncpu;;\n" +
+		"        (*) echo \"1\";;\n" +
+		"    esac;\n" +
 		"};\n"
 	// CompleteBash provides the bash completion setup for go-make.
 	CompleteBash = "### bash completion for go-make\n" +
-		"function " + CompleteTargetFunc +
 		"function " + CompleteFilterFunc +
+		"function " + CompleteShowTargetsFunc +
+		"function " + CompleteReadTargetsFunc +
+		"function " + CompleteCPUCountFunc +
 		"function __complete_go-make() {\n" +
-		"    local WORD=\"${COMP_WORDS[COMP_CWORD]}\";\n" +
-		"    local FILE=\"" + GoMakeTargetsFile + "\";\n" +
-		"    if [ -f \"${FILE}\" ]; then\n" +
-		"        local WORDS=\"$(cat \"${FILE}\" | _go-make-filter \"${WORD}\")\";\n" +
-		"        ( _go-make-targets \"${FILE}\" >/dev/null & ) 2>/dev/null;\n" +
-		"    else\n" +
-		"        local WORDS=\"$(_go-make-targets \"${FILE}\" | _go-make-filter \"${WORD}\")\";\n" +
+		"    if [ \"${COMP_WORDS[COMP_CWORD]}\" == \"=\" ]; then\n" +
+		"        WORD=\"${COMP_WORDS[COMP_CWORD-1]}=\";\n" +
+		"        COMP_WORDS=(\"${COMP_WORDS[@]:0:COMP_CWORD-1}\" \"${WORD}\");\n" +
+		"    elif [ \"${COMP_WORDS[COMP_CWORD-1]}\" == \"=\" ]; then\n" +
+		"        WORD=\"${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}\";\n" +
+		"        COMP_WORDS=(\"${COMP_WORDS[@]:0:COMP_CWORD-2}\" \"${WORD}\");\n" +
+		"    else local WORD=\"${COMP_WORDS[COMP_CWORD]}\"; fi;\n" +
+		"    case \"${WORD}\" in\n" +
+		"    ( --directory=* | --include-dir=* )\n" +
+		"        COMPREPLY=($(compgen -d -- \"${WORD#*=}\"));;\n" +
+		"    ( --file=* | --makefile=* | --config=* | --what-if=* )\n" +
+		"        COMPREPLY=($(compgen -df -- \"${WORD#*=}\"));;\n" +
+		"    ( --assume-new=* | --assume-old=* | --old-file=* | --new-file=* )\n" +
+		"        COMPREPLY=($(compgen -df -- \"${WORD#*=}\"));;\n" +
+		"    ( --completion=* )\n" +
+		"        COMPREPLY=($(compgen -W \"" + GoMakeCompletion + "\" -- \"${WORD#*=}\"));;\n" +
+		"    ( --output-sync=* )\n" +
+		"        COMPREPLY=($(compgen -W \"" + GoMakeOutputSync + "\" -- \"${WORD#*=}\"));;\n" +
+		"    ( --jobs=* )\n" +
+		"        COMPREPLY=($(compgen -W \"$(_go-make-cpu-count)\" -- \"${WORD#*=}\"));;\n" +
+		"    ( * )\n" +
+		"        if [ \"${COMP_WORDS[0]}\" == \"go-make\" ]; then\n" +
+		"            local FILE=\"" + GoMakeTargetsFile + ".go-make\";\n" +
+		"            local WORDS=\"" + GoMakeOptions + "\";\n" +
+		"        else local FILE=\"" + GoMakeTargetsFile + ".make\"; fi;\n" +
+		"        local WORDS=\"${WORDS} $(_go-make-read-targets \"${FILE}\" \"${WORD}\")\";\n" +
+		"        COMPREPLY=($(compgen -W \"${WORDS}\" -- \"${WORD}\"));;\n" +
+		"    esac;\n " +
+		"    if [ \"${#COMPREPLY[@]}\" == \"1\" ] &&\n" +
+		"        [[ \"${COMPREPLY[0]}\" == \"--\"*\"=\" ]]; then\n" +
+		"        COMPREPLY=(\"${COMPREPLY[0]}\" \"${COMPREPLY[0]}*\");\n" +
 		"    fi;\n" +
-		"    COMPREPLY=($(compgen -W \"${WORDS}\" -- \"${WORD}\"));\n" +
 		"};\n" +
 		"complete -F __complete_go-make go-make;\n"
 	// CompleteZsh provides the zsh completion setup for go-make.
 	CompleteZsh = "### zsh completion for make/go-make\n" +
-		CompleteTargetFunc + CompleteFilterFunc +
+		CompleteFilterFunc + CompleteShowTargetsFunc + CompleteReadTargetsFunc +
 		"__complete_go-make() {\n" +
 		"    local targets=();\n" +
-		"    local FILE=\"" + GoMakeTargetsFile + "\";\n" +
-		"    if [ -f \"${FILE}\" ]; then\n" +
-		"        targets=($(cat \"${FILE}\" | _go-make-filter \"${words[-1]}\"));\n" +
-		"        ( _go-make-targets \"${FILE}\" >/dev/null & ) 2>/dev/null;\n" +
-		"    else\n" +
-		"        targets=($(_go-make-targets \"${FILE}\" | _go-make-filter \"${words[-1]}\"));\n" +
-		"    fi;\n" +
+		"    local FILE=\"" + GoMakeTargetsFile + ".make\";\n" +
+		"    targets=($(_go-make-read-targets \"${FILE}\" \"${words[-1]}\"));\n" +
 		"    _describe 'go-make' targets;\n" +
 		"};\n" +
 		"compdef __complete_go-make go-make;\n" +
@@ -282,9 +343,14 @@ func (gm *GoMake) exec(
 // Make runs the go-make command with given arguments and return the exit code
 // and error.
 func (gm *GoMake) Make(args ...string) (int, error) {
+	sync := true
+
 	var targets []string
 	for _, arg := range args {
 		switch {
+		case arg == "--async":
+			sync = false
+
 		case arg == "--trace":
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
@@ -293,24 +359,68 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 
 		case arg == "--version":
 			gm.Logger.Info(gm.Stdout, gm.Info, true)
-			return 0, nil
+			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--completion=bash"):
 			gm.Logger.Message(gm.Stdout, CompleteBash)
-			return 0, nil
+			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--completion=zsh"):
 			gm.Logger.Message(gm.Stdout, CompleteZsh)
-			return 0, nil
+			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--config="):
 			gm.Config = arg[len("--config="):]
+
+		case arg == "show-targets":
+			sync = !gm.showTargets("go-make")
+			targets = append(targets, arg)
+
+		case arg == "show-targets-make":
+			sync = !gm.showTargets("make")
+			targets = append(targets, arg)
 
 		default:
 			targets = append(targets, arg)
 		}
 	}
 
+	if sync {
+		return gm.callTargets(targets)
+	}
+
+	// Call the targets asynchronously to avoid blocking the main thread.
+	func() {
+		out := gm.Stderr
+		gm.Stdout, gm.Stderr = io.Discard, io.Discard
+		if _, err := gm.callTargets(targets); err != nil {
+			gm.Logger.Error(out, "async make", err)
+		}
+	}()
+	return ExitSuccess, nil
+}
+
+// showTargets reads the targets from the go-make targets file and displays
+// them via standard output. If the file does not exist, it returns false
+// indicating that no targets were found.
+func (gm *GoMake) showTargets(suffix string) bool {
+	file := filepath.
+		Clean(filepath.Join(GetEnvDefault("TMPDIR", "/tmp"),
+			"go-make-"+GetEnvDefault("USER", "unknown"),
+			AbsPath(gm.WorkDir), "targets."+suffix))
+
+	// Read the targets file if it exists.
+	if content, err := os.ReadFile(file); err == nil {
+		gm.Logger.Message(gm.Stdout, string(content))
+		return true
+	}
+	return false
+}
+
+// callTargets executes the provided make targets after setting up the working
+// directory and the go-make config. It returns the exit code and error if any
+// step of the setup or the targets execution fails.
+func (gm *GoMake) callTargets(targets []string) (int, error) {
 	gm.setupWorkDir()
 	if err := gm.setupConfig(); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)

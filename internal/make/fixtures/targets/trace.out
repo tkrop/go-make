@@ -1,12 +1,59 @@
 go-make/config/Makefile.base: update target 'go-make/run'
 if [ ! -d "go-make/run" ]; then mkdir --parents go-make/run; fi;
-go-make/config/Makefile.base: update target 'go-make/run/targets'
-echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/run/targets]" >&2; \
-make --no-builtin-rules --no-builtin-variables --print-data-base \
-  --question --makefile="go-make/config/Makefile.base" 2>/dev/null | \
-  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { if ($1 !~ "^[#./]") { print $1 } }' | LC_ALL=C sort --unique > "go-make/run/targets";
+go-make/config/Makefile.base: update target 'go-make/run/targets.go-make'
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/run/targets.go-make]" >&2; \
+if [ "go-make/run/targets.go-make" == "go-make/run/targets.make" ]; then MAKEFILE="Makefile"; \
+else MAKEFILE="go-make/config/Makefile.base"; fi; \
+( make --help 2>&1 | grep --only-matching -- "--[^, ]*" | sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'; make \
+  --no-builtin-rules --no-builtin-variables --print-data-base \
+  --question --makefile="${MAKEFILE}" 2>/dev/null | \
+  awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { if ($1 !~ "^[#./]") { print $1 } }' ) | LC_ALL=C sort --unique > "go-make/run/targets.go-make";
 go-make/config/Makefile.base: update target 'show-targets'
-cat "go-make/run/targets" || true;
+cat "go-make/run/targets.go-make" || true;
+--always-make
+--assume-new=
+--assume-old=
+--check-symlink-times
+--debug
+--debug=
+--directory=
+--dry-run
+--environment-overrides
+--eval=
+--file=
+--help
+--ignore-errors
+--include-dir=
+--jobs
+--jobs=
+--just-print
+--keep-going
+--load-average
+--load-average=
+--makefile=
+--max-load
+--max-load=
+--new-file=
+--no-builtin-rules
+--no-builtin-variables
+--no-keep-going
+--no-print-directory
+--no-silent
+--old-file=
+--output-sync
+--output-sync=
+--print-data-base
+--print-directory
+--question
+--quiet
+--recon
+--silent
+--stop
+--touch
+--trace
+--version
+--warn-undefined-variables
+--what-if=
 all
 all-clean
 build
@@ -163,6 +210,7 @@ show-help
 show-make
 show-raw
 show-targets
+show-targets-make
 show-vars
 test
 test-all
