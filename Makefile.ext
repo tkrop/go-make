@@ -15,19 +15,24 @@ version-bump version-bump-reset::
 # customize commit target with config file synchronization check.
 commit:: sync-check
 
-#@ check all config files to be synchronized with config directory.
-sync-check::
-	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
-	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
-	    echo "error: $${FILE} (not synchronized)" >&2; exit -1; \
-	  fi; \
-	done;
-
 #@ sync all config files with their respective Makefile.
 sync::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 	    echo "sync: $${FILE} => $${FILE#*/}"; cp "$${FILE}" "$${FILE#*/}"; \
+	  fi; \
+	done;
+
+#@ sync all test fixtures creating them from the current state.
+sync-fixtures:: install
+	go-make --completion=bash > internal/make/fixtures/completion/bash.out;
+	go-make --completion=zsh > internal/make/fixtures/completion/zsh.out;
+
+#@ check all config files to be synchronized with config directory.
+sync-check::
+	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
+	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
+	    echo "error: $${FILE} (not synchronized)" >&2; exit -1; \
 	  fi; \
 	done;
 

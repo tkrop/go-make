@@ -123,7 +123,7 @@ else ifeq ($(shell uname),Darwin)
     export SHELL := $(BREW_PREFIX)/bin/bash
   endif
 else
-  $(call cerror,unsupported operating system [$(shell uname --all)])
+  $(call cerror,unsupported operating system [$(shell uname -a)])
 endif
 
 # Log execution environment for debugging.
@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.144
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.145
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -215,6 +215,8 @@ FILE_HEADER ?=
 # Setup default files with special meaning.
 FILE_IMAGE ?= Dockerfile
 FILE_DEEPCOPY ?= zz_generated.deepcopy.go
+FILE_TARGETS_MAKE ?= $(DIR_TEMP)/targets.make
+FILE_TARGETS_GOMAKE ?= $(DIR_TEMP)/targets.go-make
 
 
 # Function to ensure compatibility of gawk and mawk.
@@ -749,13 +751,21 @@ show-vars = awk ' \
 show-targets = awk -v RS= -F: ' \
 	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished / { \
 	  if ($$1 !~ "^[\#./]") { print $$1 } \
-	}' | LC_ALL=C sort --unique
+	}'
+show-options-all = sed 's|^ *-|-|; s|, *|\n|g;' | \
+    sed '/^[^-].*$$/d; /^ *$$/d; s| .*$||; s|=.*|=|;' | \
+	sed --regexp-extended 's|^(.*)\[=|\1\n\1=|; s|-.[ [].*||;'
+show-options-long = grep --only-matching -- "--[^, ]*" | \
+	sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'
 
-$(DIR_TEMP)/targets: $(DIR_TEMP) $(MAKEFILE_LIST)
-	@$(call emsg,info,updating targets [$(DIR_TEMP)/targets]); \
-	$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null | \
-	  $(show-targets) > "$(DIR_TEMP)/targets";
+$(FILE_TARGETS_GOMAKE) $(FILE_TARGETS_MAKE): $(DIR_TEMP) $(MAKEFILE_LIST)
+	@$(call emsg,info,updating targets [$@]); \
+	if [ "$@" == "$(FILE_TARGETS_MAKE)" ]; then MAKEFILE="Makefile"; \
+	else MAKEFILE="$(GOMAKE_MAKEFILE)"; fi; \
+	( make --help 2>&1 | $(show-options-long); $(MAKE) \
+	  --no-builtin-rules --no-builtin-variables --print-data-base \
+	  --question --makefile="$${MAKEFILE}" 2>/dev/null | \
+	  $(show-targets) ) | LC_ALL=C sort --unique > "$@";
 
 #@ shows this short extracted help about main target families.
 show-help::
@@ -763,9 +773,11 @@ show-help::
 #@ shows all supported (customizable) variable (with defaults).
 show-vars:
 	@cat "$(GOMAKE_MAKEFILE)" | $(show-vars) || true;
-#@ shows all supported targets (without prerequesites).
-show-targets: $(DIR_TEMP)/targets
-	@cat "$(DIR_TEMP)/targets" || true;
+#@ shows all supported targets (without prerequisites).
+show-targets: $(FILE_TARGETS_GOMAKE)
+	@cat "$(FILE_TARGETS_GOMAKE)" || true;
+show-targets-make: $(FILE_TARGETS_MAKE)
+	@cat "$(FILE_TARGETS_MAKE)" || true;
 #@ shows the raw base makefile as implemented.
 show-raw:
 	@cat "$(GOMAKE_MAKEFILE)" || true;
@@ -1329,15 +1341,20 @@ lint:: $(TARGETS_LINT)
 #@ <fix|linter> # execute golangci linters for the custom code quality level.
 lint-code:: lint-$(CODE_QUALITY)
 #@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
-lint-min:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_MIN))
+lint-min:: init-code install-golangci-lint;
+	$(if $(SOURCES),$(call emsg,info,linting [min]); $(LINT_CMD) $(LINT_MIN))
 #@ <fix|linter> # execute golangci linters for base code quality level (go-files).
-lint-base:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_BASE))
+lint-base:: init-code install-golangci-lint;
+	$(if $(SOURCES),$(call emsg,info,linting [base]); $(LINT_CMD) $(LINT_BASE))
 #@ <fix|linter> # execute golangci linters for plus code quality level (go-files).
-lint-plus:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_PLUS))
+lint-plus:: init-code install-golangci-lint;
+	$(if $(SOURCES),$(call emsg,info,linting [plus]); $(LINT_CMD) $(LINT_PLUS))
 #@ <fix|linter> # execute golangci linters for maximal code quality level (go-files).
-lint-max:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_MAX))
+lint-max:: init-code install-golangci-lint;
+	$(if $(SOURCES),$(call emsg,info,linting [max]); $(LINT_CMD) $(LINT_MAX))
 #@ <fix|linter> # execute all golangci linters for insane code quality level (go-files).
-lint-all:: init-code install-golangci-lint; $(if $(SOURCES),$(LINT_CMD) $(LINT_ALL))
+lint-all:: init-code install-golangci-lint;
+	$(if $(SOURCES),$(call emsg,info,linting [all]); $(LINT_CMD) $(LINT_ALL))
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
@@ -1431,7 +1448,7 @@ LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 
 $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
-	@COMMIT=$$($(GITHASH)); \
+	@$(call emsg,info,linting [$*]); COMMIT=$$($(GITHASH)); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
 	  "--header" "Content-type: application/json"); \
@@ -1459,18 +1476,20 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 
 #@ execute revive linter (go-files).
 lint-revive:: init-code install-revive
+	@$(call emsg,info,linting [revive]);
 	revive -formatter friendly -config="$(FILE_REVIVE)" $(SOURCES) || $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
 lint-markdown:: init-code $(GOBIN)/markdownlint
-	@$(call emsg,info,linting [markdownlint]); \
-	echo "markdownlint --config .markdownlint.yaml ."; \
-	if  [ -n "$$(find -name "*.md")" ]; then \
+	@if  [ -n "$$(find -name "*.md")" ]; then \
 	  if command -v markdownlint &> /dev/null; then \
+	    $(call emsg,info,linting [markdownlint]); \
+	    echo "markdownlint --config .markdownlint.yaml ."; \
 	    markdownlint --config .markdownlint.yaml .; \
-	  elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
-		continuing - no docker command [markdownlint]!); \
-	  else \
+	  elif [ -z "$(IMAGE_CMD)" ]; then \
+	    $(call emsg,warning,linting [markdownlint] - no docker command!); \
+	  else $(call emsg,info,linting [markdownlint]); \
+	    echo "markdownlint --config .markdownlint.yaml ."; \
 	    $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
 	      container-registry.zalando.net/library/node-18-alpine:latest \
 	      /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
@@ -1497,13 +1516,13 @@ lint-shell:: init-code
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
 lint-leaks:: install-gitleaks
-	@if [ -d "$(DIR_GIT)" ]; then \
+	@$(call emsg,info,linting [gitleaks]); if [ -d "$(DIR_GIT)" ]; then \
 	  echo "gitleaks detect --no-banner --verbose --source ."; \
 	  gitleaks detect --no-banner --verbose --source .; \
 	fi;
 #@ execute gitleaks to check un-committed code changes for leaking secrets (all files).
 lint-leaks?:: install-gitleaks
-	@if [ -d "$(DIR_GIT)" ]; then \
+	@$(call emsg,info,linting [gitleaks?]); if [ -d "$(DIR_GIT)" ]; then \
 	  echo "gitleaks protect --no-banner --verbose --source ."; \
 	  gitleaks protect --no-banner --verbose --source .; \
 	fi;
@@ -1512,7 +1531,7 @@ lint-vuln:: install-govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
 lint-gocyclo lint-gocognit:: lint-%: install-%
-	@ARGS=($(ARGS)); MODS="0"; \
+	@$(call emsg,info,linting [gocyclo]); ARGS=($(ARGS)); MODS="0"; \
 	while [ "$${#ARGS[@]}" != "0" ]; do \
 	  if [ "$${ARGS[0]}" == "top" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
 	  elif [ "$${ARGS[0]}" == "over" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
@@ -1528,13 +1547,13 @@ lint-apis:: install-zally
 	@if ! curl --silent "$(ZALLY_URL)"; then \
 	  $(call emsg,warning,API linter not available [$(ZALLY_URL)]); exit 0; \
 	else $(call emsg,info,linting [zally]); fi; \
-	ARGS=("--linter-service" "$(ZALLY_URL)"); \
-	if command -v ztoken > /dev/null; then ARGS+=("--token" "$(ZALLY_TOKEN)"); fi; \
+	ARGS=("--linter-service=$(ZALLY_URL)"); \
+	if command -v ztoken > /dev/null; then ARGS+=("--token=$(ZALLY_TOKEN)"); fi; \
 	if [ -z "$(filter %.yaml,$(ARGS))" ]; then \
 	   FILES="$$(find zalando-apis -name "*.yaml" 2>/dev/null)"; \
 	else FILES="$(filter %.yaml,$(ARGS))"; fi; \
 	for APISPEC in $${FILES}; do \
-	  echo "check API: zally \"$${APISPEC}\""; \
+	  echo "zally "$${ARGS[@]/--token=*/--token=...secret...}" lint \"$${APISPEC}\""; \
 	  zally "$${ARGS[@]}" lint "$${APISPEC}" || exit 1; \
 	done;
 
