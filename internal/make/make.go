@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/tkrop/go-config/info"
@@ -25,21 +24,19 @@ const (
 	// Makefile provides the name of the base makefile to be executed by
 	// go-make.
 	Makefile = "Makefile.base"
-	// GoMakeTargetsFile provides the name of the file to store the go-make
-	// targets.
-	GoMakeTargetsFile = "${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets"
-	// GoMakeOptions provides the common options for the go-make command.
-	GoMakeOptions = "--async --completion= --config="
 	// GoMakeCompletion provides the common completion options for the
 	// go-make command.
 	GoMakeCompletion = "bash zsh"
 	// GoMakeOutputSync provides the common output sync options for the
 	// go-make command.
 	GoMakeOutputSync = "none line target recurse"
+	// GoMakeTargetsDir provides the base name of the file to cache the
+	// go-make targets.
+	GoMakeTargetsDir = "${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}${PWD}"
 	// CompleteFilterFunc provides the common filter function to filter
 	// go-make targets before applying completion.
 	CompleteFilterFunc = "_go-make-filter() {\n" +
-		"    awk -v prefix=^${1} -v pat=\"[-/]\" '\n" +
+		"    awk -v prefix=\"^${1}\" -v pat=\"[-/]\" '\n" +
 		"        function min(x, y, l) {\n" +
 		"            while (substr(x, 0, l) != substr(y, 0, l)) { l--; }\n" +
 		"            return l;\n" +
@@ -66,13 +63,11 @@ const (
 	// CompleteShowTargetsFunc provides the common target function to create
 	// go-make targets for completion.
 	CompleteShowTargetsFunc = "_go-make-show-targets() {\n" +
-		"    local WORD=\"${1:-${WORD}}\";\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') show-targets start ${COMP_WORDS[@]}\" >&2;\n" +
-		"    if [ ${COMP_WORDS[0]} != \"go-make\" ]; then\n" +
-		"       go-make show-targets-make;\n" +
-		"    else go-make show-targets; fi |\n" +
-		"       _go-make-filter \"${WORD}\";\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') show-targets stop ${COMP_WORDS[@]}\" >&2;\n" +
+		"    local CMD=\"${1}\"; local WORD=\"${2}\";\n" +
+		"    local FILE=\"" + GoMakeTargetsDir + "/targets.${CMD}\";\n" +
+		"    if [ -f \"${FILE}\" ]; then cat \"${FILE}\";\n" +
+		"        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;\n" +
+		"    else go-make show-targets-${CMD}; fi | _go-make-filter \"${WORD}\";\n" +
 		"};\n"
 	// CompleteCPUCountFunc provides the common function to get the number of
 	// CPUs available on the system used for parallel execution of `--jobs`.
@@ -89,7 +84,6 @@ const (
 		"function " + CompleteShowTargetsFunc +
 		"function " + CompleteCPUCountFunc +
 		"function __complete_go-make() {\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete start ${COMP_WORDS[@]}\" >&2;\n" +
 		"    if [ \"${COMP_WORDS[COMP_CWORD]}\" == \"=\" ]; then\n" +
 		"        WORD=\"${COMP_WORDS[COMP_CWORD-1]}=\";\n" +
 		"        COMP_WORDS=(\"${COMP_WORDS[@]:0:COMP_CWORD-1}\" \"${WORD}\");\n" +
@@ -97,7 +91,6 @@ const (
 		"        WORD=\"${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}\";\n" +
 		"        COMP_WORDS=(\"${COMP_WORDS[@]:0:COMP_CWORD-2}\" \"${WORD}\");\n" +
 		"    else local WORD=\"${COMP_WORDS[COMP_CWORD]}\"; fi;\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete word ${COMP_WORDS[@]}\" >&2;\n" +
 		"    case \"${WORD}\" in\n" +
 		"    ( --directory=* | --include-dir=* )\n" +
 		"        COMPREPLY=($(compgen -d -- \"${WORD#*=}\"));;\n" +
@@ -112,32 +105,24 @@ const (
 		"    ( --jobs=* )\n" +
 		"        COMPREPLY=($(compgen -W \"$(_go-make-cpu-count)\" -- \"${WORD#*=}\"));;\n" +
 		"    ( * )\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete * start ${COMP_WORDS[@]}\" >&2;\n" +
-		"        local WORDS=\"$(_go-make-show-targets \"${WORD}\")\";\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete * targets ${COMP_WORDS[@]}\" >&2;\n" +
-		"        if [ \"${COMP_WORDS[0]}\" == \"go-make\" ]; then\n" +
-		"            local WORDS=\"" + GoMakeOptions + " ${WORDS}\";\n" +
-		"        fi;\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete * end ${COMP_WORDS[@]}\" >&2;\n" +
+		"        local WORDS=\"$(_go-make-show-targets \"${COMP_WORDS[0]}\" \"${WORD}\")\";\n" +
 		"        COMPREPLY=($(compgen -W \"${WORDS}\" -- \"${WORD}\"));;\n" +
 		"    esac;\n " +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete reply ${COMP_WORDS[@]}\" >&2;\n" +
 		"    if [ \"${#COMPREPLY[@]}\" == \"1\" ] &&\n" +
 		"        [[ \"${COMPREPLY[0]}\" == \"--\"*\"=\" ]]; then\n" +
 		"        COMPREPLY=(\"${COMPREPLY[0]}\" \"${COMPREPLY[0]}*\");\n" +
 		"    fi;\n" +
-		"echo -ne \"\n$(date '+%F %T.%3N') complete stop ${COMP_WORDS[@]}\" >&2;\n" +
 		"};\n" +
-		"complete -F __complete_go-make go-make;\n"
+		"complete -F __complete_go-make go-make;\n\n"
 	// CompleteZsh provides the zsh completion setup for go-make.
 	CompleteZsh = "### zsh completion for make/go-make\n" +
 		CompleteFilterFunc + CompleteShowTargetsFunc +
 		"__complete_go-make() {\n" +
-		"    local targets=($(_go-make-show-targets \"${words[-1]}\"));\n" +
+		"    local targets=($(_go-make-show-targets \"${words[1]}\" \"${words[-1]}\"));\n" +
 		"    _describe 'go-make' targets;\n" +
 		"};\n" +
 		"compdef __complete_go-make go-make;\n" +
-		"compdef __complete_go-make make;\n"
+		"compdef __complete_go-make make;\n\n"
 )
 
 // Available exit code constants.
@@ -260,7 +245,7 @@ func NewGoMake( //revive:disable-line:argument-limit // kiss.
 // executed.
 func (gm *GoMake) setupWorkDir() {
 	buffer := &strings.Builder{}
-	if err := gm.exec(nil, buffer, gm.Stderr,
+	if err := gm.exec(cmd.Attached, nil, buffer, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdGitTop()...); err == nil {
 		gm.WorkDir = strings.TrimSpace(buffer.String())
 	}
@@ -277,7 +262,7 @@ func (gm *GoMake) setupConfig() error {
 	}
 
 	path := AbsPath(gm.Config)
-	if err := gm.exec(nil, gm.Stderr, gm.Stderr,
+	if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdTestDir(path)...); err != nil {
 		return gm.ensureConfig(gm.Config,
 			GoMakePath(gm.Info.Path, gm.Config))
@@ -294,9 +279,9 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 		return nil
 	}
 
-	if err := gm.exec(nil, gm.Stderr, gm.Stderr,
+	if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr,
 		gm.WorkDir, gm.Env, CmdTestDir(gm.ConfigDir)...); err != nil {
-		if err := gm.exec(nil, gm.Stderr, gm.Stderr, gm.WorkDir,
+		if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr, gm.WorkDir,
 			gm.Env, CmdGoInstall(gm.Info.Path, gm.ConfigVersion)...); err != nil {
 			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
 		}
@@ -304,36 +289,18 @@ func (gm *GoMake) ensureConfig(version, dir string) error {
 	return nil
 }
 
-// CmdArgRegex is the regular expression that match commands with arguments
-// that will be transformed into a `ARGS` variable.
-var CmdArgRegex = regexp.MustCompile(
-	`^(call|show|git-|test-|lint|run-|version-|update).*$`)
-
-// makeTargets executes the provided make targets.
-func (gm *GoMake) makeTargets(args ...string) error {
-	for index, arg := range args {
-		if CmdArgRegex.MatchString(arg) && index < len(args)-1 {
-			return gm.exec(gm.Stdin, gm.Stdout, gm.Stderr, gm.WorkDir,
-				append(gm.Env, "ARGS="+strings.Join(args[index+1:], " ")),
-				CmdMakeTargets(gm.Makefile, args[0:index+1]...)...)
-		}
-	}
-	return gm.exec(gm.Stdin, gm.Stdout, gm.Stderr,
-		gm.WorkDir, gm.Env, CmdMakeTargets(gm.Makefile, args...)...)
-}
-
 // Executes the command with given name and arguments in given directory
 // calling the command executor taking care to wrap the resulting error.
-func (gm *GoMake) exec(
-	stdin io.Reader, stdout, stderr io.Writer,
+func (gm *GoMake) exec( //revive:disable-line:argument-limit
+	mode cmd.Mode, stdin io.Reader, stdout, stderr io.Writer,
 	dir string, env []string, args ...string,
 ) error {
 	if gm.Trace {
 		gm.Logger.Exec(stderr, dir, args...)
 	}
 
-	if err := gm.Executor.Exec(cmd.Attached, stdin, stdout, stderr,
-		dir, env, args...); err != nil {
+	if err := gm.Executor.Exec(mode,
+		stdin, stdout, stderr, dir, env, args...); err != nil {
 		return NewErrCallFailed(dir, args, errors.Unwrap(err))
 	}
 	return nil
@@ -342,12 +309,11 @@ func (gm *GoMake) exec(
 // Make runs the go-make command with given arguments and return the exit code
 // and error.
 func (gm *GoMake) Make(args ...string) (int, error) {
+	var mode cmd.Mode
+	suffix := []string{}
 	var targets []string
 	for _, arg := range args {
 		switch {
-		case arg == "--async":
-			targets = append(targets, "&")
-
 		case arg == "--trace":
 			gm.Logger.Call(gm.Stderr, args...)
 			gm.Logger.Info(gm.Stderr, gm.Info, false)
@@ -369,36 +335,48 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 		case strings.HasPrefix(arg, "--config="):
 			gm.Config = arg[len("--config="):]
 
-		case arg == "show-targets":
+			// case arg == "--async":
+			// 	mode |= cmd.Detached | cmd.Background
+			// case arg == "--detached":
+			// 	mode |= cmd.Detached
+			// case arg == "--background":
+			// 	mode |= cmd.Background
+
+		case arg == "show-targets-go-make":
+			suffix = append(suffix, "go-make")
 			targets = append(targets, arg)
-			if gm.showTargets("go-make") {
-				targets = append(targets, "&")
-			}
 
 		case arg == "show-targets-make":
+			suffix = append(suffix, "make")
 			targets = append(targets, arg)
-			if gm.showTargets("make") {
-				targets = append(targets, "&")
-			}
+
+		case arg == "show-targets":
+			suffix = append(suffix, "")
+			targets = append(targets, arg)
 
 		default:
 			targets = append(targets, arg)
 		}
 	}
 
-	return gm.callTargets(targets)
+	if gm.showTargets(suffix) {
+		mode = cmd.Detached | cmd.Background
+	}
+
+	return gm.callTargets(mode, targets)
 }
 
 // showTargets reads the targets from the go-make targets file and displays
 // them via standard output. If the file does not exist, it returns false
 // indicating that no targets were found.
-func (gm *GoMake) showTargets(suffix string) bool {
-	file := filepath.
-		Clean(filepath.Join(GetEnvDefault("TMPDIR", "/tmp"),
-			"go-make-"+GetEnvDefault("USER", "unknown"),
-			AbsPath(gm.WorkDir), "targets."+suffix))
+func (gm *GoMake) showTargets(suffix []string) bool {
+	if gm.Trace || len(suffix) == 0 {
+		return false
+	}
 
-	// Read the targets file if it exists.
+	// Read the targets file, iff it exists.
+	file := gm.fileTargets(suffix[0])
+	// #nosec G304 -- file is safe to dump.
 	if content, err := os.ReadFile(file); err == nil {
 		gm.Logger.Message(gm.Stdout, string(content))
 		return true
@@ -406,15 +384,54 @@ func (gm *GoMake) showTargets(suffix string) bool {
 	return false
 }
 
+// fileTargets returns the path to the go-make targets file based on the
+// provided suffix. It checks the environment variables for a custom file path
+// or defaults to a temporary directory structure based on a user name. The
+// file path is cleaned and returned as an absolute path.
+func (gm *GoMake) fileTargets(suffix string) string {
+	var file string
+	switch suffix {
+	case "go-make":
+		file = gm.GetEnvDefault("FILE_TARGETS_GOMAKE", "")
+	case "make":
+		file = gm.GetEnvDefault("FILE_TARGETS_MAKE", "")
+	default:
+		file = gm.GetEnvDefault("FILE_TARGETS", "")
+	}
+
+	if file == "" {
+		file = filepath.Join(
+			gm.GetEnvDefault("TMPDIR", os.TempDir()),
+			"go-make-"+gm.GetEnvDefault("USER", "unknown"),
+			AbsPath(gm.WorkDir), "targets."+suffix)
+	}
+	return filepath.Clean(file)
+}
+
+// GetEnvDefault returns the value of the environment variable with given name
+// or the given default value, if the environment variable is not set. The
+// function checks the go-make context environment variables backwards first
+// and falls back to the system environment variables, before falling back to
+// the provided default value.
+func (gm *GoMake) GetEnvDefault(name, deflt string) string {
+	for i := len(gm.Env) - 1; i >= 0; i-- {
+		if env := gm.Env[i]; strings.HasPrefix(env, name+"=") {
+			return env[len(name)+1:]
+		}
+	}
+	return GetEnvDefault(name, deflt)
+}
+
 // callTargets executes the provided make targets after setting up the working
 // directory and the go-make config. It returns the exit code and error if any
 // step of the setup or the targets execution fails.
-func (gm *GoMake) callTargets(targets []string) (int, error) {
+func (gm *GoMake) callTargets(mode cmd.Mode, targets []string) (int, error) {
 	gm.setupWorkDir()
 	if err := gm.setupConfig(); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
-	} else if err := gm.makeTargets(targets...); err != nil {
+	} else if err := gm.exec(mode, gm.Stdin, gm.Stdout, gm.Stderr, gm.WorkDir,
+		gm.Env, CmdMakeTargets(gm.Makefile, targets...)...); err != nil {
 		gm.Logger.Error(gm.Stderr, "execute make", err)
 		return ExitTargetFailure, err
 	}

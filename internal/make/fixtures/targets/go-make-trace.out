@@ -1,15 +1,15 @@
-go-make/config/Makefile.base: update target 'go-make/run/targets'
-echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/run/targets]" >&2; \
-if [ "go-make/run/targets" == "go-make/run/targets.make" ]; then MAKEFILE="Makefile"; \
+go-make/config/Makefile.base: update target 'go-make/run/targets.go-make'
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/run/targets.go-make]" >&2; \
+if [ "go-make/run/targets.go-make" == "go-make/run/targets.make" ]; then MAKEFILE="Makefile"; \
 else MAKEFILE="go-make/config/Makefile.base"; TARGETS="--completion= --config= "; fi; \
 ( echo "${TARGETS[@]}" | tr ' ' '\n'; \
   make --help 2>&1 | grep --only-matching -- "--[^, ]*" | sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'; \
   make --question --no-builtin-rules --no-builtin-variables \
     --print-data-base --makefile="${MAKEFILE}" 2>/dev/null | \
     awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { if ($1 !~ "^[#./]") { print $1 } }' \
-) | grep -v "^\s*$" | LC_ALL=C sort --unique > "go-make/run/targets";
-go-make/config/Makefile.base: update target 'show-targets'
-cat "go-make/run/targets" || true;
+) | grep -v "^\s*$" | LC_ALL=C sort --unique > "go-make/run/targets.go-make";
+go-make/config/Makefile.base: update target 'show-targets-go-make'
+cat "go-make/run/targets.go-make" || true;
 --always-make
 --assume-new=
 --assume-old=

@@ -120,6 +120,9 @@ func (e *executor) Exec( //revive:disable-line:argument-limit
 		if err := cmd.Start(); err != nil {
 			return NewCmdError("starting process", dir, env, args, err)
 		} else if err := cmd.Process.Release(); err != nil {
+			// #no-cover: difficult to test release error handling is it
+			// requires a process that is already terminated before being
+			// released reliably.
 			return NewCmdError("releasing process", dir, env, args, err)
 		}
 	} else if err := cmd.Run(); err != nil {

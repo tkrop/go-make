@@ -1,6 +1,6 @@
 ### bash completion for go-make
 function _go-make-filter() {
-    awk -v prefix=^${1} -v pat="[-/]" '
+    awk -v prefix="^${1}" -v pat="[-/]" '
         function min(x, y, l) {
             while (substr(x, 0, l) != substr(y, 0, l)) { l--; }
             return l;
@@ -25,15 +25,11 @@ function _go-make-filter() {
          }';
 };
 function _go-make-show-targets() {
-    local WORD="${1:-${WORD}}";
-echo -ne "
-$(date '+%F %T.%3N') show-targets start ${COMP_WORDS[@]}" >&2;
-    if [ ${COMP_WORDS[0]} != "go-make" ]; then
-       go-make show-targets-make;
-    else go-make show-targets; fi |
-       _go-make-filter "${WORD}";
-echo -ne "
-$(date '+%F %T.%3N') show-targets stop ${COMP_WORDS[@]}" >&2;
+    local CMD="${1}"; local WORD="${2}";
+    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}${PWD}/targets.${CMD}";
+    if [ -f "${FILE}" ]; then cat "${FILE}";
+        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;
+    else go-make show-targets-${CMD}; fi | _go-make-filter "${WORD}";
 };
 function _go-make-cpu-count() {
     case "$(uname -s)" in
@@ -43,8 +39,6 @@ function _go-make-cpu-count() {
     esac;
 };
 function __complete_go-make() {
-echo -ne "
-$(date '+%F %T.%3N') complete start ${COMP_WORDS[@]}" >&2;
     if [ "${COMP_WORDS[COMP_CWORD]}" == "=" ]; then
         WORD="${COMP_WORDS[COMP_CWORD-1]}=";
         COMP_WORDS=("${COMP_WORDS[@]:0:COMP_CWORD-1}" "${WORD}");
@@ -52,8 +46,6 @@ $(date '+%F %T.%3N') complete start ${COMP_WORDS[@]}" >&2;
         WORD="${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}";
         COMP_WORDS=("${COMP_WORDS[@]:0:COMP_CWORD-2}" "${WORD}");
     else local WORD="${COMP_WORDS[COMP_CWORD]}"; fi;
-echo -ne "
-$(date '+%F %T.%3N') complete word ${COMP_WORDS[@]}" >&2;
     case "${WORD}" in
     ( --directory=* | --include-dir=* )
         COMPREPLY=($(compgen -d -- "${WORD#*=}"));;
@@ -68,26 +60,13 @@ $(date '+%F %T.%3N') complete word ${COMP_WORDS[@]}" >&2;
     ( --jobs=* )
         COMPREPLY=($(compgen -W "$(_go-make-cpu-count)" -- "${WORD#*=}"));;
     ( * )
-echo -ne "
-$(date '+%F %T.%3N') complete * start ${COMP_WORDS[@]}" >&2;
-        local WORDS="$(_go-make-show-targets "${WORD}")";
-echo -ne "
-$(date '+%F %T.%3N') complete * targets ${COMP_WORDS[@]}" >&2;
-        if [ "${COMP_WORDS[0]}" == "go-make" ]; then
-            local WORDS="--async --completion= --config= ${WORDS}";
-        fi;
-echo -ne "
-$(date '+%F %T.%3N') complete * end ${COMP_WORDS[@]}" >&2;
+        local WORDS="$(_go-make-show-targets "${COMP_WORDS[0]}" "${WORD}")";
         COMPREPLY=($(compgen -W "${WORDS}" -- "${WORD}"));;
     esac;
- echo -ne "
-$(date '+%F %T.%3N') complete reply ${COMP_WORDS[@]}" >&2;
-    if [ "${#COMPREPLY[@]}" == "1" ] &&
+     if [ "${#COMPREPLY[@]}" == "1" ] &&
         [[ "${COMPREPLY[0]}" == "--"*"=" ]]; then
         COMPREPLY=("${COMPREPLY[0]}" "${COMPREPLY[0]}*");
     fi;
-echo -ne "
-$(date '+%F %T.%3N') complete stop ${COMP_WORDS[@]}" >&2;
 };
 complete -F __complete_go-make go-make;
 

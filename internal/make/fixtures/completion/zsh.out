@@ -1,6 +1,6 @@
 ### zsh completion for make/go-make
 _go-make-filter() {
-    awk -v prefix=^${1} -v pat="[-/]" '
+    awk -v prefix="^${1}" -v pat="[-/]" '
         function min(x, y, l) {
             while (substr(x, 0, l) != substr(y, 0, l)) { l--; }
             return l;
@@ -25,18 +25,14 @@ _go-make-filter() {
          }';
 };
 _go-make-show-targets() {
-    local WORD="${1:-${WORD}}";
-echo -ne "
-$(date '+%F %T.%3N') show-targets start ${COMP_WORDS[@]}" >&2;
-    if [ ${COMP_WORDS[0]} != "go-make" ]; then
-       go-make show-targets-make;
-    else go-make show-targets; fi |
-       _go-make-filter "${WORD}";
-echo -ne "
-$(date '+%F %T.%3N') show-targets stop ${COMP_WORDS[@]}" >&2;
+    local CMD="${1}"; local WORD="${2}";
+    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}${PWD}/targets.${CMD}";
+    if [ -f "${FILE}" ]; then cat "${FILE}";
+        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;
+    else go-make show-targets-${CMD}; fi | _go-make-filter "${WORD}";
 };
 __complete_go-make() {
-    local targets=($(_go-make-show-targets "${words[-1]}"));
+    local targets=($(_go-make-show-targets "${words[1]}" "${words[-1]}"));
     _describe 'go-make' targets;
 };
 compdef __complete_go-make go-make;
