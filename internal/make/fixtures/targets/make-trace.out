@@ -1,0 +1,56 @@
+go-make/config/Makefile.base: update target 'go-make/run/targets.make'
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [go-make/run/targets.make]" >&2; \
+if [ "go-make/run/targets.make" == "go-make/run/targets.make" ]; then MAKEFILE="Makefile"; \
+else MAKEFILE="go-make/config/Makefile.base"; TARGETS="--completion= --config= "; fi; \
+( echo "${TARGETS[@]}" | tr ' ' '\n'; \
+  make --help 2>&1 | grep --only-matching -- "--[^, ]*" | sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'; \
+  make --question --no-builtin-rules --no-builtin-variables \
+    --print-data-base --makefile="${MAKEFILE}" 2>/dev/null | \
+    awk -v RS= -F: ' /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / { if ($1 !~ "^[#./]") { print $1 } }' \
+) | grep -v "^\s*$" | LC_ALL=C sort --unique > "go-make/run/targets.make";
+go-make/config/Makefile.base: update target 'show-targets-make'
+cat "go-make/run/targets.make" || true;
+--always-make
+--assume-new=
+--assume-old=
+--check-symlink-times
+--debug
+--debug=
+--directory=
+--dry-run
+--environment-overrides
+--eval=
+--file=
+--help
+--ignore-errors
+--include-dir=
+--jobs
+--jobs=
+--just-print
+--keep-going
+--load-average
+--load-average=
+--makefile=
+--max-load
+--max-load=
+--new-file=
+--no-builtin-rules
+--no-builtin-variables
+--no-keep-going
+--no-print-directory
+--no-silent
+--old-file=
+--output-sync
+--output-sync=
+--print-data-base
+--print-directory
+--question
+--quiet
+--recon
+--silent
+--stop
+--touch
+--trace
+--version
+--warn-undefined-variables
+--what-if=

@@ -188,6 +188,26 @@ var testMessageParams = map[string]MessageParams{
 		message:      "message",
 		expectString: "message\n",
 	},
+	"message ending with newline": {
+		message:      "message\n",
+		expectString: "message\n",
+	},
+	"message with multiple lines ending with newline": {
+		message:      "message1\nmessage2\n",
+		expectString: "message1\nmessage2\n",
+	},
+	"message with multiple lines not ending with newline": {
+		message:      "message1\nmessage2",
+		expectString: "message1\nmessage2\n",
+	},
+	"single newline": {
+		message:      "\n",
+		expectString: "\n",
+	},
+	"multiple newlines": {
+		message:      "\n\n",
+		expectString: "\n\n",
+	},
 }
 
 func TestMessage(t *testing.T) {
