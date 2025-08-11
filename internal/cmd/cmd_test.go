@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	DevNullFileOpenFailure = 0x8000
+	DevNullFileOpenFailure = 0x4000
+	ProcessReleaseFailure  = 0x8000
 )
 
 type ExecParams struct {
@@ -122,22 +123,31 @@ var testExecParams = map[string]ExecParams{
 				Name: "_non-existing-command_", Err: exec.ErrNotFound,
 			}),
 	},
+	"detached background release failure": {
+		mode: cmd.Detached | cmd.Background | ProcessReleaseFailure,
+		args: []string{"echo", "Hello, World!"},
+		expectError: cmd.NewCmdError("releasing process",
+			".", nil, []string{"echo", "Hello, World!"}, assert.AnError),
+	},
 }
 
 func TestExec(t *testing.T) {
 	test.Map(t, testExecParams).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
-			exec := cmd.NewExecutor()
-			if param.mode&DevNullFileOpenFailure != 0 {
-				test.NewAccessor(exec).Set("devnull", "/dev/xxx")
+			unit := cmd.NewExecutor()
+			if param.mode&DevNullFileOpenFailure == DevNullFileOpenFailure {
+				test.NewAccessor(unit).Set("devnull", "/dev/xxx")
+			} else if param.mode&ProcessReleaseFailure == ProcessReleaseFailure {
+				test.NewAccessor(unit).Set("finish",
+					func(_ cmd.Mode, _ *exec.Cmd) error { return assert.AnError })
 			}
 			stdout := &strings.Builder{}
 			stderr := &strings.Builder{}
 			stdin := strings.NewReader(param.stdin)
 
 			// When
-			err := exec.Exec(param.mode, stdin, stdout, stderr,
+			err := unit.Exec(param.mode, stdin, stdout, stderr,
 				".", param.env, param.args...)
 
 			// Then

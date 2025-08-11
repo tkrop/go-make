@@ -83,12 +83,26 @@ type Executor interface {
 // supporting optional tracing.
 type executor struct {
 	devnull string
+	start   func(mode Mode, cmd *exec.Cmd) error
+	finish  func(mode Mode, cmd *exec.Cmd) error
 }
 
 // NewExecutor creates a new default command process.
 func NewExecutor() Executor {
 	return &executor{
 		devnull: os.DevNull,
+		start: func(mode Mode, cmd *exec.Cmd) error {
+			if mode&Background == Background {
+				cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			}
+			return cmd.Start()
+		},
+		finish: func(mode Mode, cmd *exec.Cmd) error {
+			if mode&Background != Background {
+				return cmd.Wait()
+			}
+			return cmd.Process.Release()
+		},
 	}
 }
 
@@ -104,7 +118,7 @@ func (e *executor) Exec( //revive:disable-line:argument-limit
 	cmd.Dir, cmd.Env = dir, os.Environ()
 	cmd.Env = append(cmd.Env, env...)
 
-	if mode&0x1 == Detached {
+	if mode&Detached == Detached {
 		devnull, err := os.OpenFile(e.devnull, os.O_RDWR, 0)
 		if err != nil {
 			return NewCmdError("opening /dev/null", dir, env, args, err)
@@ -115,19 +129,10 @@ func (e *executor) Exec( //revive:disable-line:argument-limit
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	}
 
-	if mode&0x2 == Background {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			return NewCmdError("starting process", dir, env, args, err)
-		} else if err := cmd.Process.Release(); err != nil {
-			// #no-cover: difficult to test release error handling is it
-			// requires a process that is already terminated before being
-			// released reliably.
-			return NewCmdError("releasing process", dir, env, args, err)
-		}
-	} else if err := cmd.Run(); err != nil {
+	if err := e.start(mode, cmd); err != nil {
 		return NewCmdError("starting process", dir, env, args, err)
+	} else if err := e.finish(mode, cmd); err != nil {
+		return NewCmdError("releasing process", dir, env, args, err)
 	}
-
 	return nil
 }

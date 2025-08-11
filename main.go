@@ -1,4 +1,4 @@
-// Main entry point of the go-make command.
+// Package main contains the go-make command.
 package main
 
 import (
