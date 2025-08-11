@@ -2,7 +2,6 @@ package make_test
 
 import (
 	"embed"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -76,9 +75,6 @@ var (
 	argsShowTargetsCustom = []string{"--config=custom", "show-targets"}
 	argsShowTargetsLatest = []string{"--config=latest", "show-targets"}
 	argsTraceAnyTarget    = []string{"--trace", "target"}
-
-	// Any error that can happen.
-	errAny = errors.New("any error")
 )
 
 func Makefile(path string, version string) string {
@@ -308,7 +304,7 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdTestDir(make.GoMakePath(infoNew.Path,
-					infoNew.Version)), "", "", errAny),
+					infoNew.Version)), "", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdGoInstall(infoNew.Path, infoNew.Version),
 				"", "", nil),
@@ -337,10 +333,11 @@ var testMakeParams = map[string]MakeParams{
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
 				make.CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.AbsPath("latest")), "", "", errAny),
+				make.CmdTestDir(make.AbsPath("latest")), "", "",
+				assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdTestDir(make.GoMakePath(infoBase.Path, "latest")),
-				"", "", errAny),
+				"", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdGoInstall(infoBase.Path, "latest"), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
@@ -357,19 +354,21 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdTestDir(make.GoMakePath(infoNew.Path,
-					infoNew.Version)), "", "", errAny),
+					infoNew.Version)), "", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
 				make.CmdGoInstall(infoNew.Path, infoNew.Version),
-				"", "", errAny),
+				"", "", assert.AnError),
 			LogError("stderr", "ensure config", make.NewErrNotFound(
 				infoNew.Path, infoNew.Version, make.NewErrCallFailed(dirRoot,
-					make.CmdGoInstall(infoNew.Path, infoNew.Version), errAny))),
+					make.CmdGoInstall(infoNew.Path, infoNew.Version),
+					assert.AnError))),
 		),
 		info: infoNew,
 		args: argsShowTargets,
 		expectError: make.NewErrNotFound(
 			infoNew.Path, infoNew.Version, make.NewErrCallFailed(dirRoot,
-				make.CmdGoInstall(infoNew.Path, infoNew.Version), errAny)),
+				make.CmdGoInstall(infoNew.Path, infoNew.Version),
+				assert.AnError)),
 		expectExit: make.ExitConfigFailure,
 	},
 	"go-make show targets failed": {
@@ -381,15 +380,16 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargets...), "", "", errAny),
+					argsShowTargets...), "", "", assert.AnError),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargets...), errAny)),
+					argsShowTargets...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsShowTargets,
 		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
-			Makefile(infoBase.Path, infoBase.Version), argsShowTargets...), errAny),
+			Makefile(infoBase.Path, infoBase.Version), argsShowTargets...),
+			assert.AnError),
 		expectExit: make.ExitTargetFailure,
 	},
 
@@ -458,16 +458,16 @@ var testMakeParams = map[string]MakeParams{
 				Makefile(infoBase.Path, infoBase.Version), argsTraceAnyTarget...)),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget...), "", "", errAny),
+					argsTraceAnyTarget...), "", "", assert.AnError),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget...), errAny)),
+					argsTraceAnyTarget...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
 		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
 			Makefile(infoBase.Path, infoBase.Version), argsTraceAnyTarget...),
-			errAny),
+			assert.AnError),
 		expectExit: make.ExitTargetFailure,
 	},
 }

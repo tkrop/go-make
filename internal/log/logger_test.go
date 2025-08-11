@@ -1,7 +1,6 @@
 package log_test
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,8 +17,6 @@ var (
 	logger = log.NewLogger()
 	// infoDirty is an arbitrary dirty info for testing.
 	infoDirty = info.New("", "", "", "", "", "true")
-	// Any error that can happen.
-	errAny = errors.New("any error")
 )
 
 type InfoParams struct {
@@ -151,13 +148,13 @@ var testErrorParams = map[string]ErrorParams{
 		expectString: "error: message\n",
 	},
 	"empty message with error": {
-		error:        errAny,
-		expectString: fmt.Sprintf("error: %v\n", errAny),
+		error:        assert.AnError,
+		expectString: fmt.Sprintf("error: %v\n", assert.AnError),
 	},
 	"non-empty message with error": {
 		message:      "message",
-		error:        errAny,
-		expectString: fmt.Sprintf("error: message: %v\n", errAny),
+		error:        assert.AnError,
+		expectString: fmt.Sprintf("error: message: %v\n", assert.AnError),
 	},
 }
 
