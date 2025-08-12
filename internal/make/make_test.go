@@ -2,6 +2,7 @@ package make_test
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -16,7 +17,7 @@ import (
 	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/cmd"
 	"github.com/tkrop/go-make/internal/log"
-	"github.com/tkrop/go-make/internal/make"
+	. "github.com/tkrop/go-make/internal/make"
 	"github.com/tkrop/go-testing/mock"
 	"github.com/tkrop/go-testing/test"
 )
@@ -33,13 +34,37 @@ const (
 	goMakePath = "github.com/tkrop/go-make"
 )
 
+//go:embed fixtures/*
+var fixtures embed.FS
+
+// ReadFile reads a file from the embedded filesystem and returns its content
+// as a string.
+func ReadFile(fs embed.FS, name string) string {
+	out, err := fs.ReadFile(name)
+	if err == nil && out != nil {
+		return string(out)
+	} else if err != nil {
+		panic(err)
+	}
+	panic("no output")
+}
+
+// WriteFile writes a string value to a file with the given name and
+// permissions.
+func WriteFile(name string, perm os.FileMode, value string) {
+	err := os.WriteFile(name, []byte(value), perm)
+	if err != nil {
+		panic(err)
+	}
+}
+
 var (
 	// dirWork contains an arbitrary working directory (uses current).
 	dirWork = "."
-	// dirRoot contains an arbitrary root directory (use go-make root).
-	dirRoot = filepath.Dir(filepath.Dir(make.AbsPath(dirWork)))
-	// envTargets contains the environment variables for the targets files.
-	envTargets = []string{
+	// dirRoot contains an arbitrary absolute test directory (use current).
+	dirRoot = filepath.Dir(filepath.Dir(AbsPath(dirWork)))
+	// envMakeMock contains the environment variables for the targets files.
+	envMakeMock = []string{
 		"FILE_TARGETS=" + filepath.Join(dirRoot,
 			"internal", "make", "fixtures", "targets", "std.out"),
 		"FILE_TARGETS_MAKE=" + filepath.Join(dirRoot,
@@ -49,18 +74,15 @@ var (
 	}
 
 	// infoBase with version and revision.
-	infoBase = info.New(goMakePath,
-		"v0.0.25",
+	infoBase = info.New(goMakePath, "v0.0.25",
 		"ba4ff068e795443f256caa06180d976a0fb244e9",
 		"2024-01-09T13:02:46+01:00",
-		"2024-01-10T16:22:54+01:00",
-		"true")
+		"2024-01-10T16:22:54+01:00", "true")
 
 	infoNew = info.New(goMakePath, "latest",
 		"ba4ff068e795443f256caa06180d976a0fb244e9",
 		"2023-11-14T13:02:46+01:00",
-		"2023-11-10T16:22:54+01:00",
-		"false")
+		"2023-11-10T16:22:54+01:00", "false")
 
 	argsVersion           = []string{"go-make", "--version"}
 	argsTraceVersion      = []string{"go-make", "--trace", "--version"}
@@ -77,8 +99,9 @@ var (
 	argsTraceAnyTarget    = []string{"go-make", "--trace", "target"}
 )
 
-func Makefile(path string, version string) string {
-	return filepath.Join(make.GoMakePath(path, version), make.Makefile)
+// MakefilePath returns the path to the Makefile for the given path and version.
+func MakefilePath(path string, version string) string {
+	return filepath.Join(GoMakePath(path, version), Makefile)
 }
 
 // NewReader creates a new reader with the given id.
@@ -96,7 +119,7 @@ func NewWriter(id string) io.Writer {
 // GoMakeSetup sets up a new go-make test with mocks.
 func GoMakeSetup(
 	t test.Test, param MakeParams,
-) (*make.GoMake, *mock.Mocks) {
+) (*GoMake, *mock.Mocks) {
 	mocks := mock.NewMocks(t).
 		SetArg("nil", nil).
 		SetArg("stdin", NewReader("stdin")).
@@ -105,12 +128,12 @@ func GoMakeSetup(
 		SetArg("builder", &strings.Builder{}).
 		Expect(param.mockSetup)
 
-	gm := make.NewGoMake(
+	gm := NewGoMake(
 		mocks.GetArg("stdin").(io.Reader),
 		mocks.GetArg("stdout").(io.Writer),
 		mocks.GetArg("stderr").(io.Writer),
 		// Filling the test coverage gap of returning the default.
-		param.info, make.GetEnvDefault(make.EnvGoMakeConfig, ""),
+		param.info, GetEnvDefault(EnvGoMakeConfig, ""),
 		".", param.env...,
 	)
 
@@ -135,16 +158,15 @@ func Exec( //revive:disable-line:argument-limit
 		return mock.Get(mocks, NewMockExecutor).EXPECT().
 			Exec(mode, mocks.GetArg(stdin), mocks.GetArg(stdout), mocks.GetArg(stderr),
 				dir, env, ToAny(args)...).
-			DoAndReturn(mocks.Call(cmd.Executor.Exec,
-				func(args ...any) []any {
-					if _, err := args[2].(io.Writer).Write([]byte(sout)); err != nil {
-						assert.Fail(mocks.Ctrl.T, "failed to write to stdout", err)
-					}
-					if _, err := args[3].(io.Writer).Write([]byte(serr)); err != nil {
-						assert.Fail(mocks.Ctrl.T, "failed to write to stderr", err)
-					}
-					return []any{err}
-				}))
+			DoAndReturn(mocks.Call(cmd.Executor.Exec, func(args ...any) []any {
+				if _, err := args[2].(io.Writer).Write([]byte(sout)); err != nil {
+					assert.Fail(mocks.Ctrl.T, "failed to write to stdout", err)
+				}
+				if _, err := args[3].(io.Writer).Write([]byte(serr)); err != nil {
+					assert.Fail(mocks.Ctrl.T, "failed to write to stderr", err)
+				}
+				return []any{err}
+			}))
 	}
 }
 
@@ -198,7 +220,7 @@ type MakeParams struct {
 	expectExit  int
 }
 
-var testMakeParams = map[string]MakeParams{
+var testMakeMockParams = map[string]MakeParams{
 	// targets without trace.
 	"go-make version": {
 		mockSetup: mock.Chain(
@@ -209,14 +231,14 @@ var testMakeParams = map[string]MakeParams{
 	},
 	"go-make completion bash": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", make.CompleteBash),
+			LogMessage("stdout", CompleteBash),
 		),
 		info: infoBase,
 		args: argsBash,
 	},
 	"go-make completion zsh": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", make.CompleteZsh),
+			LogMessage("stdout", CompleteZsh),
 		),
 		info: infoBase,
 		args: argsZsh,
@@ -225,12 +247,12 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
+				CmdTestDir(GoMakePath(infoBase.Path,
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
@@ -239,60 +261,62 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets with file": {
 		mockSetup: mock.Chain(
 			LogMessage("stdout", ReadFile(fixtures, "fixtures/targets/std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envTargets,
-				make.CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envTargets,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
+			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
+				CmdGitTop(), dirRoot, "", nil),
+			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
+				"", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
+				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
 					infoBase.Version), argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
-		env:  envTargets,
+		env:  envMakeMock,
 		args: argsShowTargets,
 	},
 	"go-make show targets make with file": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", ReadFile(fixtures, "fixtures/targets/make-std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envTargets,
-				make.CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envTargets,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
+			LogMessage("stdout",
+				ReadFile(fixtures, "fixtures/targets/make-std.out")),
+			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
+				CmdGitTop(), dirRoot, "", nil),
+			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
+				CmdTestDir(GoMakePath(infoBase.Path,
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
+				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
 					infoBase.Version), argsShowTargetsMake[1:]...), "", "", nil),
 		),
 		info: infoBase,
-		env:  envTargets,
+		env:  envMakeMock,
 		args: argsShowTargetsMake,
 	},
 	"go-make show targets go-make with file": {
 		mockSetup: mock.Chain(
-			LogMessage("stdout", ReadFile(fixtures, "fixtures/targets/go-make-std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envTargets,
-				make.CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envTargets,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
+			LogMessage("stdout",
+				ReadFile(fixtures, "fixtures/targets/go-make-std.out")),
+			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
+				CmdGitTop(), dirRoot, "", nil),
+			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
+				"", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
+				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
 					infoBase.Version), argsShowTargetsGoMake[1:]...), "", "", nil),
 		),
 		info: infoBase,
-		env:  envTargets,
+		env:  envMakeMock,
 		args: argsShowTargetsGoMake,
 	},
 	"go-make show targets with param": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
+				"", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsShowTargetsParam[1:]...), "", "", nil),
 		),
 		info: infoBase,
@@ -301,15 +325,14 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets install": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoNew.Path,
-					infoNew.Version)), "", "", assert.AnError),
+				CmdTestDir(GoMakePath(infoNew.Path, infoNew.Version)),
+				"", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdGoInstall(infoNew.Path, infoNew.Version),
-				"", "", nil),
+				CmdGoInstall(infoNew.Path, infoNew.Version), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoNew.Path, infoNew.Version),
+				CmdMakeTargets(MakefilePath(infoNew.Path, infoNew.Version),
 					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoNew,
@@ -318,12 +341,12 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets config custom": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.AbsPath("custom")), "", "", nil),
+				CmdTestDir(AbsPath("custom")), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(filepath.Join(make.AbsPath("custom"),
-					make.Makefile), argsShowTargets[1:]...), "", "", nil),
+				CmdMakeTargets(filepath.Join(AbsPath("custom"),
+					Makefile), argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsCustom,
@@ -331,17 +354,16 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets config version latest": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.AbsPath("latest")), "", "",
-				assert.AnError),
+				CmdTestDir(AbsPath("latest")), "", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path, "latest")),
+				CmdTestDir(GoMakePath(infoBase.Path, "latest")),
 				"", "", assert.AnError),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdGoInstall(infoBase.Path, "latest"), "", "", nil),
+				CmdGoInstall(infoBase.Path, "latest"), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, "latest"),
+				CmdMakeTargets(MakefilePath(infoBase.Path, "latest"),
 					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
@@ -351,46 +373,46 @@ var testMakeParams = map[string]MakeParams{
 	"go-make show targets install failed": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoNew.Path,
-					infoNew.Version)), "", "", assert.AnError),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdGoInstall(infoNew.Path, infoNew.Version),
+				CmdTestDir(GoMakePath(infoNew.Path, infoNew.Version)),
 				"", "", assert.AnError),
-			LogError("stderr", "ensure config", make.NewErrNotFound(
-				infoNew.Path, infoNew.Version, make.NewErrCallFailed(dirRoot,
-					make.CmdGoInstall(infoNew.Path, infoNew.Version),
+			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
+				CmdGoInstall(infoNew.Path, infoNew.Version),
+				"", "", assert.AnError),
+			LogError("stderr", "ensure config", NewErrNotFound(
+				infoNew.Path, infoNew.Version, NewErrCallFailed(dirRoot,
+					CmdGoInstall(infoNew.Path, infoNew.Version),
 					assert.AnError))),
 		),
 		info: infoNew,
 		args: argsShowTargets,
-		expectError: make.NewErrNotFound(
-			infoNew.Path, infoNew.Version, make.NewErrCallFailed(dirRoot,
-				make.CmdGoInstall(infoNew.Path, infoNew.Version),
+		expectError: NewErrNotFound(
+			infoNew.Path, infoNew.Version, NewErrCallFailed(dirRoot,
+				CmdGoInstall(infoNew.Path, infoNew.Version),
 				assert.AnError)),
-		expectExit: make.ExitConfigFailure,
+		expectExit: ExitConfigFailure,
 	},
 	"go-make show targets failed": {
 		mockSetup: mock.Chain(
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
+				CmdGitTop(), dirRoot, "", nil),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
+				"", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsShowTargets[1:]...), "", "", assert.AnError),
-			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+			LogError("stderr", "execute make", NewErrCallFailed(dirRoot,
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsShowTargets[1:]...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsShowTargets,
-		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
-			Makefile(infoBase.Path, infoBase.Version), argsShowTargets[1:]...),
-			assert.AnError),
-		expectExit: make.ExitTargetFailure,
+		expectError: NewErrCallFailed(dirRoot, CmdMakeTargets(
+			MakefilePath(infoBase.Path, infoBase.Version),
+			argsShowTargets[1:]...), assert.AnError),
+		expectExit: ExitTargetFailure,
 	},
 
 	// targets without trace.
@@ -407,7 +429,7 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsBashTrace),
 			LogInfo("stderr", infoBase, false),
-			LogMessage("stdout", make.CompleteBash),
+			LogMessage("stdout", CompleteBash),
 		),
 		info: infoBase,
 		args: argsBashTrace,
@@ -416,7 +438,7 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsZshTrace),
 			LogInfo("stderr", infoBase, false),
-			LogMessage("stdout", make.CompleteZsh),
+			LogMessage("stdout", CompleteZsh),
 		),
 		info: infoBase,
 		args: argsZshTrace,
@@ -425,19 +447,19 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceAnyTarget),
 			LogInfo("stderr", infoBase, false),
-			LogExec("stderr", dirWork, make.CmdGitTop()),
+			LogExec("stderr", dirWork, CmdGitTop()),
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
-			LogExec("stderr", dirRoot, make.CmdTestDir(
-				make.GoMakePath(infoBase.Path, infoBase.Version))),
+				CmdGitTop(), dirRoot, "", nil),
+			LogExec("stderr", dirRoot, CmdTestDir(
+				GoMakePath(infoBase.Path, infoBase.Version))),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
-			LogExec("stderr", dirRoot, make.CmdMakeTargets(
-				Makefile(infoBase.Path, infoBase.Version),
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
+				"", "", nil),
+			LogExec("stderr", dirRoot, CmdMakeTargets(
+				MakefilePath(infoBase.Path, infoBase.Version),
 				argsTraceAnyTarget[1:]...)),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsTraceAnyTarget[1:]...), "", "", nil),
 		),
 		info: infoBase,
@@ -447,35 +469,34 @@ var testMakeParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceAnyTarget),
 			LogInfo("stderr", infoBase, false),
-			LogExec("stderr", dirWork, make.CmdGitTop()),
+			LogExec("stderr", dirWork, CmdGitTop()),
 			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				make.CmdGitTop(), dirRoot, "", nil),
-			LogExec("stderr", dirRoot, make.CmdTestDir(
-				make.GoMakePath(infoBase.Path, infoBase.Version))),
+				CmdGitTop(), dirRoot, "", nil),
+			LogExec("stderr", dirRoot, CmdTestDir(
+				GoMakePath(infoBase.Path, infoBase.Version))),
 			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				make.CmdTestDir(make.GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
-			LogExec("stderr", dirRoot, make.CmdMakeTargets(
-				Makefile(infoBase.Path, infoBase.Version),
+				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)), "", "", nil),
+			LogExec("stderr", dirRoot, CmdMakeTargets(
+				MakefilePath(infoBase.Path, infoBase.Version),
 				argsTraceAnyTarget[1:]...)),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsTraceAnyTarget[1:]...), "", "", assert.AnError),
-			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
-				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
+			LogError("stderr", "execute make", NewErrCallFailed(dirRoot,
+				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
 					argsTraceAnyTarget[1:]...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
-		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
-			Makefile(infoBase.Path, infoBase.Version),
+		expectError: NewErrCallFailed(dirRoot, CmdMakeTargets(
+			MakefilePath(infoBase.Path, infoBase.Version),
 			argsTraceAnyTarget[1:]...), assert.AnError),
-		expectExit: make.ExitTargetFailure,
+		expectExit: ExitTargetFailure,
 	},
 }
 
 func TestMakeMock(t *testing.T) {
-	test.Map(t, testMakeParams).
+	test.Map(t, testMakeMockParams).
 		Run(func(t test.Test, param MakeParams) {
 			// Given
 			if param.testSetup != nil {
@@ -495,20 +516,16 @@ func TestMakeMock(t *testing.T) {
 
 var (
 	// dirConfig contains the config directory of go-make.
-	dirConfig = make.AbsPath(filepath.Join("..", "..", "config"))
-	// dirRun contains an arbitrary working directory (uses default run
-	// directory).
-	dirRun = make.AbsPath(filepath.Join("..", "..", "run"))
+	dirConfig = AbsPath(filepath.Join("..", "..", "config"))
+	// dirFixtures contains the fixtures directory for go-make tests.
+	dirFixtures = AbsPath(filepath.Join(dirRoot, "internal", "make", "fixtures"))
 	// dirCache contains the temporary cache for targets working directory.
-	dirCache = filepath.Join(make.AbsPath(make.GetEnvDefault("TMPDIR", "/tmp")),
-		"go-make-"+os.Getenv("USER"), make.EvalSymlinks(make.AbsPath("../..")))
-	// fileCacheGoMake contains the cache file for `show-targets``.
-	fileCache = filepath.Join(dirRun, "targets")
-	// fileCacheMake contains the cache file for `show-targets-make``.
-	fileCacheMake = filepath.Join(dirRun, "targets.make")
-	// fileCacheGoMake contains the cache file for `show-targets-gomake``.
-	fileCacheGoMake = filepath.Join(dirRun, "targets.go-make")
+	dirCache = filepath.Join(AbsPath(GetEnvDefault("TMPDIR", "/tmp")),
+		"go-make-"+os.Getenv("USER"))
 
+	// regexTargets is used to match the ${dir} variable in the environment
+	// values to replace it with the actual test directory.
+	regexTargets = regexp.MustCompile(`(?m)\${dir}`)
 	// regexMakeCall is used to remove the nesting level of the make call when
 	// an error is observed (obsoleted by `--no-print-directory` flag).
 	regexMakeCall = regexp.MustCompile(`(?m)(make)\[[0-9]*\](: [^\n]*\n)`)
@@ -522,73 +539,80 @@ var (
 	// regexGoMakeDebug is used to remove all `go-make` platform dependent
 	// debug information.
 	regexGoMakeDebug = regexp.MustCompile(`(?m).*debug:.*\n`)
-	// regexGoMakeTemp is used to remove the `go-make` config specific path
+	// regexGoBinPath is used to match the `GOBIN`-path in the output and to
+	// replace it against a common prefix.
+	regexGoBinPath = regexp.MustCompile(`(?m)(^` + AbsPath(os.Getenv("GOBIN")) + `)`)
+	// regexGoMakeTemp is used to remove the `go-make` root specific path
 	// information.
-	regexGoMakeTemp = regexp.MustCompile(`(?m)` + dirCache)
-	// regexGoMakeSource is used to remove the `go-make` source specific path
+	regexGoMakeRoot = regexp.MustCompile(`(?m)` + dirRoot)
+	// regexGoMakeCache is used to remove the `go-make` cache specific path
 	// information.
-	regexGoMakeSource = regexp.MustCompile(`(?m)` + make.AbsPath(dirRoot))
+	regexGoMakeCache = regexp.MustCompile(`(?m)` + dirCache)
 	// regexMakeTrace is used to match the make trace output and to remove the
 	// changing line numbers to resiliently match output when `go-make` targets
 	// are moved around.
 	regexMakeTrace = regexp.MustCompile(
-		`(?m)(go-make/config/Makefile.base:)[0-9]+:`)
+		`(?m)(/root/go-make/config/Makefile.base:)[0-9]+:`)
 	// regexMakeTarget is used to match the make trace output to remove the
 	// target update message that changes between make 4.3 and make 4.4.
 	regexMakeTarget = regexp.MustCompile(
-		`(?m)(go-make/config/Makefile.base:).*('.*').*`)
+		`(?m)(/root/go-make/config/Makefile.base:).*('.*').*`)
+	// regexMakeUpdate is used to match the make trace output that spuriously
+	// appears in the output when running `test-self`. In reality this output
+	// is: `config/Makefile.base:771: warning: undefined variable 'dir'`, but
+	// it is unclear why it appears in the output.
+	regexMakeUpdate = regexp.MustCompile(
+		`(?m)/root/go-make/config/Makefile.base: update target 'dir'\n`)
 	// regexMakeOptions is used to match the `go-make` options output to remove
 	// the options that have added between make 4.3 and make 4.4.
-	regexMakeOptions = regexp.MustCompile(
-		`(?m)(^--(shuffle|jobserver-style)=?)\n`)
-	// regexGoBinPath is used to match the `GOBIN`-path in the output and to
-	// replace it against a common prefix.
-	regexGoBinPath = regexp.MustCompile(
-		`(?m)(^` + make.AbsPath(os.Getenv("GOBIN")) + `)`)
-	// replaceFixture replaces the placeholders in the fixture with the values
-	// provided to the replacer.
-	replacerFixture = strings.NewReplacer(
+	regexMakeOptions = regexp.MustCompile(`(?m)(^--(shuffle|jobserver-style)=?)\n`)
+
+	// phFixtures replaces the placeholders in the test fixture with the
+	// values provided to the replacer.
+	phFixtures = strings.NewReplacer(
 		"{{GOVERSION}}", runtime.Version()[2:],
 		"{{PLATFORM}}", runtime.GOOS+"/"+runtime.GOARCH,
 		"{{COMPILER}}", runtime.Compiler)
 )
 
-//go:embed fixtures/*
-var fixtures embed.FS
+// EnvPrepare copies the environment variables and replaces the variable
+// `${dir}` with the given directory. It also appends empty make flags to the
+// end of the slice to ensure that parent options influence the test results
+// - in particular the '--trace' flag.
+func EnvPrepare(env []string, dir string) []string {
+	result := make([]string, 0, len(env)+4)
+	result = append(result, "FILE_TARGETS=${dir}/targets")
 
-func ReadFile(fs embed.FS, name string) string {
-	out, err := fs.ReadFile(name)
-	if err == nil && out != nil {
-		return string(out)
-	} else if err != nil {
-		panic(err)
+	for _, value := range env {
+		result = append(result, regexTargets.ReplaceAllString(value, dir))
 	}
-	panic("no output")
+
+	return append(result, "MAKEFLAGS=", "MFLAGS=", "GOMAKE_MODE=no-config")
 }
 
-func WriteFile(name string, perm os.FileMode, value string) {
-	err := os.WriteFile(name, []byte(value), perm)
-	if err != nil {
-		panic(err)
+// CreateFilter returns a function that filters the output of `go-make`
+// commands to create an environment agnostic output. It removes the
+// timestamps, the `go-make` version warnings, the debug information, the
+// cache and root paths, and replaces the `GOBIN` path with a common prefix.
+// It also removes the make trace output and the target update messages.
+// The function takes a regular expression to match the `go-make` test path
+// and replaces it with a common test path.
+func CreateFilter(regexGoMakeTest *regexp.Regexp) func(string) string {
+	return func(str string) string {
+		str = regexMakeCall.ReplaceAllString(str, "$1$2")
+		str = regexMakeTimestamp.ReplaceAllString(str, "")
+		str = regexGoMakeWarning.ReplaceAllString(str, "")
+		str = regexGoMakeDebug.ReplaceAllString(str, "")
+		str = regexGoMakeCache.ReplaceAllString(str, "/tmp/go-make")
+		str = regexGoMakeRoot.ReplaceAllString(str, "/root/go-make")
+		str = regexGoMakeTest.ReplaceAllString(str, "/test/go-make")
+		str = regexGoBinPath.ReplaceAllString(str, "go/bin")
+		str = regexMakeTrace.ReplaceAllString(str, "$1")
+		str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
+		str = regexMakeUpdate.ReplaceAllString(str, "")
+		str = regexMakeOptions.ReplaceAllString(str, "")
+		return str
 	}
-}
-
-func FilterMakeOutput(str string) string {
-	str = regexMakeCall.ReplaceAllString(str, "$1$2")
-	str = regexMakeTimestamp.ReplaceAllString(str, "")
-	str = regexGoMakeWarning.ReplaceAllString(str, "")
-	str = regexGoMakeDebug.ReplaceAllString(str, "")
-	str = regexGoMakeTemp.ReplaceAllString(str, "go-make")
-	str = regexGoMakeSource.ReplaceAllString(str, "go-make")
-	str = regexGoBinPath.ReplaceAllString(str, "go/bin")
-	str = regexMakeTrace.ReplaceAllString(str, "$1")
-	str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
-	str = regexMakeOptions.ReplaceAllString(str, "")
-	return str
-}
-
-func SetupMakeFixture(str string) string {
-	return replacerFixture.Replace(str)
 }
 
 type MakeExecParams struct {
@@ -640,37 +664,36 @@ var testMakeExecParams = map[string]MakeExecParams{
 
 	"go-make show targets": {
 		info:         infoBase,
-		env:          []string{"FILE_TARGETS=" + fileCache + ".match"},
+		env:          []string{"FILE_TARGETS=${dir}/targets~"},
 		args:         []string{"go-make", "show-targets"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/std.out"),
-		// expectStderr: ReadFile(fixtures, "fixtures/targets/std.err"),
 	},
 	"go-make show targets trace": {
-		env:          []string{"FILE_TARGETS=" + fileCache},
+		env:          []string{"FILE_TARGETS=${dir}/targets"},
 		args:         []string{"go-make", "--trace", "show-targets"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/trace.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets/trace.err"),
 	},
 	"go-make show targets make": {
 		info:         infoBase,
-		env:          []string{"FILE_TARGETS_MAKE=" + fileCacheMake + ".match"},
+		env:          []string{"FILE_TARGETS_MAKE=${dir}/targets.make~"},
 		args:         []string{"go-make", "show-targets-make"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/make-std.out"),
 	},
 	"go-make show targets make trace": {
-		env:          []string{"FILE_TARGETS_MAKE=" + fileCacheMake},
+		env:          []string{"FILE_TARGETS_MAKE=${dir}/targets.make"},
 		args:         []string{"go-make", "--trace", "show-targets-make"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/make-trace.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets/make-trace.err"),
 	},
 	"go-make show targets go-make": {
 		info:         infoBase,
-		env:          []string{"FILE_TARGETS_GOMAKE=" + fileCacheGoMake + ".match"},
+		env:          []string{"FILE_TARGETS_GOMAKE=${dir}/targets.go-make~"},
 		args:         []string{"go-make", "show-targets-go-make"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/go-make-std.out"),
 	},
 	"go-make show targets go-make trace": {
-		env:          []string{"FILE_TARGETS_GOMAKE=" + fileCacheGoMake},
+		env:          []string{"FILE_TARGETS_GOMAKE=${dir}/targets.go-make"},
 		args:         []string{"go-make", "--trace", "show-targets-go-make"},
 		expectStdout: ReadFile(fixtures, "fixtures/targets/go-make-trace.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/targets/go-make-trace.err"),
@@ -688,7 +711,7 @@ var testMakeExecParams = map[string]MakeExecParams{
 		info: infoBase,
 		args: []string{
 			"go-make", "git-verify", "log",
-			"../internal/make/fixtures/git-verify/log-all.in",
+			filepath.Join(dirFixtures, "git-verify", "log-all.in"),
 		},
 		expectStdout: ReadFile(fixtures, "fixtures/git-verify/log-all.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/git-verify/log-all.err"),
@@ -699,7 +722,7 @@ var testMakeExecParams = map[string]MakeExecParams{
 		env:  []string{"GITAUTHOR=John Doe <john.doe@zalando.de>"},
 		args: []string{
 			"go-make", "git-verify", "message",
-			"../internal/make/fixtures/git-verify/msg-failed.in",
+			filepath.Join(dirFixtures, "git-verify", "msg-failed.in"),
 		},
 		expectStdout: ReadFile(fixtures, "fixtures/git-verify/msg-failed.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/git-verify/msg-failed.err"),
@@ -710,7 +733,7 @@ var testMakeExecParams = map[string]MakeExecParams{
 		env:  []string{"GITAUTHOR=John Doe <john.doe@zalando.de>"},
 		args: []string{
 			"go-make", "git-verify", "message",
-			"../internal/make/fixtures/git-verify/msg-okay.in",
+			filepath.Join(dirFixtures, "git-verify", "msg-okay.in"),
 		},
 		expectStdout: ReadFile(fixtures, "fixtures/git-verify/msg-okay.out"),
 		expectStderr: ReadFile(fixtures, "fixtures/git-verify/msg-okay.err"),
@@ -719,19 +742,22 @@ var testMakeExecParams = map[string]MakeExecParams{
 }
 
 func TestMakeExec(t *testing.T) {
-	// Ensure test environment is setup freshly.
-	cmd := exec.Command("rm", "--recursive", "--force", dirRun+"/*")
-	assert.NoError(t, cmd.Run())
-	cmd = exec.Command("mkdir", "-p", dirRun)
-	assert.NoError(t, cmd.Run())
-	cmd = exec.Command("git", "init", dirRun)
+	// Ensure test environment is setup.
+	dirTest := AbsPath(t.TempDir())
+	fmt.Fprintf(os.Stderr, "Test directory: %s\n", dirTest)
+	// Filter that also match the temporary test directory path (`/private` is
+	// prefix visible in MacOS builds).
+	filter := CreateFilter(regexp.MustCompile(`(?m)(/private)?` + dirTest))
+	replace := phFixtures.Replace
+
+	cmd := exec.Command("git", "init", dirTest)
 	assert.NoError(t, cmd.Run())
 
-	WriteFile(fileCache+".match", os.FileMode(0o644),
+	WriteFile(filepath.Join(dirTest, "targets~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/std.out"))
-	WriteFile(fileCacheGoMake+".match", os.FileMode(0o644),
+	WriteFile(filepath.Join(dirTest, "targets.go-make~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/go-make-std.out"))
-	WriteFile(fileCacheMake+".match", os.FileMode(0o644),
+	WriteFile(filepath.Join(dirTest, "targets.make~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/make-std.out"))
 
 	test.Map(t, testMakeExecParams).
@@ -741,22 +767,20 @@ func TestMakeExec(t *testing.T) {
 			stdin := strings.NewReader(param.stdin)
 			stdout := &strings.Builder{}
 			stderr := &strings.Builder{}
-			env := param.env
-
-			// Filter out make environment variables in general. This primary
-			// is to prevent the parent options to influence the test results
-			// - in particular the '--trace' flag.
-			env = append(env, "MAKEFLAGS=", "MFLAGS=", "GOMAKE_MODE=no-config")
+			env := EnvPrepare(param.env, dirTest)
 
 			// When
-			exit := make.Make(stdin, stdout, stderr, info,
-				dirConfig, dirRun, env, param.args...)
+			exit := Make(stdin, stdout, stderr, info,
+				dirConfig, dirTest, env, param.args...)
 
 			// Then
 			assert.Equal(t, param.expectExit, exit)
-			assert.Equal(t, SetupMakeFixture(param.expectStdout),
-				FilterMakeOutput(stdout.String()))
-			assert.Equal(t, SetupMakeFixture(param.expectStderr),
-				FilterMakeOutput(stderr.String()))
+			assert.Equal(t, replace(param.expectStdout), filter(stdout.String()))
+			assert.Equal(t, replace(param.expectStderr), filter(stderr.String()))
+		}).
+		Cleanup(func() {
+			// Cleanup cache directory entries.
+			dir := AbsPath(filepath.Join(dirCache, dirTest, ".."))
+			assert.NoError(t, os.RemoveAll(dir))
 		})
 }

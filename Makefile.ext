@@ -26,10 +26,10 @@ sync::
 #@ sync all test fixtures creating them from the current state.
 sync-fixtures:: install
 	@$(call emsg,info,syncing fixtures [internal/make/fixtures]); \
-	mkdir -p internal/make/fixtures/{completion,targets}; \
+	mkdir --parents internal/make/fixtures/{completion,targets}; \
 	go-make --completion=bash > internal/make/fixtures/completion/bash.out; \
 	go-make --completion=zsh > internal/make/fixtures/completion/zsh.out; \
-	mkdir -p run; (cd run; git init; \
+	mkdir --parents run; (cd run; git init; \
 	  GOMAKE_MODE=":no-config:" go-make show-targets > ../internal/make/fixtures/targets/go-make-std.out; \
 	  GOMAKE_MODE=":no-config:" go-make show-targets-make > ../internal/make/fixtures/targets/make-std.out);
 

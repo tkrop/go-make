@@ -138,12 +138,6 @@ func AbsPath(path string) string {
 	return path
 }
 
-// EvalSymlinks returns the evaluated path of given directory.
-func EvalSymlinks(path string) string {
-	path, _ = filepath.EvalSymlinks(path)
-	return path
-}
-
 // CmdGoInstall creates the argument array of a `go install <path>@<version>`
 // command.
 func CmdGoInstall(path, version string) []string {
