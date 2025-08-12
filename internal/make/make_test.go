@@ -62,19 +62,19 @@ var (
 		"2023-11-10T16:22:54+01:00",
 		"false")
 
-	argsVersion           = []string{"--version"}
-	argsTraceVersion      = []string{"--trace", "--version"}
-	argsBash              = []string{"--completion=bash"}
-	argsBashTrace         = []string{"--trace", "--completion=bash"}
-	argsZsh               = []string{"--completion=zsh"}
-	argsZshTrace          = []string{"--trace", "--completion=zsh"}
-	argsShowTargets       = []string{"show-targets"}
-	argsShowTargetsMake   = []string{"show-targets-make"}
-	argsShowTargetsGoMake = []string{"show-targets-go-make"}
-	argsShowTargetsParam  = []string{"show-targets", "param"}
-	argsShowTargetsCustom = []string{"--config=custom", "show-targets"}
-	argsShowTargetsLatest = []string{"--config=latest", "show-targets"}
-	argsTraceAnyTarget    = []string{"--trace", "target"}
+	argsVersion           = []string{"go-make", "--version"}
+	argsTraceVersion      = []string{"go-make", "--trace", "--version"}
+	argsBash              = []string{"go-make", "--completion=bash"}
+	argsBashTrace         = []string{"go-make", "--trace", "--completion=bash"}
+	argsZsh               = []string{"go-make", "--completion=zsh"}
+	argsZshTrace          = []string{"go-make", "--trace", "--completion=zsh"}
+	argsShowTargets       = []string{"go-make", "show-targets"}
+	argsShowTargetsMake   = []string{"go-make", "show-targets-make"}
+	argsShowTargetsGoMake = []string{"go-make", "show-targets-go-make"}
+	argsShowTargetsParam  = []string{"go-make", "show-targets", "param"}
+	argsShowTargetsCustom = []string{"go-make", "--config=custom", "show-targets"}
+	argsShowTargetsLatest = []string{"go-make", "--config=latest", "show-targets"}
+	argsTraceAnyTarget    = []string{"go-make", "--trace", "target"}
 )
 
 func Makefile(path string, version string) string {
@@ -231,7 +231,7 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargets...), "", "", nil),
+					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargets,
@@ -246,7 +246,7 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
 				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
-					infoBase.Version), argsShowTargets...), "", "", nil),
+					infoBase.Version), argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		env:  envTargets,
@@ -262,7 +262,7 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
 				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
-					infoBase.Version), argsShowTargetsMake...), "", "", nil),
+					infoBase.Version), argsShowTargetsMake[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		env:  envTargets,
@@ -278,7 +278,7 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
 				dirRoot, envTargets, make.CmdMakeTargets(Makefile(infoBase.Path,
-					infoBase.Version), argsShowTargetsGoMake...), "", "", nil),
+					infoBase.Version), argsShowTargetsGoMake[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		env:  envTargets,
@@ -293,7 +293,7 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargetsParam...), "", "", nil),
+					argsShowTargetsParam[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsParam,
@@ -310,7 +310,7 @@ var testMakeParams = map[string]MakeParams{
 				"", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoNew.Path, infoNew.Version),
-					argsShowTargets...), "", "", nil),
+					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoNew,
 		args: argsShowTargets,
@@ -323,7 +323,7 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdTestDir(make.AbsPath("custom")), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(filepath.Join(make.AbsPath("custom"),
-					make.Makefile), argsShowTargets...), "", "", nil),
+					make.Makefile), argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsCustom,
@@ -342,7 +342,7 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdGoInstall(infoBase.Path, "latest"), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, "latest"),
-					argsShowTargets...), "", "", nil),
+					argsShowTargets[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsLatest,
@@ -380,15 +380,15 @@ var testMakeParams = map[string]MakeParams{
 					infoBase.Version)), "", "", nil),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargets...), "", "", assert.AnError),
+					argsShowTargets[1:]...), "", "", assert.AnError),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsShowTargets...), assert.AnError)),
+					argsShowTargets[1:]...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsShowTargets,
 		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
-			Makefile(infoBase.Path, infoBase.Version), argsShowTargets...),
+			Makefile(infoBase.Path, infoBase.Version), argsShowTargets[1:]...),
 			assert.AnError),
 		expectExit: make.ExitTargetFailure,
 	},
@@ -434,10 +434,11 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdTestDir(make.GoMakePath(infoBase.Path,
 					infoBase.Version)), "", "", nil),
 			LogExec("stderr", dirRoot, make.CmdMakeTargets(
-				Makefile(infoBase.Path, infoBase.Version), argsTraceAnyTarget...)),
+				Makefile(infoBase.Path, infoBase.Version),
+				argsTraceAnyTarget[1:]...)),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget...), "", "", nil),
+					argsTraceAnyTarget[1:]...), "", "", nil),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
@@ -455,19 +456,20 @@ var testMakeParams = map[string]MakeParams{
 				make.CmdTestDir(make.GoMakePath(infoBase.Path,
 					infoBase.Version)), "", "", nil),
 			LogExec("stderr", dirRoot, make.CmdMakeTargets(
-				Makefile(infoBase.Path, infoBase.Version), argsTraceAnyTarget...)),
+				Makefile(infoBase.Path, infoBase.Version),
+				argsTraceAnyTarget[1:]...)),
 			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget...), "", "", assert.AnError),
+					argsTraceAnyTarget[1:]...), "", "", assert.AnError),
 			LogError("stderr", "execute make", make.NewErrCallFailed(dirRoot,
 				make.CmdMakeTargets(Makefile(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget...), assert.AnError)),
+					argsTraceAnyTarget[1:]...), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
 		expectError: make.NewErrCallFailed(dirRoot, make.CmdMakeTargets(
-			Makefile(infoBase.Path, infoBase.Version), argsTraceAnyTarget...),
-			assert.AnError),
+			Makefile(infoBase.Path, infoBase.Version),
+			argsTraceAnyTarget[1:]...), assert.AnError),
 		expectExit: make.ExitTargetFailure,
 	},
 }
@@ -718,7 +720,7 @@ var testMakeExecParams = map[string]MakeExecParams{
 
 func TestMakeExec(t *testing.T) {
 	// Ensure test environment is setup freshly.
-	cmd := exec.Command("rm", "--recursive", "--force", dirRun)
+	cmd := exec.Command("rm", "--recursive", "--force", dirRun+"/*")
 	assert.NoError(t, cmd.Run())
 	cmd = exec.Command("mkdir", "-p", dirRun)
 	assert.NoError(t, cmd.Run())

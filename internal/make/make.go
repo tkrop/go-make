@@ -312,7 +312,7 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 	var mode cmd.Mode
 	suffix := []string{}
 	var targets []string
-	for _, arg := range args {
+	for _, arg := range args[1:] {
 		switch {
 		case arg == "--trace":
 			gm.Logger.Call(gm.Stderr, args...)
@@ -465,7 +465,7 @@ func Make( //revive:disable-line:argument-limit // ensures testability.
 ) int {
 	exit, _ := NewGoMake(
 		stdin, stdout, stderr, info, config, wd, env...,
-	).Make(args[1:]...)
+	).Make(args...)
 
 	return exit
 }
