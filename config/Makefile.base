@@ -195,8 +195,10 @@ find-make = $(call find-fallback,$(wildcard $(if \
 MAKEFILE ?= $(call find-make,Makefile)
 MAKEFILE_VARS ?= $(call find-make,Makefile.vars)
 MAKEFILE_EXTS ?= $(call find-make,Makefile.ext)
-$(call cdebug,using MAKEFILE_VARS [$(MAKEFILE_VARS)])
+$(call cdebug,using MAKEFILE [$(MAKEFILE)])
+$(call cdebug,using MAKEFILE_LIST [$(MAKEFILE_LIST)])
 $(call cdebug,using MAKEFILE_EXTS [$(MAKEFILE_EXTS)])
+$(call cdebug,using MAKEFILE_VARS [$(MAKEFILE_VARS)])
 
 # Include makefiles with custom variables.
 include $(MAKEFILE_VARS)
@@ -250,17 +252,17 @@ awk-color = $(awk-gensub) \
 
 
 # Setup go to use desired and consistent go versions.
-GOTOOLCHAIN ?= $(shell $(GO) version | \
-	sed --regexp-extended "s/.*(go[0-9.]+).*/\1/")
-$(call cdebug,using GOTOOLCHAIN [$(GOTOOLCHAIN)])
-GOVERSION ?= $(shell $(GO) version $$(which $(GO)) | \
+GOVERSION ?= $(shell $(GO) version | \
 	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
+# GOVERSION ?= $(shell $(GO) version $$(which $(GO)) | \
+# 	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
+$(call cdebug,using GOVERSION [$(GOVERSION)])
 # Function for checking and warning about go and package version mismatches.
 go-check-version = \
 	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
-	  if ! [[ "$${GOVERSION}" =~ ^$(GOVERSION)* ]]; then \
+	  if [[ "$${GOVERSION}" != "$(GOVERSION)" ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
 		$(call go-check-update,$(1),$${MODULE},$${GOVERSION}, \
 		  build [$${CHECK}], or install matching compiler version); \
@@ -291,10 +293,7 @@ go-check-update = \
 go-install-module = \
 	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install = \
-	echo $(GO) install $(INSTALL_FLAGS) "$(2)" >&2 2>&1; \
-	if [ -z "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
-	  rm --verbose --force  "$(GOBIN)/$(1)"; \
-	fi; $(GO) install $(INSTALL_FLAGS) "$(2)"
+	rm --force "$(GOBIN)/$(1)"; $(GO) install $(INSTALL_FLAGS) "$(2)"
 
 # Function for determining the actual version of a go package from downloading.
 VERSION_REGEX := 's/.*"Path":\s*"([^"]*)".*"Version":\s*"([^"]*)".*/\1@\2/g'
@@ -693,6 +692,10 @@ TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 
 
 ## Standard: default targets to test, lint, and build.
+.DEFAULT:
+	@if ! [[ "$(ARGS)" =~ *"$@"* ]]; then \
+	  $(call emsg,error,unknown target [$@]); exit 1; \
+	fi;
 
 #@ executes the default targets.
 all:: $(TARGETS_ALL)
@@ -707,7 +710,7 @@ call::;	@$(ARGS)
 
 
 $(DIR_TEMP) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
-	@if [ ! -d "$@" ]; then mkdir --parents $@; fi;
+	@if [ ! -d "$@" ]; then mkdir --parents "$@"; fi;
 
 
 ## Make-Support: targets to support user understanding the functionality.
@@ -757,20 +760,21 @@ show-targets = awk -v RS= -F: ' \
 	/(^|\n)\# Files(\n|$$)/,/(^|\n)\# Finished / { \
 	  if ($$1 !~ "^[\#./]") { print $$1 } \
 	}'
+show-options := \
+	--question --no-builtin-rules --no-builtin-variables --print-data-base
 show-options-all = sed 's|^ *-|-|; s|, *|\n|g;' | \
     sed '/^[^-].*$$/d; /^ *$$/d; s| .*$||; s|=.*|=|;' | \
 	sed --regexp-extended 's|^(.*)\[=|\1\n\1=|; s|-.[ [].*||;'
 show-options-long = grep --only-matching -- "--[^, ]*" | \
 	sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'
 
-$(FILE_TARGETS) $(FILE_TARGETS_GOMAKE) $(FILE_TARGETS_MAKE): $(DIR_TEMP) $(MAKEFILE_LIST)
-	@$(call emsg,info,updating targets [$@]); \
+$(FILE_TARGETS) $(FILE_TARGETS_GOMAKE) $(FILE_TARGETS_MAKE): $(MAKEFILE_LIST)
+	@$(call emsg,info,updating targets [$@]); mkdir --parents "$(DIR_TEMP)"; \
 	if [ "$@" == "$(FILE_TARGETS_MAKE)" ]; then MAKEFILE="Makefile"; \
 	else MAKEFILE="$(GOMAKE_MAKEFILE)"; TARGETS="$(GOMAKE_OPTIONS)"; fi; \
 	( echo "$${TARGETS[@]}" | tr ' ' '\n'; \
 	  make --help 2>&1 | $(show-options-long); \
-	  $(MAKE) --question --no-builtin-rules --no-builtin-variables \
-	    --print-data-base --makefile="$${MAKEFILE}" 2>/dev/null | \
+	  $(MAKE) $(show-options) --makefile="$${MAKEFILE}" 2>/dev/null | \
 	    $(show-targets) \
 	) | grep -v "^\s*$$" | LC_ALL=C sort --unique > "$@";
 
@@ -792,8 +796,7 @@ show-raw:
 	@cat "$(GOMAKE_MAKEFILE)" || true;
 #@ shows the effective makefile as evaluated by make.
 show-make:
-	@$(MAKE) --no-builtin-rules --no-builtin-variables --print-data-base \
-	  --question --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null || true;
+	@$(MAKE) $(show-options) --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null || true;
 
 
 ## Git-Support: targets for standard git commands (experimental).
@@ -807,24 +810,28 @@ GITLOG ?= $(GIT) log --pretty=format
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
-git-number = \
-	if command -v gh >/dev/null 2>&1; then \
+git-branch = \
+	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
+	else $(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | \
+	  cut -d ' ' -f 5; fi)
+git-number-create = \
+	$$(if command -v gh >/dev/null 2>&1; then \
 	  ( gh pr list --state all --json "number" --limit 1; \
 	  gh issue list --state all --json "number" --limit 1 ) | \
 	  jq --slurp --raw-output '.[] | .[].number'; \
 	else \
 	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
-	fi | sort --numeric-sort --reverse | head --lines=1
+	fi | sort --numeric-sort --reverse | head --lines=1 | \
+	while read NUM; do echo $$((NUM + 1)); done)
+git-number-commit = \
+	$$($(GITLOG):"%s" $(call git-branch,).. | grep -Eo "[(,]\#[0-9]+" | \
+	sed "s|.*[,(]\#||g" | sort --numeric-sort --reverse | head --lines=1)
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
-	  NUMBER="$$($(git-number))"; MESSAGE="$${MESSAGE} (\#$$((NUMBER+$(2))))"; \
+	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
-git-branch = \
-	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
-	else $(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | \
-	  cut -d ' ' -f 5; fi)
 git-clean = \
 	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
@@ -938,7 +945,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	@BRANCH="$(firstword $(ARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
-	$(call git-message,$*,1); $(GIT) checkout -B "$${BRANCH}" && \
+	$(call git-message,$*,$(git-number-create)); $(GIT) checkout -B "$${BRANCH}" && \
 	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
@@ -948,7 +955,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@MESSAGE="$(ARGS)"; $(call git-message,$*,0); \
+	@MESSAGE="$(ARGS)"; $(call git-message,$*,$(git-number-commit)); \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
@@ -2115,6 +2122,9 @@ debug-files::
 	echo 'FILE_IMAGE $(FILE_IMAGE)'; \
 	echo 'FILE_DEEPCOPY $(FILE_DEEPCOPY)'; \
 	echo 'FILE_HEADER $(FILE_HEADER)'; \
+	echo 'FILE_TARGETS $(FILE_TARGETS)'; \
+	echo 'FILE_TARGETS_MAKE $(FILE_TARGETS_MAKE)'; \
+	echo 'FILE_TARGETS_GOMAKE $(FILE_TARGETS_GOMAKE)'; \
 
 #@ debug the source and module environment variables.
 debug-sources::

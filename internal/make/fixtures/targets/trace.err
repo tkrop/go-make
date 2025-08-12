@@ -1,7 +1,7 @@
 call: go-make --trace show-targets
 info: {"path":"github.com/tkrop/go-make","repo":"git@github.com:tkrop/go-make","version":"v0.0.25","revision":"ba4ff068e795443f256caa06180d976a0fb244e9","build":"2024-01-09T13:02:46+01:00","commit":"2024-01-10T16:22:54+01:00","dirty":true,"go":"{{GOVERSION}}","platform":"{{PLATFORM}}","compiler":"{{COMPILER}}"}
-exec: git rev-parse --show-toplevel [go-make/run]
-exec: test -d go-make/config [go-make/run]
-exec: make --file go-make/config/Makefile.base --no-print-directory --trace show-targets [go-make/run]
+exec: git rev-parse --show-toplevel [/test/go-make]
+exec: test -d /root/go-make/config [/test/go-make]
+exec: make --file /root/go-make/config/Makefile.base --no-print-directory --trace show-targets [/test/go-make]
 [1;96minfo:[0m executing [make show-targets ARGS=""]
-[1;96minfo:[0m updating targets [go-make/run/targets]
+[1;96minfo:[0m updating targets [/test/go-make/targets]

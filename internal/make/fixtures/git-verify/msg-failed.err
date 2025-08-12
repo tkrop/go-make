@@ -1,7 +1,7 @@
-[1;96minfo:[0m executing [make git-verify ARGS="message ../internal/make/fixtures/git-verify/msg-failed.in"]
+[1;96minfo:[0m executing [make git-verify ARGS="message /root/go-make/internal/make/fixtures/git-verify/msg-failed.in"]
 [1;91merror:[0m commit type missing [title=feat{wrong}: all is somehow wrong (org#1)]
 [1;91merror:[0m issue missing [titel=feat{wrong}: all is somehow wrong (org#1)]
 [1;91merror:[0m signed-off-by not the author [sign=Signed-off-by: Alice Doe <alice.doe@zalando.de>; author=John Doe <john.doe@zalando.de>]
-[1;91mfailure:[0m git-verify message ../internal/make/fixtures/git-verify/msg-failed.in [errors=3]
-make: *** [go-make/config/Makefile.base: git-verify] Error 1
-error: execute make: call failed [dir=go-make/run, call=[make --file go-make/config/Makefile.base --no-print-directory git-verify message ../internal/make/fixtures/git-verify/msg-failed.in]]: exit status 2
+[1;91mfailure:[0m git-verify message /root/go-make/internal/make/fixtures/git-verify/msg-failed.in [errors=3]
+make: *** [/root/go-make/config/Makefile.base: git-verify] Error 1
+error: execute make: call failed [dir=/test/go-make, call=[make --file /root/go-make/config/Makefile.base --no-print-directory git-verify message /root/go-make/internal/make/fixtures/git-verify/msg-failed.in]]: exit status 2
