@@ -15,19 +15,29 @@ version-bump version-bump-reset::
 # customize commit target with config file synchronization check.
 commit:: sync-check
 
-#@ check all config files to be synchronized with config directory.
-sync-check::
-	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
-	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
-	    echo "error: $${FILE} (not synchronized)" >&2; exit -1; \
-	  fi; \
-	done;
-
 #@ sync all config files with their respective Makefile.
 sync::
 	@for FILE in $$(find config -type f ! -name "Makefile.vars"); do \
 	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
 	    echo "sync: $${FILE} => $${FILE#*/}"; cp "$${FILE}" "$${FILE#*/}"; \
+	  fi; \
+	done;
+
+#@ sync all test fixtures creating them from the current state.
+sync-fixtures:: install
+	@$(call emsg,info,syncing fixtures [internal/make/fixtures]); \
+	mkdir --parents internal/make/fixtures/{completion,targets}; \
+	go-make --completion=bash > internal/make/fixtures/completion/bash.out; \
+	go-make --completion=zsh > internal/make/fixtures/completion/zsh.out; \
+	mkdir --parents run; (cd run; git init; \
+	  GOMAKE_MODE=":no-config:" go-make show-targets > ../internal/make/fixtures/targets/go-make-std.out; \
+	  GOMAKE_MODE=":no-config:" go-make show-targets-make > ../internal/make/fixtures/targets/make-std.out);
+
+#@ check all config files to be synchronized with config directory.
+sync-check::
+	@for FILE in $$(find config -type f ! -name "Makefile.vars" ! -name "Makefile"); do \
+	  if [ -f "$${FILE#*/}" ] && [ -n "$$(diff "$${FILE}" "$${FILE#*/}")" ]; then \
+	    echo "error: $${FILE} (not synchronized)" >&2; exit -1; \
 	  fi; \
 	done;
 

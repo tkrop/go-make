@@ -1,27 +1,72 @@
 ### bash completion for go-make
-function _go-make-targets() {
-    if [ -z "$(grep '$(GOBIN)/go-make show-targets' Makefile)" ]; then
-        mkdir -p "$(dirname ${1})";
-        make --no-builtin-rules --no-builtin-variables \
-            --print-data-base --question | awk -v RS="" -F":" '
-        /(^|\n)# Files(\n|$)/,/(^|\n)# Finished / {
-            if ($1 !~ "^[#./]") { print $1 }
-        }' | LC_ALL=C sort --unique | tee ${1};
-    else go-make show-targets; fi 2>/dev/null;
-};
 function _go-make-filter() {
-    sed -E -e "s|^(${1}[^/-]*[-/]?)?.*|\1|g" | sort --unique;
+    awk -v prefix="^${1}" -v pat="[-/]" '
+        function min(x, y, l) {
+            while (substr(x, 0, l) != substr(y, 0, l)) { l--; }
+            return l;
+        }
+        function short(x, l) {
+            return (substr(x, 0, 2) == "--") ? x :
+                (m = match(substr(x, l+1), pat)) ? substr(x, 0, l+m) : x;
+        }
+        ($0 ~ prefix) {
+            if (n == 0) { array[n++] = $0; l = length($0); next; }
+            k = min(array[n-1], $0, l); y = short($0, k); a = 0;
+            for (i = n-1; i >= 0; i--) {
+                if (l != k) {
+                    x = short(array[i], k); array[i] = x;
+                } else { x = array[i]; }
+                if (x == y) { a++; }
+            }
+            if (a == 0) { array[n++] = y; }; l = k;
+         }
+         END {
+             for (key in array) print array[key];
+         }';
+};
+function _go-make-show-targets() {
+    local CMD="${1}"; local WORD="${2}";
+    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}${PWD}/targets.${CMD}";
+    if [ -f "${FILE}" ]; then cat "${FILE}";
+        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;
+    else go-make show-targets-${CMD}; fi | _go-make-filter "${WORD}";
+};
+function _go-make-cpu-count() {
+    case "$(uname -s)" in
+        ( Linux* ) nproc;;
+        ( Darwin* ) sysctl -n hw.ncpu;;
+        (*) echo "1";;
+    esac;
 };
 function __complete_go-make() {
-    local WORD="${COMP_WORDS[COMP_CWORD]}";
-    local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}/${PWD}/targets";
-    if [ -f "${FILE}" ]; then
-        local WORDS="$(cat "${FILE}" | _go-make-filter "${WORD}")";
-        ( _go-make-targets "${FILE}" >/dev/null & ) 2>/dev/null;
-    else
-        local WORDS="$(_go-make-targets "${FILE}" | _go-make-filter "${WORD}")";
+    if [ "${COMP_WORDS[COMP_CWORD]}" == "=" ]; then
+        WORD="${COMP_WORDS[COMP_CWORD-1]}=";
+        COMP_WORDS=("${COMP_WORDS[@]:0:COMP_CWORD-1}" "${WORD}");
+    elif [ "${COMP_WORDS[COMP_CWORD-1]}" == "=" ]; then
+        WORD="${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}";
+        COMP_WORDS=("${COMP_WORDS[@]:0:COMP_CWORD-2}" "${WORD}");
+    else local WORD="${COMP_WORDS[COMP_CWORD]}"; fi;
+    case "${WORD}" in
+    ( --directory=* | --include-dir=* )
+        COMPREPLY=($(compgen -d -- "${WORD#*=}"));;
+    ( --file=* | --makefile=* | --config=* | --what-if=* )
+        COMPREPLY=($(compgen -df -- "${WORD#*=}"));;
+    ( --assume-new=* | --assume-old=* | --old-file=* | --new-file=* )
+        COMPREPLY=($(compgen -df -- "${WORD#*=}"));;
+    ( --completion=* )
+        COMPREPLY=($(compgen -W "bash zsh" -- "${WORD#*=}"));;
+    ( --output-sync=* )
+        COMPREPLY=($(compgen -W "none line target recurse" -- "${WORD#*=}"));;
+    ( --jobs=* )
+        COMPREPLY=($(compgen -W "$(_go-make-cpu-count)" -- "${WORD#*=}"));;
+    ( * )
+        local WORDS="$(_go-make-show-targets "${COMP_WORDS[0]}" "${WORD}")";
+        COMPREPLY=($(compgen -W "${WORDS}" -- "${WORD}"));;
+    esac;
+     if [ "${#COMPREPLY[@]}" == "1" ] &&
+        [[ "${COMPREPLY[0]}" == "--"*"=" ]]; then
+        COMPREPLY=("${COMPREPLY[0]}" "${COMPREPLY[0]}*");
     fi;
-    COMPREPLY=($(compgen -W "${WORDS}" -- "${WORD}"));
 };
 complete -F __complete_go-make go-make;
 

@@ -1,2 +1,2 @@
-[1;96minfo:[0m executing [make git-verify ARGS="message ../internal/make/fixtures/git-verify/msg-okay.in"]
-[1;92msuccess:[0m git-verify message ../internal/make/fixtures/git-verify/msg-okay.in [errors=0]
+[1;96minfo:[0m executing [make git-verify ARGS="message /root/go-make/internal/make/fixtures/git-verify/msg-okay.in"]
+[1;92msuccess:[0m git-verify message /root/go-make/internal/make/fixtures/git-verify/msg-okay.in [errors=0]
