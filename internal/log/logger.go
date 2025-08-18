@@ -75,5 +75,9 @@ func (*defaultLogger) Error(writer io.Writer, message string, err error) {
 
 // Message logs the given message to the given writer.
 func (*defaultLogger) Message(writer io.Writer, message string) {
-	fmt.Fprintf(writer, "%s\n", message)
+	if len(message) == 0 || message[len(message)-1] != '\n' {
+		fmt.Fprintf(writer, "%s\n", message)
+	} else {
+		fmt.Fprint(writer, message)
+	}
 }
