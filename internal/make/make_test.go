@@ -755,10 +755,10 @@ func TestMakeExec(t *testing.T) {
 
 	WriteFile(filepath.Join(dirTest, "targets~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/std.out"))
-	WriteFile(filepath.Join(dirTest, "targets.go-make~"), os.FileMode(0o644),
-		ReadFile(fixtures, "fixtures/targets/go-make-std.out"))
 	WriteFile(filepath.Join(dirTest, "targets.make~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/make-std.out"))
+	WriteFile(filepath.Join(dirTest, "targets.go-make~"), os.FileMode(0o644),
+		ReadFile(fixtures, "fixtures/targets/go-make-std.out"))
 
 	test.Map(t, testMakeExecParams).
 		Run(func(t test.Test, param MakeExecParams) {

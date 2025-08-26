@@ -155,6 +155,7 @@ install-gitleaks
 install-go-make
 install-gocognit
 install-gocyclo
+install-gojq
 install-golangci-lint
 install-gomajor
 install-gosec
@@ -226,6 +227,7 @@ uninstall-gitleaks
 uninstall-go-make
 uninstall-gocognit
 uninstall-gocyclo
+uninstall-gojq
 uninstall-golangci-lint
 uninstall-gomajor
 uninstall-gosec
@@ -256,6 +258,7 @@ update-go-make
 update-go?
 update-gocognit
 update-gocyclo
+update-gojq
 update-golangci-lint
 update-gomajor
 update-gosec
