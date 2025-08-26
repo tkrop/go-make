@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.146
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.147
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -372,6 +372,8 @@ TOOLS_GO += \
 	github.com/icholy/gomajor \
 	github.com/golang/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
+	github.com/itchyny/gojq/cmd/gojq \
+	github.com/mikefarah/yq/v4 \
 	k8s.io/code-generator/cmd/deepcopy-gen@$(K8S_CODEGEN_VERSION) \
 	k8s.io/code-generator/cmd/client-gen@$(K8S_CODEGEN_VERSION) \
 	k8s.io/code-generator/cmd/lister-gen@$(K8S_CODEGEN_VERSION) \
@@ -382,8 +384,6 @@ TOOLS_GO += \
 TOOLS_SH += \
 	github.com/anchore/syft \
 	github.com/anchore/grype
-TOOLS_PY += \
-	yq
 TOOLS_NPM += \
 	markdownlint-cli
 
@@ -666,14 +666,12 @@ TARGETS_BUILD_LINUX := $(addprefix $(DIR_BUILD)/linux/,$(COMMANDS))
 TARGETS_INSTALL := $(addprefix install-,$(COMMANDS))
 TARGETS_INSTALL_GO := $(addprefix install-,$(COMMANDS_GO))
 TARGETS_INSTALL_SH := $(addprefix install-,$(COMMANDS_SH))
-TARGETS_INSTALL_PY := $(addprefix install-,$(TOOLS_PY))
 TARGETS_INSTALL_NPM := $(addprefix install-,$(TOOLS_NPM:-cli=))
 TARGETS_INSTALL_ALL := $(TARGETS_INSTALL) $(TARGETS_INSTALL_GO) \
 	$(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
 TARGETS_UNINSTALL := $(addprefix uninstall-,$(COMMANDS))
 TARGETS_UNINSTALL_GO := $(addprefix uninstall-,$(COMMANDS_GO))
 TARGETS_UNINSTALL_SH := $(addprefix uninstall-,$(COMMANDS_SH))
-TARGETS_UNINSTALL_PY := $(addprefix uninstall-,$(TOOLS_PY))
 TARGETS_UNINSTALL_NPM := $(addprefix uninstall-,$(TOOLS_NPM:-cli=))
 TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-,$(CODACY_BINARIES))
 TARGETS_UNINSTALL_ALL := \
@@ -688,7 +686,6 @@ TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_A
 TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(if $(IMAGE_FILES),$(COMMANDS)) db aws)
 TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
 TARGETS_UPDATE_SH := $(addprefix update-,$(COMMANDS_SH))
-TARGETS_UPDATE_PY := $(addprefix update-,$(TOOLS_PY))
 TARGETS_UPDATE_NPM := $(addprefix update-,$(TOOLS_NPM:-cli=))
 TARGETS_UPDATE_MAKE := $(addprefix update/,$(UPDATE_MAKE))
 TARGETS_UPDATE_MAKE? := $(addsuffix ?,$(TARGETS_UPDATE_MAKE))
@@ -1688,13 +1685,6 @@ $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
 	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
 	    sh -s -- -b $(GOBIN); \
 	fi;
-# install python tools used by the project.
-$(TARGETS_INSTALL_PY):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(TOOLS_PY)): $(GOBIN)/%: $(GOBIN)
-	@if command -v pip3 >/dev/null 2>&1 && ! command -v $*; then \
-	  echo "pip3 install --no-input --target \"$(GOBIN)\" --upgrade \"$*\""; \
-	  pip3 install --no-input --target "$(GOBIN)" --upgrade "$*"; \
-	fi;
 # install npm tools used by the project.
 $(TARGETS_INSTALL_NPM):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(TOOLS_NPM:-cli=)): $(GOBIN)/%:
@@ -1721,11 +1711,6 @@ $(TARGETS_UNINSTALL_GO):: uninstall-%:
 # uninstall tools providing an install.sh tool.
 $(TARGETS_UNINSTALL_SH):: uninstall-%:
 	@rm --verbose --force $(wildcard $(GOBIN)/$*);
-# uninstall python based tools used by the project.
-$(TARGETS_UNINSTALL_PY):: uninstall-%:
-	@if command -v pip3 >/dev/null 2>&1; then \
-	  echo "pip3 uninstall --yes $*"; pip3 uninstall --yes $*; \
-	fi;
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@CMD="$(filter $*-cli,$(TOOLS_NPM))"; \
@@ -2097,8 +2082,7 @@ $(TARGETS_UPDATE_MAKE?):: update/%?:
 	else $(call emsg,info,updating [$${FILE}] (updated)); fi;
 
 #@ update all tools required by the project.
-update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_UPDATE_SH) \
-		$(TARGETS_UPDATE_PY) $(TARGETS_UPDATE_NPM)
+update-tools:: $(TARGETS_UPDATE_GO) $(TARGETS_UPDATE_SH) $(TARGETS_UPDATE_NPM)
 	$(GO) mod tidy -compat=${GOVERSION};
 
 update-python::
@@ -2117,12 +2101,6 @@ $(TARGETS_UPDATE_SH):: update-%: $(GOBIN)
 	  curl --silent --show-error --fail --location \
 	    https://raw.githubusercontent.com/anchore/$*/main/install.sh | \
 	    sh -s -- -b $(GOBIN); \
-	fi;
-# update python based tools used by the project.
-$(TARGETS_UPDATE_PY):: update-%: $(GOBIN)
-	@if command -v pip3 >/dev/null 2>&1 && command -v $*; then \
-	  echo "pip3 install --no-input --target \"$(GOBIN)\" --upgrade \"$*\""; \
-	  pip3 install --no-input --target "$(GOBIN)" --upgrade "$*"; \
 	fi;
 # update npm based tools used by the project.
 $(TARGETS_UPDATE_NPM):: update-%: $(GOBIN)
@@ -2250,7 +2228,6 @@ debug-targets-install::
 	@echo 'TARGETS_INSTALL $(TARGETS_INSTALL)'; \
 	echo 'TARGETS_INSTALL_GO $(TARGETS_INSTALL_GO)'; \
 	echo 'TARGETS_INSTALL_SH $(TARGETS_INSTALL_SH)'; \
-	echo 'TARGETS_INSTALL_PY $(TARGETS_INSTALL_PY)'; \
 	echo 'TARGETS_INSTALL_NPM $(TARGETS_INSTALL_NPM)'; \
 	echo 'TARGETS_INSTALL_ALL $(TARGETS_INSTALL_ALL)';
 
@@ -2259,7 +2236,6 @@ debug-targets-uninstall::
 	@echo 'TARGETS_UNINSTALL $(TARGETS_UNINSTALL)'; \
 	echo 'TARGETS_UNINSTALL_GO $(TARGETS_UNINSTALL_GO)'; \
 	echo 'TARGETS_UNINSTALL_SH $(TARGETS_UNINSTALL_SH)'; \
-	echo 'TARGETS_UNINSTALL_PY $(TARGETS_UNINSTALL_PY)'; \
 	echo 'TARGETS_UNINSTALL_NPM $(TARGETS_UNINSTALL_NPM)'; \
 	echo 'TARGETS_UNINSTALL_CODACY $(TARGETS_UNINSTALL_CODACY)'; \
 	echo 'TARGETS_UNINSTALL_ALL $(TARGETS_UNINSTALL_ALL)'; \
@@ -2284,7 +2260,6 @@ debug-targets-update::
 	echo 'TARGETS_UPDATE? $(TARGETS_UPDATE?)'; \
 	echo 'TARGETS_UPDATE_GO $(TARGETS_UPDATE_GO)'; \
 	echo 'TARGETS_UPDATE_SH $(TARGETS_UPDATE_SH)'; \
-	echo 'TARGETS_UPDATE_PY $(TARGETS_UPDATE_PY)'; \
 	echo 'TARGETS_UPDATE_NPM $(TARGETS_UPDATE_NPM)'; \
 	echo 'TARGETS_UPDATE_MAKE $(TARGETS_UPDATE_MAKE)'; \
 	echo 'TARGETS_UPDATE_MAKE? $(TARGETS_UPDATE_MAKE?)'; \
