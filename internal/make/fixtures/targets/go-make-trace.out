@@ -180,6 +180,7 @@ install-mockgen
 install-revive
 install-staticcheck
 install-syft
+install-yq
 install-zally
 lint
 lint-aligncheck
@@ -250,6 +251,7 @@ uninstall-mockgen
 uninstall-revive
 uninstall-staticcheck
 uninstall-syft
+uninstall-yq
 uninstall-zally
 update
 update-all
@@ -269,16 +271,21 @@ update-golangci-lint
 update-gomajor
 update-gosec
 update-govulncheck
+update-grype
 update-informer-gen
 update-kind
 update-lister-gen
 update-make
 update-make?
+update-markdownlint
 update-mock
 update-mockgen
+update-python
 update-revive
 update-staticcheck
+update-syft
 update-tools
+update-yq
 update-zally
 update/.codacy.yaml
 update/.codacy.yaml?
