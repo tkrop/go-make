@@ -913,12 +913,12 @@ git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	}'
 
 GITFORMAT ?= "%Cred%h %t %Cgreen%ad%Creset | %s %C(bold blue)[%an]%Creset%C(yellow)%d%Creset"
-#@ prints the git log as in pretty short format.
+#@ prints the git log of a branch in pretty short format.
 git-log::
 	@$(GIT) log --graph --date=iso --pretty=format:$(GITFORMAT);
-#@ prints the git log as graph in pretty short format.
+#@ prints the git log of all branches as graph in pretty short format.
 git-graph::
-	@$(GIT) log --graph --date=iso --pretty=format:$(GITFORMAT) --all;
+	@$(GIT) log --graph --date=iso --all --pretty=format:$(GITFORMAT);
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
 	@BRANCH="$$($(GITBRANCH))"; MAIN="$(call git-branch,$(ARGS))"; \
