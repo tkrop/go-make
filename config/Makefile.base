@@ -820,16 +820,18 @@ git-branch = \
 	  cut -d ' ' -f 5; fi)
 git-number-create = \
 	$$(if command -v gh >/dev/null 2>&1; then \
-	  ( gh pr list --state all --json "number" --limit 1; \
-	  gh issue list --state all --json "number" --limit 1 ) | \
+	  ( gh pr list --state all --json "number" --limit 1 || exit 1; \
+	  gh issue list --state all --json "number" --limit 1 || exit 1; ) | \
 	  jq --slurp --raw-output '.[] | .[].number'; \
 	else \
 	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
 	fi | sort --numeric-sort --reverse | head --lines=1 | \
 	while read NUM; do echo $$((NUM + 1)); done)
 git-number-commit = \
-	$$($(GITLOG):"%s" $(call git-branch,).. | grep -Eo "[(,]\#[0-9]+" | \
-	sed "s|.*[,(]\#||g" | sort --numeric-sort --reverse | head --lines=1)
+	$$(NUMBER="$$( $(GITLOG):"%s" $(call git-branch,).. | \
+	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
+	if [ -n "$${NUMBER}" ]; then echo "$${NUMBER}"; \
+	else echo "$(call git-number-create)"; fi)
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
