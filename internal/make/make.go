@@ -66,8 +66,9 @@ const (
 		"    local CMD=\"${1}\"; local WORD=\"${2}\";\n" +
 		"    local FILE=\"" + GoMakeTargetsDir + "/targets.${CMD}\";\n" +
 		"    if [ -f \"${FILE}\" ]; then cat \"${FILE}\";\n" +
-		"        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;\n" +
-		"    else go-make show-targets-${CMD}; fi | _go-make-filter \"${WORD}\";\n" +
+		"        (go-make show-targets-${CMD} >/dev/null &);\n" +
+		"    else go-make show-targets-${CMD}; fi 2>/dev/null |\n" +
+		"        _go-make-filter \"${WORD}\";\n" +
 		"};\n"
 	// CompleteCPUCountFunc provides the common function to get the number of
 	// CPUs available on the system used for parallel execution of `--jobs`.
