@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.148
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.149
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -818,7 +818,7 @@ git-branch = \
 	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
 	else echo "$(git-branch-main)"; fi)
 git-branch-main = \
-	$$(git symbolic-ref refs/remotes/origin/HEAD | sed 's|^refs/remotes/origin/||')
+	$$(git remote show origin | grep 'HEAD branch' | awk '{print $$NF}')
 git-number = \
 	$$(if command -v gh >/dev/null 2>&1; then \
 	  ( gh pr list --state all --json "number" --limit 1 || exit 1; \
@@ -835,6 +835,7 @@ git-message = \
 	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
 git-clean = \
+	$(call emsg,info,git-clean [$(1)$(if $(2), - $(2))]) && \
 	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
 	  TIP="$$($(GITTIP) "$${BRANCH}")"; \
@@ -917,17 +918,14 @@ git-graph::
 	@$(GIT) log --graph --date=iso --all --pretty=format:$(GITFORMAT);
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
-	@BRANCH="$$($(GITBRANCH))"; MAIN="$(call git-branch,$(ARGS))"; \
-	$(call git-clean,$${MAIN}\|$${BRANCH},$(ARGS));
+	@BRANCH="$(call git-branch,$(ARGS))"; \
+	$(call git-clean,$${BRANCH}\|$$($(GITBRANCH)),$(ARGS));
 #@ [all] # checks out default branch and cleans up the git history removing merged branches.
 git-reset::
-	@BRANCH="$$($(GITBRANCH))"; MAIN="$(call git-branch,$(ARGS))"; \
-	if [ "$${BRANCH}" != "$${MAIN}" ]; then \
-	  $(GIT) checkout "$${MAIN}" && $(GIT) pull || ( \
-	    $(GIT) stash && $(GIT) checkout "$${MAIN}" && \
-		$(GIT) pull && $(GIT) stash apply \
-	  ) \
-	fi || exit 1; $(call git-clean,$${MAIN},$(ARGS));
+	@BRANCH="$(call git-branch,$(ARGS))"; ( \
+	  $(GIT) stash && $(call emsg,info,git-reset [$${BRANCH}]) && \
+	  $(GIT) checkout "$${BRANCH}" && $(GIT) pull && $(GIT) stash apply \
+	) || exit 1; $(call git-clean,$${BRANCH},$(ARGS));
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
 git-verify::
 	@$(call dmsg,info,git-verify); MODE="$(firstword $(ARGS))"; \
@@ -935,9 +933,9 @@ git-verify::
 	( "log" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "message" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
 	( "branch" ) $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))";; \
-	( "pull" | * ) MAIN="$(call git-branch,$(wordlist 2,2,$(ARGS)))" && \
-	  $(GIT) fetch origin "$${MAIN}" --verbose && \
-	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${MAIN}";; \
+	( "pull" | * ) BRANCH="$(call git-branch,$(wordlist 2,2,$(ARGS)))" && \
+	  $(GIT) fetch origin "$${BRANCH}" --verbose && \
+	  $(GIT) log --no-merges --format=raw "$$($(GITBRANCH))" "^origin/$${BRANCH}";; \
 	esac | $(call git-verify,$${MODE}) >&2;
 
 #@ <branch> <message> # creates a branch with the current change set using next issue.
@@ -959,9 +957,9 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@BRANCH="$$(git branch --show-current)"; \
+	@BRANCH="$$($(GITBRANCH))"; \
 	NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
-	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
+	grep -Eo "[(,]#[0-9]+" | sed "s|.*[,(]#||g" | grep -v "^$$" | head --lines=1)"; \
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
 	$(call emsg,info,git-commit [$${BRANCH} - $${MESSAGE}]); \
