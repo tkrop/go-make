@@ -28,8 +28,9 @@ _go-make-show-targets() {
     local CMD="${1}"; local WORD="${2}";
     local FILE="${TMPDIR:-/tmp}/go-make-${USER:-$(whoami)}${PWD}/targets.${CMD}";
     if [ -f "${FILE}" ]; then cat "${FILE}";
-        (go-make show-targets-${CMD} >/dev/null & ) 2>/dev/null;
-    else go-make show-targets-${CMD}; fi | _go-make-filter "${WORD}";
+        (go-make show-targets-${CMD} >/dev/null &);
+    else go-make show-targets-${CMD}; fi 2>/dev/null |
+        _go-make-filter "${WORD}";
 };
 __complete_go-make() {
     local targets=($(_go-make-show-targets "${words[1]}" "${words[-1]}"));
