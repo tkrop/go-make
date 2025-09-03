@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.149
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.150
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -918,11 +918,12 @@ git-graph::
 	@$(GIT) log --graph --date=iso --all --pretty=format:$(GITFORMAT);
 #@ [all] # cleans up the git history removing merged branches except the current.
 git-clean::
-	@BRANCH="$(call git-branch,$(ARGS))"; \
+	@BRANCH="$(call git-branch,$(ARGS))"; ARGS=""; \
 	$(call git-clean,$${BRANCH}\|$$($(GITBRANCH)),$(ARGS));
 #@ [all] # checks out default branch and cleans up the git history removing merged branches.
 git-reset::
-	@BRANCH="$(call git-branch,$(ARGS))"; ( \
+	@BRANCH="$(call git-branch,$(ARGS))"; ARGS=""; \
+	$(GIT) checkout "$${BRANCH}" && $(GIT) pull || ( \
 	  $(GIT) stash && $(call emsg,info,git-reset [$${BRANCH}]) && \
 	  $(GIT) checkout "$${BRANCH}" && $(GIT) pull && $(GIT) stash apply \
 	) || exit 1; $(call git-clean,$${BRANCH},$(ARGS));
@@ -942,28 +943,28 @@ git-verify::
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
 $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
-	@BRANCH="$(firstword $(ARGS))"; \
+	@BRANCH="$(firstword $(ARGS))"; ARGS=""; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
 	$(call git-message,$*,$(git-number)); \
 	$(call emsg,info,git-create [$${BRANCH} - $${MESSAGE}]); \
 	$(GIT) checkout -B "$${BRANCH}" && \
-	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
+	$(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
-	  gh pr create --base "$(git-branch-main)" --head "$${BRANCH}" \
-	    --draft --assignee "@me" --title "$${MESSAGE}"; \
+	  gh pr create --base "$(git-branch-main)" \
+	    --head "$${BRANCH}" --draft --assignee "@me" --title "$${MESSAGE}"; \
 	fi || $(GIT) checkout "$${BRANCH}"; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@BRANCH="$$($(GITBRANCH))"; \
+	@BRANCH="$$($(GITBRANCH))"; ARGS=""; \
 	NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
 	grep -Eo "[(,]#[0-9]+" | sed "s|.*[,(]#||g" | grep -v "^$$" | head --lines=1)"; \
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
 	$(call emsg,info,git-commit [$${BRANCH} - $${MESSAGE}]); \
-	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
+	$(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
 $(TARGETS_GIT_FIX):: git-fix%:
