@@ -948,7 +948,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
 	$(call git-message,$*,$(git-number)); \
-	$(call dmsg,info,git-create "[$${BRANCH} - $${MESSAGE}]"); \
+	$(call dmsg,info,git-create [$${BRANCH} - $${MESSAGE}]); \
 	$(GIT) checkout -B "$${BRANCH}" && \
 	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
@@ -963,7 +963,7 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
-	$(call dmsg,info,git-commit "[$${MESSAGE}]"); \
+	$(call dmsg,info,git-commit [$${MESSAGE}]); \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
