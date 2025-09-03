@@ -959,11 +959,12 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
+	@BRANCH="$$(git branch --show-current)"; \
+	NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
 	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
-	$(call emsg,info,git-commit [$${MESSAGE}]); \
+	$(call emsg,info,git-commit [$${BRANCH} - $${MESSAGE}]); \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
