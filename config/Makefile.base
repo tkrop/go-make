@@ -816,9 +816,10 @@ COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
 git-branch = \
 	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
-	else $(GIT) remote show origin 2>/dev/null | grep "HEAD branch:" | \
-	  cut -d ' ' -f 5; fi)
-git-number-create = \
+	else echo "$(git-branch-main)"; fi)
+git-branch-main = \
+	$$(git symbolic-ref refs/remotes/origin/HEAD | sed 's|^refs/remotes/origin/||')
+git-number = \
 	$$(if command -v gh >/dev/null 2>&1; then \
 	  ( gh pr list --state all --json "number" --limit 1 || exit 1; \
 	  gh issue list --state all --json "number" --limit 1 || exit 1; ) | \
@@ -827,11 +828,6 @@ git-number-create = \
 	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
 	fi | sort --numeric-sort --reverse | head --lines=1 | \
 	while read NUM; do echo $$((NUM + 1)); done)
-git-number-commit = \
-	$$(NUMBER="$$( $(GITLOG):"%s" $(call git-branch,).. | \
-	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
-	if [ -n "$${NUMBER}" ]; then echo "$${NUMBER}"; \
-	else echo "$(call git-number-create)"; fi)
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
@@ -951,17 +947,23 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	@BRANCH="$(firstword $(ARGS))"; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
-	$(call git-message,$*,$(git-number-create)); $(GIT) checkout -B "$${BRANCH}" && \
+	$(call git-message,$*,$(git-number)); \
+	$(call dmsg,info,git-create "[$${BRANCH} - $${MESSAGE}]"); \
+	$(GIT) checkout -B "$${BRANCH}" && \
 	ARGS="" $(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
-	  gh pr create --base "$(call git-branch,)" --head "$${BRANCH}" \
+	  gh pr create --base "$(git-branch-main)" --head "$${BRANCH}" \
 	    --draft --assignee "@me" --title "$${MESSAGE}"; \
 	fi || $(GIT) checkout "$${BRANCH}"; exit 0;
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
-	@MESSAGE="$(ARGS)"; $(call git-message,$*,$(git-number-commit)); \
+	@NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
+	grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g" | head --lines=1)"; \
+	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
+	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
+	$(call dmsg,info,git-commit "[$${MESSAGE}]"); \
 	ARGS="" $(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
