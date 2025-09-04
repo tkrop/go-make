@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.150
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.151
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -408,7 +408,7 @@ GIT ?= git
 GITHOOKS ?= pre-commit # commit-msg
 GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get user.email)>")
 GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
-GITURL := $(shell $(GIT) remote get-url origin 2>/dev/null | \
+GITURL := $(shell $(GIT) config --get remote.origin.url 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/^x-access-token:[^@]*@//; s/:/\//;")
 GITHOST := $(word 1,$(subst /, ,$(GITURL)))
 GITOWNER := $(word 2,$(subst /, ,$(GITURL)))
@@ -820,10 +820,10 @@ git-branch = \
 git-branch-main = \
 	$$(git remote show origin | grep 'HEAD branch' | awk '{print $$NF}')
 git-number = \
-	$$(if command -v gh >/dev/null 2>&1; then \
-	  ( gh pr list --state all --json "number" --limit 1 || exit 1; \
-	  gh issue list --state all --json "number" --limit 1 || exit 1; ) | \
-	  jq --slurp --raw-output '.[] | .[].number'; \
+	$$(if command -v gh >/dev/null 2>&1; then ( \
+	    gh pr list --state all --json "number" --limit 1 || exit 1; \
+	    gh issue list --state all --json "number" --limit 1 || exit 1; \
+	  ) | jq --slurp --raw-output '.[] | .[].number'; \
 	else \
 	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
 	fi | sort --numeric-sort --reverse | head --lines=1 | \
@@ -835,16 +835,15 @@ git-message = \
 	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
 git-clean = \
-	$(call emsg,info,git-clean [$(1)$(if $(2), - $(2))]) && \
-	$(GITPRUNE); HISTORY=($$($(GIT) log --pretty=format:"%T" "$${MAIN}")); \
+	$(call emsg,info,git-clean [$(1)$(if $(2), - $(2))]); $(GITPRUNE); \
+	HISTORY=($$($(GIT) log --pretty=format:"%T" "$(git-branch-main)")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
 	  TIP="$$($(GITTIP) "$${BRANCH}")"; \
 	  if [[ "$${HISTORY[@]}" =~ $${TIP} ]]; then \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(2)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
-	  else $(call emsg,info,keeping branch [$${BRANCH}]); \
-	  fi; \
+	  else $(call emsg,info,keeping branch [$${BRANCH}]); fi; \
 	done; $(GITPRUNE)
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	BEGIN { \
@@ -1022,7 +1021,8 @@ init-go:: go.mod
 go.mod: go.sum
 go.sum: $(SOURCES)
 	@$(call emsg,info,updating [go.mod&go.sum]);
-	$(if $(SOURCES),$(if go.mod,,$(GO) mod init "$(GITURL)" &&) \
+	$(if $(SOURCES), \
+	  $(if $(wildcard go.mod),,$(GO) mod init "$(GITURL)" &&) \
 	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
 	  touch go.mod go.sum && $(GO) mod download;)
 
