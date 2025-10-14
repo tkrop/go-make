@@ -8,7 +8,7 @@ import (
 	"github.com/tkrop/go-make/internal/make"
 )
 
-var testMainParams = map[string]test.MainParams{
+var testMainParams = map[string]test.MainParam{
 	"config missing": {
 		Args:     []string{"go-mock", "show-help"},
 		ExitCode: make.ExitConfigFailure,
