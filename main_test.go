@@ -10,15 +10,15 @@ import (
 
 var testMainParams = map[string]test.MainParam{
 	"config missing": {
-		Args:     []string{"go-mock", "show-help"},
+		Args:     []string{"go-make", "show-help"},
 		ExitCode: make.ExitConfigFailure,
 	},
 	"show-help": {
-		Args:     []string{"go-mock", "--config=config", "show-help"},
+		Args:     []string{"go-make", "--config=config", "show-help"},
 		ExitCode: make.ExitSuccess,
 	},
 	"show-targets": {
-		Args:     []string{"go-mock", "--config=config", "show-targets"},
+		Args:     []string{"go-make", "--config=config", "show-targets"},
 		ExitCode: make.ExitSuccess,
 	},
 }

@@ -59,13 +59,13 @@ test-args::
 
 # TODO: fix ordering issue.
 test-test-args::
-	@ACTUAL=($$(make -f Makefile.base test-args scope:all cmd/TestCmd)) && \
+	@ACTUAL=($$(make -f config/Makefile.base test-args scope:all cmd/TestCmd)) && \
 	EXPECTED=("-coverpkg=./..." "./cmd" "-run" "TestCmd") && \
 	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
-	ACTUAL=($$(make -f Makefile.base test-args scope:all internal/make)) && \
+	ACTUAL=($$(make -f config/Makefile.base test-args scope:all internal/make)) && \
 	EXPECTED=("-coverpkg=./..." "./internal/make") && \
 	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
-	ACTUAL=($$(make -f Makefile.base test-args internal/make/make_test.go)) && \
+	ACTUAL=($$(make -f config/Makefile.base test-args internal/make/make_test.go)) && \
 	EXPECTED=($$(find ./internal/make -name "*.go" | sort -u)) && \
 	DIFF="$$(diff <(echo "$${ACTUAL[*]}") <(echo "$${EXPECTED[*]}"))" && \
 	echo "info: test-args finished successful!!" || echo "$${DIFF}";

@@ -107,7 +107,7 @@ type CallParams struct {
 
 var testCallParams = map[string]CallParams{
 	"empty args": {
-		expectString: "call:\n",
+		expectString: "call: <no-args>\n",
 	},
 	"single arg": {
 		args:         []string{"arg"},
@@ -141,7 +141,7 @@ type ErrorParams struct {
 
 var testErrorParams = map[string]ErrorParams{
 	"empty message": {
-		expectString: "error: <unknown>\n",
+		expectString: "error: <no-error>\n",
 	},
 	"non-empty message": {
 		message:      "message",

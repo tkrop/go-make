@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.153
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.154
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -219,10 +219,16 @@ FILE_HEADER ?=
 FILE_IMAGE ?= Dockerfile
 FILE_DEEPCOPY ?= zz_generated.deepcopy.go
 
+# Setup files for caching mocks.
+FILE_MOCKS ?= $(DIR_TEMP)/mocks
 # Setup files for caching targets.
 FILE_TARGETS ?= $(DIR_TEMP)/targets
 FILE_TARGETS_MAKE ?= $(FILE_TARGETS).make
 FILE_TARGETS_GOMAKE ?= $(FILE_TARGETS).go-make
+
+# Setup custom filters for source files.
+FILTER_NOLINT ?=
+FILTER_NOFORMAT ?=
 
 
 # Function to ensure compatibility of gawk and mawk.
@@ -241,9 +247,11 @@ ifneq ($(awk-gensub),true)
 	  } \
 	  return t \
 	}
+   awk-beginfile = BEGINFILE
   $(call cdebug,using GENSUB [$(awk-gensub)])
 else
   awk-gensub =
+   awk-beginfile =
 endif
 awk-color = $(awk-gensub) \
 	function color(str) { \
@@ -355,16 +363,16 @@ gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
 	else echo "(devel)"; fi)
 
 # https://github.com/kubernetes/code-generator/tags
-K8S_CODEGEN_VERSION ?= v0.33.3
+K8S_CODEGEN_VERSION ?= v0.34.1
 # https://github.com/golangci/golangci-lint/tags
-GOLANGCI_VERSION ?= v1.64.8
+GOLANGCI_VERSION ?= v2.5.0
 # https://github.com/mgechev/revive/tags
 # https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
-REVIVE_VERSION ?= v1.7.0
+REVIVE_VERSION ?= v1.12.0
 
 # Setup default tool command versions to be installed.
 TOOLS_GO += \
-	github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION) \
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
 	github.com/uudashr/gocognit/cmd/gocognit \
@@ -374,7 +382,7 @@ TOOLS_GO += \
 	honnef.co/go/tools/cmd/staticcheck \
 	github.com/zricethezav/gitleaks/v8 \
 	github.com/icholy/gomajor \
-	github.com/golang/mock/mockgen \
+	go.uber.org/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
 	github.com/itchyny/gojq/cmd/gojq \
 	github.com/mikefarah/yq/v4 \
@@ -515,12 +523,12 @@ CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
 CODACY_STATICCHECK_VERSION ?= 3.0.18
 CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
 # https://github.com/codacy/codacy-analysis-cli/tags
-CODACY_ANALYSIS-CLI_VERSION ?= 7.9.25
+CODACY_ANALYSIS-CLI_VERSION ?= 7.10.0
 CODACY_ANALYSIS-CLI_EXTENSION ?= assembly.jar
-# https://github.com/codacy/codacy-coverage-reporter
+# https://github.com/codacy/codacy-coverage-reporter/tags
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
 	CODACY_REPORTER_VERSION ?= 13.13.13
-else
+else # always use latest version for codacy.com
 	CODACY_REPORTER_VERSION ?=
 endif
 CODACY_API_TOKEN ?=
@@ -549,6 +557,7 @@ TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdo
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
     $(if $(filter $(CODACY),enabled),lint-codacy,)
+TARGETS_FORMAT ?= format-go
 TARGETS_CLEAN ?= clean-build
 TARGETS_UPDATE ?= update-go update-deps update-make
 
@@ -624,36 +633,38 @@ $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS
 
 # Optimized generation of mocks.
 gen-mocks = \
-	if [ -n "$(SOURCES)" ]; then \
-	  grep "//go:generate[[:space:]]*mockgen" $(SOURCES) | \
-	    $(gen-mocks-awk) | sort --unique; \
-	fi
-gen-mocks-awk = \
-	awk '{ \
-	  source = "_"; target = "_"; package = "_"; \
-	  origin = substr($$1, 0, index($$1, "://go:generate") - 1); \
-	  path = substr(origin, 0, match(origin, "/[^/]*$$")); \
-	  for (i = 1; i <= NF; i++) { \
-		if ($$i ~ "^-source=") { \
-		  cmd = "readlink -f \"" path "/" substr($$i, 9) "\""; \
-		  cmd | getline source; close(cmd) \
-		} else if ($$i ~ "^-destination=") { \
-		  cmd = "readlink -f \"" path "/" substr($$i, 14) "\""; \
-		  cmd | getline target; close(cmd) \
-		} \
+	awk 'BEGIN { \
+	  sarg="-source"; targ = "-destination"; dlen = length("$(CURDIR)") + 2; \
+	} $(awk-gensub) \
+	$(awk-beginfile) { path = gensub("/[^/]*$$", "", "1", FILENAME); } \
+	function file(path, arg, param, len,    link) { \
+	  if (arg != param) { arg = substr(arg, len) } else { i++; arg = $$i; } \
+	  cmd = "readlink -f \"" path "/" arg "\""; cmd | getline link; close(cmd); \
+	  return substr(link, dlen) \
+	} \
+	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?") { \
+	  source = ""; target = ""; package = ""; \
+	  command = $$2; \
+	  for (i = 3; i <= NF; i++) { arg = $$i; \
+	    if (arg ~ "^" sarg) { \
+	      source = file(path, arg, sarg, 9); arg = sarg "=" source; \
+	    } else if (arg ~ "^" targ) { \
+	      target = file(path, arg, targ, 14); arg = targ "=" target; \
+	    } \
+	    command = command " " arg; \
 	  } \
-	  if (source == "_") { package = $$(NF-1) } \
-	  print target "|" source "|" package "|" origin \
-	}'
+	  if (!target) { printf($(call amsg,error,target missing \
+		  [%s]\n), command) > "/dev/stderr"; } \
+	  if (!source) { package = $$(NF-1); } \
+	  print target "|" source "|" package "|" command \
+	}' $(SOURCES) | sort -u | sed ':a; N; s/\n/;/; ta';
 
-MOCKS := $(shell $(gen-mocks))
-MOCKS_TARGETS := $(shell echo "$(MOCKS)"  | \
-	awk 'BEGIN {FS="|"; RS=" "} ($$1 != "_") { print $$1 }' | sort --unique)
-MOCKS_SOURCES := $(shell echo "$(MOCKS)" | \
-	awk 'BEGIN {FS="|"; RS=" "} ($$2 != "_") { print $$2 }' | sort --unique)
-MOCKS_ORIGINS := $(shell echo "$(MOCKS)" | \
-	awk 'BEGIN {FS="|"; RS=" "} ($$4 != "_") { print $$4 }' | sort --unique)
+MOCKS := $(if $(SOURCES),$(shell $(gen-mocks)))
 $(call cdebug,using MOCKS [$(MOCKS)])
+MOCKS_TARGETS := $(strip $(shell echo "$(MOCKS)" | \
+	awk 'BEGIN {FS="|"; RS=";"} ($$1 != "") { print $$1 }' | sort --unique))
+MOCKS_SOURCES := $(strip $(shell echo "$(MOCKS)" | \
+	awk 'BEGIN {FS="|"; RS=";"} ($$2 != "") { print $$2 }' | sort --unique))
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-,all $(COMMANDS))
@@ -790,20 +801,20 @@ $(FILE_TARGETS) $(FILE_TARGETS_GOMAKE) $(FILE_TARGETS_MAKE): $(MAKEFILE_LIST)
 show-help::
 	@cat $(MAKEFILE_LIST) | $(show-help) || true;
 #@ shows all supported (customizable) variable (with defaults).
-show-vars:
+show-vars::
 	@cat "$(GOMAKE_MAKEFILE)" | $(show-vars) || true;
 #@ shows all supported targets and options.
-show-targets: $(FILE_TARGETS)
+show-targets:: $(FILE_TARGETS)
 	@cat "$(FILE_TARGETS)" || true;
-show-targets-go-make: $(FILE_TARGETS_GOMAKE)
+show-targets-go-make:: $(FILE_TARGETS_GOMAKE)
 	@cat "$(FILE_TARGETS_GOMAKE)" || true;
-show-targets-make: $(FILE_TARGETS_MAKE)
+show-targets-make:: $(FILE_TARGETS_MAKE)
 	@cat "$(FILE_TARGETS_MAKE)" || true;
 #@ shows the raw base makefile as implemented.
-show-raw:
+show-raw::
 	@cat "$(GOMAKE_MAKEFILE)" || true;
 #@ shows the effective makefile as evaluated by make.
-show-make:
+show-make::
 	@$(MAKE) $(show-options) --makefile="$(GOMAKE_MAKEFILE)" 2>/dev/null || true;
 
 
@@ -1023,8 +1034,7 @@ $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
 
 #@ initialize the go module and package dependencies.
 init-go:: go.mod
-go.mod: go.sum
-go.sum: $(SOURCES)
+go.sum go.mod&: $(SOURCES)
 	@$(call emsg,info,updating [go.mod&go.sum]);
 	$(if $(SOURCES), \
 	  $(if $(wildcard go.mod),,$(GO) mod init "$(GITURL)" &&) \
@@ -1033,17 +1043,24 @@ go.sum: $(SOURCES)
 
 #@ initialize the generated sources.
 init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
-$(MOCKS_TARGETS): go.sum $(MOCKS_SOURCES) install-mockgen install-mock
-	@MOCK=($(subst |,$(SPACE),$(firstword $(filter $@|%,$(MOCKS))))); \
-	TARGET="$${MOCK[0]}"; SOURCE="$${MOCK[1]}"; \
-	PACKAGE="$${MOCK[2]}"; ORIGIN="$${MOCK[3]}"; \
-	if [ ! -f "$${TARGET}" ]; then \
-	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
-	elif [ "$${SOURCE}" != "_" -a "$${TARGET}" -ot "$${SOURCE}" ]; then \
-	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
-	elif [ "$${PACKAGE}" != "_" -a "$${TARGET}" -ot "go.sum" ]; then \
-	  echo "$(GO) generate \"$${ORIGIN}\""; $(GO) generate "$${ORIGIN}"; \
-	fi;
+$(MOCKS_TARGETS)&: go.sum $(MOCKS_SOURCES) install-mockgen install-mock
+	@echo '$(MOCKS)' | tr ';' '\n' | \
+	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
+	  if [ -n "$${SOURCE}" ]; then \
+	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ]; then \
+	      echo "creating[source]: $${TARGET}" >&2; $${CMD}; touch "$${TARGET}"; \
+	    fi; \
+	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS)"; \
+	    PACKAGE="$$(awk 'index("'"$${PACKAGE}"'", $$1) \
+	      && index($$2, "/go.mod") { print $$0 }' go.sum)"; \
+	    if [ ! -f "$${TARGET}" ] || \
+	       [ -z "$$(grep "$${PACKAGE}" "$(FILE_MOCKS)")" ]; then \
+	      echo "creating[package]: $${TARGET}" >&2; $${CMD}; touch "$${TARGET}"; \
+	      sed --in-place --expression="s|^$${PACKAGE%% *}.*||" "$(FILE_MOCKS)"; \
+	      echo "$${PACKAGE}" >>$(FILE_MOCKS); \
+	    fi; \
+	  else $(call emsg,error,mock creation [$${TARGET}]); fi; \
+	done; \
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1167,11 +1184,12 @@ test-cover::
 	  "$(TEST_BENCH)" 2>/dev/null); \
 	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
 	if [ "$(ARGS)" == "white" ]; then \
-	  sed --in-place 's/black/whitesmoke/g' "$${FILE}.html"; \
+	  sed --in-place --expression='s/black/whitesmoke/g' "$${FILE}.html"; \
 	fi; \
 	sensible-browser "$${FILE}.html";
 
-#	$(GO) tool cover -html="$${FILE}"; \
+# TODO: test sensible-browser on MacOS and Linux systems.
+#	$(GO) tool cover -html="$${FILE}";
 
 #@ upload the test coverage report to codacy.
 test-upload::
@@ -1288,120 +1306,152 @@ test-self::  clean-all all-clean clean-all install-all update-all? update-all
 	@$(call emsg,success,test-self finished successfully!);
 
 
-# disabled (deprecated): deadcode golint interfacer ifshort maligned musttag
-#   nosnakecase rowserrcheck scopelint structcheck varcheck wastedassign
-# diabled (distructive): nlreturn ireturn nonamedreturns varnamelen exhaustruct
-#   exhaustivestruct gochecknoglobals gochecknoinits tagliatelle
-# disabled (conflicting): godox gci paralleltest
-# not listed (unnecessary): forcetypeassert wsl
-# requires unknown setup: depguard
+# golangci-lint configuration
+GOLANGCI_CONFIG := --config "$(FILE_GOLANGCI)"
+
+FORMATERS ?= gofmt gofumpt goimports golines
+
+# discouraged (noisy): embeddedstructfieldcheck tagalign testifylint wsl wsl_v5
+# discouraged (destructive): exhaustruct gochecknoglobals gochecknoinits
+#   noinlineerr nonamedreturns varnamelen
+# discouraged (conflicting): godox gci paralleltest(go-testing)
+#   tagliatelle(api-guidelines)
+# optional (strict): canonicalheader forcetypeassert funcorder godoclint
+#   inamedparam nlreturn sloglint zerologlint
+# optional (setup-required): depguard ireturn
 LINTERS_CUSTOM ?=
 LINTERS_DISABLED ?=
 LINTERS_DISCOURAGED ?= \
-	exhaustruct gci gochecknoglobals gochecknoinits godox ireturn musttag \
-	nlreturn nonamedreturns paralleltest rowserrcheck tagliatelle varnamelen \
-	wastedassign
+	exhaustruct embeddedstructfieldcheck gochecknoglobals gochecknoinits godox \
+	noinlineerr nonamedreturns paralleltest rowserrcheck tagalign testifylint \
+	tagliatelle varnamelen wsl wsl_v5
 LINTERS_MINIMUM ?= \
 	asasalint asciicheck bidichk bodyclose dogsled dupl dupword durationcheck \
-	errchkjson funlen gocognit goconst gocyclo godot gofmt gofumpt goimports \
-	gosimple govet importas ineffassign maintidx makezero misspell nestif \
-	nilerr prealloc predeclared promlinter reassign sqlclosecheck staticcheck \
-	typecheck unconvert unparam unused usestdlibvars whitespace
+	errchkjson funlen gocognit goconst gocyclo godot govet importas ineffassign \
+	maintidx makezero misspell musttag nestif nilerr prealloc predeclared \
+	promlinter reassign sqlclosecheck staticcheck unconvert unparam unused \
+	usestdlibvars usetesting whitespace wastedassign
 LINTERS_BASELINE ?= \
-	containedctx contextcheck cyclop decorder errname forbidigo ginkgolinter \
-	gocheckcompilerdirectives goheader gomodguard goprintffuncname gosec \
-	grouper interfacebloat lll loggercheck nakedret nilnil noctx nolintlint \
-	nosprintfhostport
+	containedctx contextcheck copyloopvar cyclop decorder errname forbidigo \
+	ginkgolinter gocheckcompilerdirectives goheader gomodguard goprintffuncname \
+	gosec grouper iface interfacebloat iotamixing lll loggercheck nakedret \
+	nilnil noctx nolintlint nosprintfhostport perfsprint
 LINTERS_EXPERT ?= \
-	errcheck errorlint exhaustive gocritic err113 mnd gomoddirectives revive \
-	stylecheck testableexamples testpackage thelper tparallel wrapcheck
+	arangolint err113 errcheck errorlint exhaustive exptostd fatcontext \
+	gochecksumtype gocritic gomoddirectives gosmopolitan intrange mirror mnd \
+	nilnesserr protogetter recvcheck revive spancheck testableexamples \
+	testpackage thelper tparallel unqueryvet wrapcheck
+LINTERS_OPTIONAL ?= \
+	canonicalheader forcetypeassert funcorder godoclint inamedparam nlreturn \
+	sloglint zerologlint
 
 LINT_FILTER := $(LINTERS_CUSTOM) $(LINTERS_DISABLED)
+LINT_MIN ?= $(subst $(SPACE),$(COMMA),$(strip \
+	$(filter-out $(LINT_FILTER),$(LINTERS_MINIMUM)) $(LINTERS_CUSTOM)))
+LINT_BASE ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_MIN) \
+	$(filter-out $(LINT_FILTER),$(LINTERS_BASELINE))))
+LINT_PLUS ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_BASE) \
+	$(filter-out $(LINT_FILTER),$(LINTERS_EXPERT))))
+LINT_MAX ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_PLUS) \
+	$(filter-out $(LINT_FILTER),$(LINTERS_OPTIONAL))))
+
+LINT_ENABLED ?= $(LINT_$(call upper,$(CODE_QUALITY)))
 LINT_DISABLED ?= $(subst $(SPACE),$(COMMA),$(strip \
 	$(filter-out $(LINT_FILTER),$(LINTERS_DISCOURAGED)) $(LINTERS_DISABLED)))
-LINT_MINIMUM ?= $(subst $(SPACE),$(COMMA),$(strip \
-	$(filter-out $(LINT_FILTER),$(LINTERS_MINIMUM)) $(LINTERS_CUSTOM)))
-LINT_BASELINE ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_MINIMUM) \
-	$(filter-out $(LINT_FILTER),$(LINTERS_BASELINE))))
-LINT_EXPERT ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_BASELINE) \
-	$(filter-out $(LINT_FILTER),$(LINTERS_EXPERT))))
 
-ifeq ($(shell ls $(FILE_GOLANGCI) 2>/dev/null), $(FILE_GOLANGCI))
-  LINT_CONFIG := --config "$(FILE_GOLANGCI)"
-endif
+LINT_ARGS_MIN := --enable $(LINT_MIN) --disable $(LINT_DISABLED)
+LINT_ARGS_BASE := --enable $(LINT_BASE) --disable $(LINT_DISABLED)
+LINT_ARGS_PLUS := --enable $(LINT_PLUS) --disable $(LINT_DISABLED)
+LINT_ARGS_MAX := --enable $(LINT_MAX) --disable $(LINT_DISABLED)
+LINT_ARGS_ALL := --enable $(LINT_MAX),$(LINT_DISABLED)
 
-LINT_MIN := --enable $(LINT_MINIMUM) --disable $(LINT_DISABLED)
-LINT_BASE := --enable $(LINT_BASELINE) --disable $(LINT_DISABLED)
-LINT_PLUS := --enable $(LINT_EXPERT) --disable $(LINT_DISABLED)
-LINT_MAX := --enable-all --disable $(LINT_DISABLED)
-LINT_ALL := --enable $(LINT_EXPERT),$(LINT_DISABLED) --disable-all
-
-LINT_FLAGS ?= --allow-serial-runners --sort-results --color always
-LINT_CMD ?= $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
-LINT_CMD_CONFIG := $(MAKE) lint-config
+LINT_FLAGS ?= --allow-serial-runners --allow-parallel-runners --color=always
+#  --formatters.enable=$(subst $(SPACE),$(COMMA),$(FORMATERS)) # not yet supported.
 ifeq ($(ARGS),linters)
-  LINT_CMD := $(GOBIN)/golangci-lint linters $(LINT_CONFIG) $(LINT_FLAGS)
+  LINT_CMD := $(GOBIN)/golangci-lint linters $(GOLANGCI_CONFIG)
 else ifeq ($(ARGS),config)
-  LINT_CMD := @
-  LINT_MIN := LINT_ENABLED=$(LINT_MINIMUM) \
-    LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
-  LINT_BASE := LINT_ENABLED=$(LINT_BASELINE) \
-    LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
-  LINT_PLUS := LINT_ENABLED=$(LINT_EXPERT) \
-    LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
-  LINT_MAX := LINT_DISABLED=$(LINT_DISABLED) $(LINT_CMD_CONFIG)
-  LINT_ALL := LINT_ENABLED=$(LINT_EXPERT),$(LINT_DISABLED) $(LINT_CMD_CONFIG)
+  LINT_CMD :=
+  LINT_ARGS_MIN := LINT_ENABLED=$(LINT_MIN) \
+    LINT_DISABLED=$(LINT_DISABLED) $(MAKE) lint-config
+  LINT_ARGS_BASE := LINT_ENABLED=$(LINT_BASE) \
+    LINT_DISABLED=$(LINT_DISABLED) $(MAKE) lint-config
+  LINT_ARGS_PLUS := LINT_ENABLED=$(LINT_PLUS) \
+    LINT_DISABLED=$(LINT_DISABLED) $(MAKE) lint-config
+  LINT_ARGS_MAX := LINT_DISABLED=$(LINT_DISABLED) $(MAKE) lint-config
+  LINT_ARGS_ALL := LINT_ENABLED=$(LINT_PLUS),$(LINT_DISABLED) $(MAKE) lint-config
 else ifeq ($(ARGS),fix)
-  LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS) --fix
+  LINT_CMD := $(GOBIN)/golangci-lint run $(GOLANGCI_CONFIG) $(LINT_FLAGS) --fix
 else ifneq ($(ARGS),)
-  LINT_CMD := $(GOBIN)/golangci-lint run $(LINT_CONFIG) $(LINT_FLAGS)
-  LINT_MIN := --disable-all --enable $(ARGS)
-  LINT_BASE := --disable-all --enable $(ARGS)
-  LINT_PLUS := --disable-all --enable $(ARGS)
-  LINT_MAX := --disable-all --enable $(ARGS)
-  LINT_ALL := --disable-all --enable $(ARGS)
+  LINT_CMD := $(GOBIN)/golangci-lint run $(GOLANGCI_CONFIG) $(LINT_FLAGS)
+  LINT_ARGS_MIN := --enable-only $(ARGS)
+  LINT_ARGS_BASE := --enable-only $(ARGS)
+  LINT_ARGS_PLUS := --enable-only $(ARGS)
+  LINT_ARGS_MAX := --enable-only $(ARGS)
+  LINT_ARGS_ALL := --enable-only $(ARGS)
+else
+  LINT_CMD ?= $(GOBIN)/golangci-lint run $(GOLANGCI_CONFIG) $(LINT_FLAGS)
 endif
+
 lint = @$(call emsg,info,linting [$(1)]); \
-	echo "$(LINT_CMD) $(LINT_$(call upper,$(1)))"; \
-	$(LINT_CMD) $(LINT_$(call upper,$(1)));
+	echo "$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1)))" >&2; \
+	$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1))) | \
+	  sed --regexp-extended 's|^(.*):(.*)\((.*)\)$$|[\3] \1:\2|'; \
+	if [ $${PIPESTATUS[0]} -eq 1 ]; then exit 1; fi;
 
 ## Lint: targets to lint source code.
 
-#@ <fix|linter> # execute all linters for the custom code quality level.
+#@ <fix|linters> # execute all linters for the custom code quality level.
 lint:: $(TARGETS_LINT)
-#@ <fix|linter> # execute golangci linters for the custom code quality level.
+#@ <fix|linters> # execute golangci linters for the custom code quality level.
 lint-code:: lint-$(CODE_QUALITY)
-#@ <fix|linter> # execute golangci linters for minimal code quality level (go-files).
+#@ <fix|linters> # execute golangci linters for minimal code quality level (go-files).
 lint-min:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,min))
-#@ <fix|linter> # execute golangci linters for base code quality level (go-files).
+#@ <fix|linters> # execute golangci linters for base code quality level (go-files).
 lint-base:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,base))
-#@ <fix|linter> # execute golangci linters for plus code quality level (go-files).
+#@ <fix|linters> # execute golangci linters for plus code quality level (go-files).
 lint-plus:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,plus))
-#@ <fix|linter> # execute golangci linters for maximal code quality level (go-files).
+#@ <fix|linters> # execute golangci linters for maximal code quality level (go-files).
 lint-max:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,max))
-#@ <fix|linter> # execute all golangci linters for insane code quality level (go-files).
+#@ <fix|linters> # execute all golangci linters for insane code quality level (go-files).
 lint-all:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,all))
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
-	@LINT_START=$$(awk '($$0 ~ "^linters:.*"){print NR-1}' "$(FILE_GOLANGCI)"); \
-	LINT_STOP=$$(awk '(start && $$0 ~ "^[^ ]+:$$"){print NR; start=0} \
-	  ($$0 ~ "^linters:.*"){start=1}' "$(FILE_GOLANGCI)"); \
-	(sed --silent '1,'$${LINT_START}'p' "$(FILE_GOLANGCI)"; \
-	echo -e "linters:\n  enable:"; \
-	for LINTER in "# List of min-set linters (min)" $(LINTERS_MINIMUM) \
-		"# List of base-set linters (base)" $(LINTERS_BASELINE) \
-		"# List of plus-set linters (plus)" $(LINTERS_EXPERT); do \
-	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
-	  echo -e "    $${X}$${LINTER}"; \
-	done; echo -e "\n  disable:"; \
-	for LINTER in "# List of to-avoid linters (avoid)" $(LINTERS_DISABLED); do \
+	@LINT=$$(awk '($$0 ~ "^linters:.*"){print NR}' "$(FILE_GOLANGCI)"); \
+	FORMAT=$$(awk '($$0 ~ "^formatters:.*"){print NR}' "$(FILE_GOLANGCI)"); \
+	LINTERS=$$($(GOBIN)/golangci-lint linters | grep --only-matching "^[^: ]*" | \
+	  grep --invert-match "\(Enabled\|Disabled\)" | sed -e ':a; N; s/\n/,/; ta'); \
+	(sed --silent '1,'$${FORMAT}'p' "$(FILE_GOLANGCI)"; \
+	echo -e "  enable:"; \
+	for FORMATTER in "# List of formatters (default)" $(sort $(FORMATERS)); do \
+	  if [ "$${FORMATTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
+	  echo -e "    $${X}$${FORMATTER}"; \
+    done; \
+	sed --silent $$((FORMAT+3))','$${LINT}'p' "$(FILE_GOLANGCI)"; \
+	echo -e "  enable:"; \
+	for LINTER in "# List of min-set linters (min)" $(sort $(LINTERS_MINIMUM)) \
+		"# List of base-set linters (base)" $(sort $(LINTERS_BASELINE)) \
+		"# List of plus-set linters (plus)" $(sort $(LINTERS_EXPERT)); do \
 	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
-	echo; sed --silent $${LINT_STOP}',$$p' "$(FILE_GOLANGCI)") | \
-	awk -v enabled=$${LINT_ENABLED} -v disabled=$${LINT_DISABLED} '$(awk-gensub) \
-	  ((start == 2) && ($$1 == "-")) { \
+	echo -e "\n  disable:"; \
+	for LINTER in "# List of discouraged linters (avoid)" \
+	    $(sort $(LINTERS_DISCOURAGED)); do \
+	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
+	  echo -e "    $${X}$${LINTER}"; \
+	done; \
+	echo; sed --silent $$((LINT+2))',$$p' "$(FILE_GOLANGCI)") | \
+	awk -v enabled="${LINT_ENABLED}" -v disabled="${LINT_DISABLED}" \
+	  -v linters="$${LINTERS}" '$(awk-gensub) \
+	  function missing(msg, map,   keys, n, i) { \
+	    for (key in map) { if (map[key] != 1) { delete map[key] } } \
+	    if (length(map) > 0) { \
+	      print "    # " msg; n = asorti(map, keys); \
+	      for (i = 1; i <= n; i++) print "    - " keys[i] \
+	    } \
+	  } \
+	  ((state == 2) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
 	    if (enabled && disabled) { \
 	      print $$0 "  # (conflicting)" \
@@ -1410,9 +1460,9 @@ lint-config::
 	    } else if (!enabled && !disabled && enone) { \
 	      print gensub("-","# -", 1) "  # (missing)" \
 	    } else { print $$0 } \
-	    enable[$$2] = 2; next \
+	    delete all[$$2]; enable[$$2] = 2; next \
 	  } \
-	  ((start == 3) && ($$1 == "-")) { \
+	  ((state == 3) && ($$1 == "-")) { \
 	    enabled = enable[$$2]; disabled = disable[$$2]; \
 	    if (enabled && disabled) { \
 	      print gensub("-","# -", 1) "  # (conflicting)" \
@@ -1421,29 +1471,21 @@ lint-config::
 	    } else if (!enabled && !disabled && dnone) { \
 	      print gensub("-","# -", 1) "  # (missing)" \
 	    } else { print $$0 } \
-	    disable[$$2] = 2; next \
+	    delete all[$$2]; disable[$$2] = 2; next \
 	  } \
-	  ((start != 0) && ($$0 ~ "^[^ ]+:$$")) { start=0 } \
-	  ((start >= 2) && ($$0 ~ "^  [^ ]+:$$")) { none=1; \
-	    if (start == 2) { for (key in enable) { \
-	      if (key && enable[key] == 1) { \
-	        if (none) { print "    # Additional linters" } \
-	        print "    - " key; none=0 \
-	      } \
-	    } } else if (start == 3) { for (key in disable) { \
-	      if (key && disable[key] == 1) { \
-	        if (none) { print "    # Additional linters" } \
-	        print "    - " key; none=0 \
-	      } \
-	    } } \
+	  ((state == 2) && ($$0 ~ "^ *$$")) { \
+	    missing("Additional linters", enable); \
 	  } \
-	  ((start != 0) && ($$0 == "  disable:")) { start = 3 }\
-	  ((start != 0) && ($$0 == "  enable:")) { start = 2 } \
-	  ((start == 0) && ($$0 == "linters:")) { start = 1; \
-	    enone = split(enabled, array, ","); \
-		for (i in array){ enable[array[i]] = 1 } \
-	    dnone = split(disabled, array, ","); \
-		for (i in array){ disable[array[i]] = 1 } \
+	  ((state == 3) && ($$0 == "")) { \
+	    missing("Additional linters", disable); \
+	    missing("Missing linters", all); state=0 \
+	  } \
+	  ((state != 0) && ($$0 == "  disable:")) { state = 3 } \
+	  ((state != 0) && ($$0 == "  enable:")) { state = 2 } \
+	  ((state == 0) && ($$0 == "linters:")) { state = 1; \
+	    split(enabled, array, ","); for (i in array){ enable[array[i]] = 1 } \
+	    split(disabled, array, ","); for (i in array){ disable[array[i]] = 1 } \
+	    split(linters, array, ","); for (i in array){ all[array[i]] = 1 } \
 	  } { print $$0 }';
 
 #@ execute all codacy linters activated by the custom setup (all files).
@@ -1503,21 +1545,24 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 #@ execute revive linter (go-files).
 lint-revive:: init-code install-revive
 	@$(call emsg,info,linting [revive]);
-	revive -formatter friendly -config="$(FILE_REVIVE)" $(SOURCES) || $(CODACY_CONTINUE);
+	revive -formatter friendly -config="$(FILE_REVIVE)" $(SOURCES) || \
+	  $(CODACY_CONTINUE);
 
 #@ execute markdown linter (md-files).
 lint-markdown:: init-code $(GOBIN)/markdownlint
 	@mapfile -t FILES < <($(call find-all,.,-name "*.md")); \
-	if [ "$${#FILES[@]}" != "0" ]; then \
-	  $(call emsg,info,linting [markdown]); \
-	  echo "markdownlint --config .markdownlint.yaml $${FILES[@]}"; \
+	if [ "$${#FILES[@]}" != "0" ]; then $(call emsg,info,linting [markdown]); \
+	  CMD=("markdownlint"); if [ "$(ARGS)" == "fix" ]; then CMD+=("--fix"); fi; \
 	  if command -v markdownlint &> /dev/null; then \
-	    markdownlint --config .markdownlint.yaml "$${FILES[@]}"; \
+	    CMD+=("--config" "$(FILE_MARKDOWN)" "$${FILES[@]}"); \
+	    echo "$${CMD[@]}" >&2; "$${CMD[@]}"; \
 	  elif [ -n "$(IMAGE_CMD)" ]; then \
-	    $(IMAGE_CMD) run --tty --volume=$${PWD}:/src:ro \
-	      container-registry.zalando.net/library/node-18-alpine:latest \
-	      /bin/sh -c "npm install --global markdownlint-cli >/dev/null 2>&1 && \
-	        cd /src && ls -la && markdownlint --config .markdownlint.yaml ."; \
+	    CMD=("npm" "install" "--global" "markdownlint-cli" ">/dev/null" "2>&1" \
+	      "&&" "cd" "/src" "&&" "$${CMD[@]}" "--config" "/.markdownlint.yaml" \
+	      "$${FILES[@]}"); \
+		echo "$${CMD[*]}" >&2; echo "$${CMD[@]}" | $(IMAGE_CMD) run \
+		  --interactive --volume=$(FILE_MARKDOWN):/.markdownlint.yaml:ro \
+	      --volume=$${PWD}:/src:ro node:slim /bin/sh; \
 	  else $(call emsg,warning,linting [markdown] - command not found!); fi; \
 	fi;
 
@@ -1583,6 +1628,19 @@ lint-apis:: install-zally
 	    zally "$${ARGS[@]}" lint "$${APISPEC}" || exit 1; \
 	  done; \
 	fi;
+
+
+## Format: targets to format source code.
+
+#@ format the source code.
+format:: $(TARGETS_FORMAT)
+
+#@ format the source code using golangci-lint.
+format-go:: install-golangci-lint
+	@$(call emsg,info,formatting [golangci-lint]);
+	$(GOBIN)/golangci-lint fmt $(GOLANGCI_CONFIG) --color=always \
+	  --enable=$(subst $(SPACE),$(COMMA),$(FORMATERS)) \
+	  $(filter-out $(FILTER_NOFORMAT),$(SOURCES));
 
 
 # Variables for setting up container specific build flags.
@@ -2155,6 +2213,7 @@ debug-files::
 	echo 'FILE_IMAGE $(FILE_IMAGE)'; \
 	echo 'FILE_DEEPCOPY $(FILE_DEEPCOPY)'; \
 	echo 'FILE_HEADER $(FILE_HEADER)'; \
+	echo 'FILE_MOCKS $(FILE_MOCKS)'; \
 	echo 'FILE_TARGETS $(FILE_TARGETS)'; \
 	echo 'FILE_TARGETS_MAKE $(FILE_TARGETS_MAKE)'; \
 	echo 'FILE_TARGETS_GOMAKE $(FILE_TARGETS_GOMAKE)'; \
@@ -2183,7 +2242,6 @@ debug-mocks::
 	@echo 'MOCKS $(MOCKS)'; \
 	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
 	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
-	echo 'MOCKS_ORIGINS $(MOCKS_ORIGINS)';
 
 #@ debug the image environment variables.
 debug-image::
