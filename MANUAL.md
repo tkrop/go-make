@@ -147,32 +147,40 @@ The following variables are your entry points for customizing the version
 of supported tools or adding additional tools:
 
 ```Makefile
-TOOLS_NPM := \
+# Custom node tools to install (space separated list).
+TOOLS_NPM += \
   markdownlint-cli
-TOOLS_GO := \
-  github.com/golangci/golangci-lint/cmd/golangci-lint \
+
+# Custom go tools to install (space separated list).
+TOOLS_GO += \
+  github.com/golangci/golangci-lint/v2/cmd/golangci-lint \
   github.com/zalando/zally/cli/zally \
   golang.org/x/vuln/cmd/govulncheck \
   github.com/uudashr/gocognit/cmd/gocognit \
   github.com/fzipp/gocyclo/cmd/gocyclo \
-  github.com/mgechev/revive@v1.2.3 \
+  github.com/mgechev/revive \
   github.com/securego/gosec/v2/cmd/gosec \
   github.com/tsenart/deadcode \
   github.com/tsenart/vegeta \
   honnef.co/go/tools/cmd/staticcheck \
   github.com/zricethezav/gitleaks/v8 \
   github.com/icholy/gomajor \
-  github.com/golang/mock/mockgen \
+  go.uber.org/mock/mockgen \
   github.com/tkrop/go-testing/cmd/mock \
   github.com/tkrop/go-make
-TOOLS_SH := \
+
+# Custom shell tools to install (space separated list).
+TOOLS_SH += \
   github.com/anchore/syft \
   github.com/anchore/grype
 ```
 
 While the above list of variables is non-exhaustive, all other variables are
 not part of the official interface and may be changed. Still, you can lookup
-customizable variables using `make show vars`;
+customizable variables using `make show vars`
+
+**Note:** If two tools install a command with the same name only the first
+tool defined in [Makefile.vars](Makefile.vars) will be deployed.
 
 
 ### Running commands
@@ -273,10 +281,11 @@ Other less customizable commands are targets to build, install, delete, and
 cleanup project resources:
 
 ```bash
-make test       # short cut to execute default test targets
-make lint       # short cut to execute default lint targets
-make build      # creates binary files of commands
-make clean      # removes all resource created during build
+make test     # short cut to execute default test targets
+make lint     # short cut to execute default lint targets
+make format   # short cut to execute default format targets
+make build    # creates binary files of commands
+make clean    # removes all resource created during build
 ```
 
 While these targets allow to execute the most important tasks out-of-the-box,

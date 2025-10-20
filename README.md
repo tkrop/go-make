@@ -310,18 +310,21 @@ cleanup the installed tools using `make clean-all` before the new tool
 version are automatically supported correctly.
 
 
-## Building
+## Building / development
 
 The project is using itself for building as a proof of concept. So either run
-`make all` or `go-make all`. As fall back it is always possible to directly use
-the core [Makefile](config/Makefile.base) calling:
+`make all` or `go-make all`.
+
+**Note:** If you break the [`go-make`][go-make] installation, it is always
+possible to directly use the core [Makefile](config/Makefile.base) calling:
 
 ```bash
 make -f config/Makefile.base <target>...
 ```
 
-You can also test the local build [`go-make`][go-make] application with the
-local config. The project compiles itself to use the local config by default.
+You can also test the current version by installing [`go-make`][go-make] via
+`make install`. This allows you to test the new binary with the current local
+config in other project before releasing it.
 
 
 ## Terms of usage

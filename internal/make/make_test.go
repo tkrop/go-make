@@ -112,7 +112,7 @@ func NewReader(id string) io.Reader {
 // NewWriter creates a new writer with the given id.
 func NewWriter(id string) io.Writer {
 	builder := &strings.Builder{}
-	builder.Write([]byte(id))
+	builder.WriteString(id)
 	return builder
 }
 

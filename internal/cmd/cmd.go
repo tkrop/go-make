@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -109,12 +110,15 @@ func NewExecutor() Executor {
 // Exec executes the command provided by given arguments in given working
 // directory using stdin as input while redirecting stdout and stderr to given
 // writers.
+//
+// TODO: expose context for cancellation and timeouts.
+// TODO: refactor interface to improve usability and testability.
 func (e *executor) Exec( //revive:disable-line:argument-limit
 	mode Mode, stdin io.Reader, stdout, stderr io.Writer,
 	dir string, env []string, args ...string,
 ) error {
 	// #nosec G204 -- caller ensures safe commands
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(context.TODO(), args[0], args[1:]...)
 	cmd.Dir, cmd.Env = dir, os.Environ()
 	cmd.Env = append(cmd.Env, env...)
 

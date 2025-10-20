@@ -55,7 +55,7 @@ func (*defaultLogger) Call(writer io.Writer, args ...string) {
 	if len(args) != 0 {
 		fmt.Fprintf(writer, "call: %s\n", strings.Join(args, " "))
 	} else {
-		fmt.Fprintf(writer, "call:\n")
+		fmt.Fprintf(writer, "call: %s\n", "<no-args>")
 	}
 }
 
@@ -69,7 +69,7 @@ func (*defaultLogger) Error(writer io.Writer, message string, err error) {
 	case err != nil:
 		fmt.Fprintf(writer, "error: %v\n", err)
 	default:
-		fmt.Fprintf(writer, "error: <unknown>\n")
+		fmt.Fprintf(writer, "error: %s\n", "<no-error>")
 	}
 }
 

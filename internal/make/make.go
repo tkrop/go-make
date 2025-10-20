@@ -437,7 +437,7 @@ func (gm *GoMake) callTargets(mode cmd.Mode, targets []string) (int, error) {
 var ErrNotFound = errors.New("version not found")
 
 // NewErrNotFound wraps the error of failed command to install the requested
-// go-mock config version.
+// go-make config version.
 func NewErrNotFound(dir, version string, err error) error {
 	return fmt.Errorf("%w [dir=%s, version=%s]: %w",
 		ErrNotFound, dir, version, err)

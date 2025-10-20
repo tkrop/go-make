@@ -92,6 +92,8 @@ debug-targets-run
 debug-targets-test
 debug-targets-uninstall
 debug-targets-update
+format
+format-go
 gen-kube-apis
 git-clean
 git-commit
