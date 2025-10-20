@@ -2,7 +2,6 @@ package make_test
 
 import (
 	"embed"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -744,13 +743,18 @@ var testMakeExecParams = map[string]MakeExecParams{
 func TestMakeExec(t *testing.T) {
 	// Ensure test environment is setup.
 	dirTest := AbsPath(t.TempDir())
-	fmt.Fprintf(os.Stderr, "Test directory: %s\n", dirTest)
+
 	// Filter that also match the temporary test directory path (`/private` is
 	// prefix visible in MacOS builds).
 	filter := CreateFilter(regexp.MustCompile(`(?m)(/private)?` + dirTest))
 	replace := phFixtures.Replace
 
+	// Cleanup cache directory entries.
+	dirCache := AbsPath(filepath.Join(dirCache, dirTest, ".."))
+
 	cmd := exec.Command("git", "init", dirTest)
+	assert.NoError(t, cmd.Run())
+	cmd = exec.Command("mkdir", "--parents", dirCache)
 	assert.NoError(t, cmd.Run())
 
 	WriteFile(filepath.Join(dirTest, "targets~"), os.FileMode(0o644),
@@ -779,8 +783,6 @@ func TestMakeExec(t *testing.T) {
 			assert.Equal(t, replace(param.expectStderr), filter(stderr.String()))
 		}).
 		Cleanup(func() {
-			// Cleanup cache directory entries.
-			dir := AbsPath(filepath.Join(dirCache, dirTest, ".."))
-			assert.NoError(t, os.RemoveAll(dir))
+			assert.NoError(t, os.RemoveAll(dirCache))
 		})
 }
