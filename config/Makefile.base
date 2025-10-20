@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.155
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.156
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1566,11 +1566,11 @@ lint-markdown:: init-code $(GOBIN)/markdownlint
 	    echo "$${CMD[@]}" >&2; "$${CMD[@]}"; \
 	  elif [ -n "$(IMAGE_CMD)" ]; then \
 	    CMD=("npm" "install" "--global" "markdownlint-cli" ">/dev/null" "2>&1" \
-	      "&&" "cd" "/src" "&&" "$${CMD[@]}" "--config" "/.markdownlint.yaml" \
+	      "&&" "cd" "/src" "&&" "$${CMD[@]}" "--config" "/markdownlint.yaml" \
 	      "$${FILES[@]}"); \
 		echo "$${CMD[*]}" >&2; echo "$${CMD[@]}" | $(IMAGE_CMD) run \
-		  --interactive --volume=$(FILE_MARKDOWN):/.markdownlint.yaml:ro \
-	      --volume=$${PWD}:/src:ro node:slim /bin/sh; \
+		  --interactive --volume=$(abspath $(FILE_MARKDOWN)):/markdownlint.yaml:ro \
+	      --volume=$${PWD}:/src:ro node:slim /bin/bash; \
 	  else $(call emsg,warning,linting [markdown] - command not found!); fi; \
 	fi;
 
