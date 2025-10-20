@@ -163,7 +163,7 @@ DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.154
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.155
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -225,6 +225,7 @@ FILE_MOCKS ?= $(DIR_TEMP)/mocks
 FILE_TARGETS ?= $(DIR_TEMP)/targets
 FILE_TARGETS_MAKE ?= $(FILE_TARGETS).make
 FILE_TARGETS_GOMAKE ?= $(FILE_TARGETS).go-make
+FILE_TARGETS_ALL ?= $(FILE_TARGETS) $(FILE_TARGETS_MAKE) $(FILE_TARGETS_GOMAKE)
 
 # Setup custom filters for source files.
 FILTER_NOLINT ?=
@@ -247,11 +248,11 @@ ifneq ($(awk-gensub),true)
 	  } \
 	  return t \
 	}
-   awk-beginfile = BEGINFILE
+  awk-beginfile =
   $(call cdebug,using GENSUB [$(awk-gensub)])
 else
   awk-gensub =
-   awk-beginfile =
+  awk-beginfile = BEGINFILE
 endif
 awk-color = $(awk-gensub) \
 	function color(str) { \
@@ -658,6 +659,7 @@ gen-mocks = \
 	  if (!source) { package = $$(NF-1); } \
 	  print target "|" source "|" package "|" command \
 	}' $(SOURCES) | sort -u | sed ':a; N; s/\n/;/; ta';
+#$(call cdebug, gen-mocks = $(call escape,$(gen-mocks)))
 
 MOCKS := $(if $(SOURCES),$(shell $(gen-mocks)))
 $(call cdebug,using MOCKS [$(MOCKS)])
@@ -787,8 +789,8 @@ show-options-all = sed 's|^ *-|-|; s|, *|\n|g;' | \
 show-options-long = grep --only-matching -- "--[^, ]*" | \
 	sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'
 
-$(FILE_TARGETS) $(FILE_TARGETS_GOMAKE) $(FILE_TARGETS_MAKE): $(MAKEFILE_LIST)
-	@$(call emsg,info,updating targets [$@]); mkdir --parents "$(DIR_TEMP)"; \
+$(FILE_TARGETS_ALL): $(MAKEFILE_LIST) # $(DIR_TEMP) # does not work for make_test.go
+	@$(call emsg,info,updating targets [$@]); mkdir --parents $(DIR_TEMP); \
 	if [ "$@" == "$(FILE_TARGETS_MAKE)" ]; then MAKEFILE="Makefile"; \
 	else MAKEFILE="$(GOMAKE_MAKEFILE)"; TARGETS="$(GOMAKE_OPTIONS)"; fi; \
 	( echo "$${TARGETS[@]}" | tr ' ' '\n'; \
@@ -1043,21 +1045,27 @@ go.sum go.mod&: $(SOURCES)
 
 #@ initialize the generated sources.
 init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
-$(MOCKS_TARGETS)&: go.sum $(MOCKS_SOURCES) install-mockgen install-mock
-	@echo '$(MOCKS)' | tr ';' '\n' | \
+$(MOCKS_TARGETS)&: $(MOCKS_SOURCES) $(DIR_TEMP) install-mockgen install-mock
+	@GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
+	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
+	}' | sort -u)"; \
+	echo '$(MOCKS)' | tr ';' '\n' | \
 	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
-	  if [ -n "$${SOURCE}" ]; then \
-	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ]; then \
-	      echo "creating[source]: $${TARGET}" >&2; $${CMD}; touch "$${TARGET}"; \
+	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
+	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
+	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
+	      echo "creating[source]: $${TARGET}" >&2; $${CMD} && sed --in-place \
+	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
+	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
 	    fi; \
-	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS)"; \
-	    PACKAGE="$$(awk 'index("'"$${PACKAGE}"'", $$1) \
-	      && index($$2, "/go.mod") { print $$0 }' go.sum)"; \
+	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
+	    PACKAGE="$$(echo "$${GOMOD}" | awk -v pkg="$${PACKAGE}" \
+	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
 	    if [ ! -f "$${TARGET}" ] || \
-	       [ -z "$$(grep "$${PACKAGE}" "$(FILE_MOCKS)")" ]; then \
-	      echo "creating[package]: $${TARGET}" >&2; $${CMD}; touch "$${TARGET}"; \
-	      sed --in-place --expression="s|^$${PACKAGE%% *}.*||" "$(FILE_MOCKS)"; \
-	      echo "$${PACKAGE}" >>$(FILE_MOCKS); \
+	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
+	      echo "creating[package]: $${TARGET}" >&2; $${CMD} && sed --in-place \
+	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
+	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
 	    fi; \
 	  else $(call emsg,error,mock creation [$${TARGET}]); fi; \
 	done; \
