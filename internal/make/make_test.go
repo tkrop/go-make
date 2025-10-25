@@ -1,6 +1,7 @@
 package make_test
 
 import (
+	"context"
 	"embed"
 	"io"
 	"os"
@@ -9,9 +10,12 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/cmd"
@@ -32,6 +36,8 @@ const (
 	// goMakePath contains an arbitrary source path for go-make.
 	goMakePath = "github.com/tkrop/go-make"
 )
+
+var ctx, _ = context.WithCancel(context.Background())
 
 //go:embed fixtures/*
 var fixtures embed.FS
@@ -82,6 +88,12 @@ var (
 		"ba4ff068e795443f256caa06180d976a0fb244e9",
 		"2023-11-14T13:02:46+01:00",
 		"2023-11-10T16:22:54+01:00", "false")
+
+	goMakeInfoBase = GoMakePath(infoBase.Path, infoBase.Version)
+	goMakeInfoNew  = GoMakePath(infoNew.Path, infoNew.Version)
+
+	makeInfoBase = MakefilePath(infoBase.Path, infoBase.Version)
+	makeInfoNew  = MakefilePath(infoNew.Path, infoNew.Version)
 
 	argsVersion           = []string{"go-make", "--version"}
 	argsTraceVersion      = []string{"go-make", "--trace", "--version"}
@@ -146,26 +158,37 @@ func ToAny(args ...any) []any {
 	return args
 }
 
-func Exec( //revive:disable-line:argument-limit
-	mode cmd.Mode, stdin, stdout, stderr string, dir string,
-	env, args []string, sout, serr string, err error,
-) mock.SetupFunc {
-	if err != nil {
-		err = cmd.NewCmdError("any", dir, env, args, err)
+func Cast[T any](value any) T {
+	if value == nil {
+		return *new(T)
 	}
+	return value.(T)
+}
+
+func Exec( //revive:disable-line:argument-limit
+	c *cmd.Cmd, stdin, stdout, stderr string,
+	sout, serr string, err error,
+) mock.SetupFunc {
 	return func(mocks *mock.Mocks) any {
+		if err != nil {
+			err = c.Error("any", err)
+		}
+		c.WithStdin(Cast[io.Reader](mocks.GetArg(stdin))).
+			WithStdout(Cast[io.Writer](mocks.GetArg(stdout))).
+			WithStderr(Cast[io.Writer](mocks.GetArg(stderr)))
 		return mock.Get(mocks, NewMockExecutor).EXPECT().
-			Exec(mode, mocks.GetArg(stdin), mocks.GetArg(stdout), mocks.GetArg(stderr),
-				dir, env, ToAny(args)...).
-			DoAndReturn(mocks.Call(cmd.Executor.Exec, func(args ...any) []any {
-				if _, err := args[2].(io.Writer).Write([]byte(sout)); err != nil {
-					assert.Fail(mocks.Ctrl.T, "failed to write to stdout", err)
-				}
-				if _, err := args[3].(io.Writer).Write([]byte(serr)); err != nil {
-					assert.Fail(mocks.Ctrl.T, "failed to write to stderr", err)
-				}
-				return []any{err}
-			}))
+			Exec(gomock.AssignableToTypeOf(ctx), c).
+			DoAndReturn(mocks.Call(cmd.Executor.Exec,
+				func(args ...any) []any {
+					cmd := args[1].(*cmd.Cmd)
+					if _, err := cmd.Stdout.Write([]byte(sout)); err != nil {
+						assert.Fail(mocks.Ctrl.T, "failed to write to stdout", err)
+					}
+					if _, err := cmd.Stderr.Write([]byte(serr)); err != nil {
+						assert.Fail(mocks.Ctrl.T, "failed to write to stderr", err)
+					}
+					return []any{err}
+				}))
 	}
 }
 
@@ -177,10 +200,10 @@ func LogCall(writer string, args []string) mock.SetupFunc {
 	}
 }
 
-func LogExec(writer string, dir string, args []string) mock.SetupFunc {
+func LogExec(writer string, cmd *cmd.Cmd) mock.SetupFunc {
 	return func(mocks *mock.Mocks) any {
 		return mock.Get(mocks, NewMockLogger).EXPECT().
-			Exec(mocks.GetArg(writer), dir, ToAny(args)...).
+			Exec(mocks.GetArg(writer), cmd.Dir, ToAny(cmd.Args)...).
 			DoAndReturn(mocks.Do(log.Logger.Exec))
 	}
 }
@@ -210,7 +233,6 @@ func LogMessage(writer string, message string) mock.SetupFunc {
 }
 
 type MakeParams struct {
-	testSetup   func(t test.Test)
 	mockSetup   mock.SetupFunc
 	info        *info.Info
 	env         []string
@@ -219,7 +241,7 @@ type MakeParams struct {
 	expectExit  int
 }
 
-var testMakeMockParams = map[string]MakeParams{
+var makeMockTestCases = map[string]MakeParams{
 	// targets without trace.
 	"go-make version": {
 		mockSetup: mock.Chain(
@@ -245,14 +267,11 @@ var testMakeMockParams = map[string]MakeParams{
 
 	"go-make show targets": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsShowTargets[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargets[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargets,
@@ -260,14 +279,13 @@ var testMakeMockParams = map[string]MakeParams{
 	"go-make show targets with file": {
 		mockSetup: mock.Chain(
 			LogMessage("stdout", ReadFile(fixtures, "fixtures/targets/std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
-				"", "", nil),
-			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
-					infoBase.Version), argsShowTargets[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork, envMakeMock...),
+				"nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot, envMakeMock...),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargets[1:], dirRoot,
+				envMakeMock...).WithMode(cmd.Detached|cmd.Background),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		env:  envMakeMock,
@@ -277,14 +295,13 @@ var testMakeMockParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogMessage("stdout",
 				ReadFile(fixtures, "fixtures/targets/make-std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
-				CmdTestDir(GoMakePath(infoBase.Path,
-					infoBase.Version)), "", "", nil),
-			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
-					infoBase.Version), argsShowTargetsMake[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork, envMakeMock...),
+				"nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot, envMakeMock...),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargetsMake[1:], dirRoot,
+				envMakeMock...).WithMode(cmd.Detached|cmd.Background),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		env:  envMakeMock,
@@ -294,14 +311,13 @@ var testMakeMockParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogMessage("stdout",
 				ReadFile(fixtures, "fixtures/targets/go-make-std.out")),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, envMakeMock,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, envMakeMock,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
-				"", "", nil),
-			Exec(cmd.Detached|cmd.Background, "stdin", "stdout", "stderr",
-				dirRoot, envMakeMock, CmdMakeTargets(MakefilePath(infoBase.Path,
-					infoBase.Version), argsShowTargetsGoMake[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork, envMakeMock...),
+				"nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot, envMakeMock...),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargetsGoMake[1:], dirRoot,
+				envMakeMock...).WithMode(cmd.Detached|cmd.Background),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		env:  envMakeMock,
@@ -309,61 +325,52 @@ var testMakeMockParams = map[string]MakeParams{
 	},
 	"go-make show targets with param": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
-				"", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsShowTargetsParam[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargetsParam[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsParam,
 	},
 	"go-make show targets install": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoNew.Path, infoNew.Version)),
-				"", "", assert.AnError),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdGoInstall(infoNew.Path, infoNew.Version), "", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoNew.Path, infoNew.Version),
-					argsShowTargets[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoNew, dirRoot),
+				"nil", "stderr", "stderr", "", "", assert.AnError),
+			Exec(CmdGoInstall(infoNew.Path, infoNew.Version, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoNew, argsShowTargets[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoNew,
 		args: argsShowTargets,
 	},
 	"go-make show targets config custom": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(AbsPath("custom")), "", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(filepath.Join(AbsPath("custom"),
-					Makefile), argsShowTargets[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(AbsPath("custom"), dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(filepath.Join(AbsPath("custom"), Makefile),
+				argsShowTargets[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsCustom,
 	},
 	"go-make show targets config version latest": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(AbsPath("latest")), "", "", assert.AnError),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path, "latest")),
-				"", "", assert.AnError),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdGoInstall(infoBase.Path, "latest"), "", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, "latest"),
-					argsShowTargets[1:]...), "", "", nil),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(AbsPath("latest"), dirRoot),
+				"nil", "stderr", "stderr", "", "", assert.AnError),
+			Exec(CmdTestDir(GoMakePath(infoBase.Path, "latest"), dirRoot),
+				"nil", "stderr", "stderr", "", "", assert.AnError),
+			Exec(CmdGoInstall(infoBase.Path, "latest", dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(MakefilePath(infoBase.Path, "latest"),
+				argsShowTargets[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		args: argsShowTargetsLatest,
@@ -371,46 +378,38 @@ var testMakeMockParams = map[string]MakeParams{
 
 	"go-make show targets install failed": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoNew.Path, infoNew.Version)),
-				"", "", assert.AnError),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdGoInstall(infoNew.Path, infoNew.Version),
-				"", "", assert.AnError),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoNew, dirRoot),
+				"nil", "stderr", "stderr", "", "", assert.AnError),
+			Exec(CmdGoInstall(infoNew.Path, infoNew.Version, dirRoot),
+				"nil", "stderr", "stderr", "", "", assert.AnError),
 			LogError("stderr", "ensure config", NewErrNotFound(
-				infoNew.Path, infoNew.Version, NewErrCallFailed(dirRoot,
-					CmdGoInstall(infoNew.Path, infoNew.Version),
+				infoNew.Path, infoNew.Version, NewErrCallFailed(
+					CmdGoInstall(infoNew.Path, infoNew.Version, dirRoot),
 					assert.AnError))),
 		),
 		info: infoNew,
 		args: argsShowTargets,
 		expectError: NewErrNotFound(
-			infoNew.Path, infoNew.Version, NewErrCallFailed(dirRoot,
-				CmdGoInstall(infoNew.Path, infoNew.Version),
+			infoNew.Path, infoNew.Version, NewErrCallFailed(
+				CmdGoInstall(infoNew.Path, infoNew.Version, dirRoot),
 				assert.AnError)),
 		expectExit: ExitConfigFailure,
 	},
 	"go-make show targets failed": {
 		mockSetup: mock.Chain(
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
-				"", "", nil),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsShowTargets[1:]...), "", "", assert.AnError),
-			LogError("stderr", "execute make", NewErrCallFailed(dirRoot,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsShowTargets[1:]...), assert.AnError)),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			Exec(CmdMakeTargets(makeInfoBase, argsShowTargets[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", assert.AnError),
+			LogError("stderr", "execute make", NewErrCallFailed(CmdMakeTargets(
+				makeInfoBase, argsShowTargets[1:], dirRoot), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsShowTargets,
-		expectError: NewErrCallFailed(dirRoot, CmdMakeTargets(
-			MakefilePath(infoBase.Path, infoBase.Version),
-			argsShowTargets[1:]...), assert.AnError),
+		expectError: NewErrCallFailed(CmdMakeTargets(makeInfoBase,
+			argsShowTargets[1:], dirRoot), assert.AnError),
 		expectExit: ExitTargetFailure,
 	},
 
@@ -446,20 +445,15 @@ var testMakeMockParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceAnyTarget),
 			LogInfo("stderr", infoBase, false),
-			LogExec("stderr", dirWork, CmdGitTop()),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			LogExec("stderr", dirRoot, CmdTestDir(
-				GoMakePath(infoBase.Path, infoBase.Version))),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)),
-				"", "", nil),
-			LogExec("stderr", dirRoot, CmdMakeTargets(
-				MakefilePath(infoBase.Path, infoBase.Version),
-				argsTraceAnyTarget[1:]...)),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget[1:]...), "", "", nil),
+			LogExec("stderr", CmdGitTop(dirWork)),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			LogExec("stderr", CmdTestDir(goMakeInfoBase, dirRoot)),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			LogExec("stderr", CmdMakeTargets(makeInfoBase,
+				argsTraceAnyTarget[1:], dirRoot)),
+			Exec(CmdMakeTargets(makeInfoBase, argsTraceAnyTarget[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", nil),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
@@ -468,40 +462,30 @@ var testMakeMockParams = map[string]MakeParams{
 		mockSetup: mock.Chain(
 			LogCall("stderr", argsTraceAnyTarget),
 			LogInfo("stderr", infoBase, false),
-			LogExec("stderr", dirWork, CmdGitTop()),
-			Exec(cmd.Attached, "nil", "builder", "stderr", dirWork, nil,
-				CmdGitTop(), dirRoot, "", nil),
-			LogExec("stderr", dirRoot, CmdTestDir(
-				GoMakePath(infoBase.Path, infoBase.Version))),
-			Exec(cmd.Attached, "nil", "stderr", "stderr", dirRoot, nil,
-				CmdTestDir(GoMakePath(infoBase.Path, infoBase.Version)), "", "", nil),
-			LogExec("stderr", dirRoot, CmdMakeTargets(
-				MakefilePath(infoBase.Path, infoBase.Version),
-				argsTraceAnyTarget[1:]...)),
-			Exec(cmd.Attached, "stdin", "stdout", "stderr", dirRoot, nil,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget[1:]...), "", "", assert.AnError),
-			LogError("stderr", "execute make", NewErrCallFailed(dirRoot,
-				CmdMakeTargets(MakefilePath(infoBase.Path, infoBase.Version),
-					argsTraceAnyTarget[1:]...), assert.AnError)),
+			LogExec("stderr", CmdGitTop(dirWork)),
+			Exec(CmdGitTop(dirWork), "nil", "builder", "stderr", dirRoot, "", nil),
+			LogExec("stderr", CmdTestDir(goMakeInfoBase, dirRoot)),
+			Exec(CmdTestDir(goMakeInfoBase, dirRoot),
+				"nil", "stderr", "stderr", "", "", nil),
+			LogExec("stderr", CmdMakeTargets(makeInfoBase,
+				argsTraceAnyTarget[1:], dirRoot)),
+			Exec(CmdMakeTargets(makeInfoBase, argsTraceAnyTarget[1:], dirRoot),
+				"stdin", "stdout", "stderr", "", "", assert.AnError),
+			LogError("stderr", "execute make", NewErrCallFailed(CmdMakeTargets(
+				makeInfoBase, argsTraceAnyTarget[1:], dirRoot), assert.AnError)),
 		),
 		info: infoBase,
 		args: argsTraceAnyTarget,
-		expectError: NewErrCallFailed(dirRoot, CmdMakeTargets(
-			MakefilePath(infoBase.Path, infoBase.Version),
-			argsTraceAnyTarget[1:]...), assert.AnError),
+		expectError: NewErrCallFailed(CmdMakeTargets(makeInfoBase,
+			argsTraceAnyTarget[1:], dirRoot), assert.AnError),
 		expectExit: ExitTargetFailure,
 	},
 }
 
 func TestMakeMock(t *testing.T) {
-	test.Map(t, testMakeMockParams).
+	test.Map(t, makeMockTestCases).
 		Run(func(t test.Test, param MakeParams) {
 			// Given
-			if param.testSetup != nil {
-				param.testSetup(t)
-			}
-
 			gm, _ := GoMakeSetup(t, param)
 
 			// When
@@ -624,7 +608,7 @@ type MakeExecParams struct {
 	expectStderr string
 }
 
-var testMakeExecParams = map[string]MakeExecParams{
+var makeExecTestCases = map[string]MakeExecParams{
 	"go-make version": {
 		info:         infoBase,
 		args:         []string{"go-make", "--version"},
@@ -764,7 +748,7 @@ func TestMakeExec(t *testing.T) {
 	WriteFile(filepath.Join(dirTest, "targets.go-make~"), os.FileMode(0o644),
 		ReadFile(fixtures, "fixtures/targets/go-make-std.out"))
 
-	test.Map(t, testMakeExecParams).
+	test.Map(t, makeExecTestCases).
 		Run(func(t test.Test, param MakeExecParams) {
 			// Given
 			info := infoBase
@@ -784,5 +768,38 @@ func TestMakeExec(t *testing.T) {
 		}).
 		Cleanup(func() {
 			assert.NoError(t, os.RemoveAll(dirCache))
+		})
+}
+
+type handleSignalParams struct {
+	signal        syscall.Signal
+	expectAborted bool
+}
+
+var handleSignalTestCases = map[string]handleSignalParams{
+	"signal abrt": {
+		signal:        syscall.SIGABRT,
+		expectAborted: true,
+	},
+	"signal term": {
+		signal:        syscall.SIGTERM,
+		expectAborted: false,
+	},
+}
+
+func TestHandleSignal(t *testing.T) {
+	test.Map(t, handleSignalTestCases).
+		Run(func(t test.Test, param handleSignalParams) {
+			// Given
+			gm := &GoMake{}
+			var cancelled atomic.Bool
+			cancel := func() { cancelled.Store(true) }
+
+			// When
+			gm.HandleSignal(cancel, param.signal)
+
+			// Then
+			assert.Equal(t, param.expectAborted, gm.Aborted.Load())
+			assert.True(t, cancelled.Load())
 		})
 }

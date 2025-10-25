@@ -13,6 +13,11 @@ run:
   relative-path-mode: gomod
 
 issues:
+  # Maximum issues count per one linter.
+  # Set to 0 to disable.
+  # Default: 50 (we recommend 100-200 but go for all)
+  max-issues-per-linter: 0
+
   # Maximum count of issues with the same text.
   # Set to 0 to disable.
   # Default: 3 (we recommend 10-20)
@@ -224,7 +229,8 @@ linters:
         # rules to counter-act the complexity trap).
         - name: cognitive-complexity
           arguments: [20]
-        # Limit line-length to increase readability.
+        # Limit line-length to increase readability (compromise between 80 and
+        # 120 is at 100).
         - name: line-length-limit
           arguments: [100]
         # We are a bit more relaxed with function length consistent with funlen.

@@ -1,6 +1,7 @@
 package cmd_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,137 +19,189 @@ const (
 	ProcessReleaseFailure  = 0x8000
 )
 
+var ctx = context.Background()
+
 type ExecParams struct {
-	mode         cmd.Mode
-	args         []string
-	env          []string
+	cmd          *cmd.Cmd
 	stdin        string
 	expectStdout string
 	expectStderr string
 	expectError  error
 }
 
-var testExecParams = map[string]ExecParams{
+// setup sets up the parameters using given IO parameters.
+func (p ExecParams) setup(e *cmd.CmdExecutor) (
+	stdout *strings.Builder, stderr *strings.Builder,
+	command *cmd.Cmd, executor *cmd.CmdExecutor,
+) {
+	out := &strings.Builder{}
+	err := &strings.Builder{}
+
+	// Configure command input/output.
+	c := p.cmd.Copy().WithIO(nil, nil, nil).
+		WithStdin(strings.NewReader(p.stdin)).
+		WithStdout(out).WithStderr(err)
+
+	// Configure executor failure.
+	if p.cmd.IsMode(DevNullFileOpenFailure) {
+		e := cmd.NewExecutor()
+		test.NewAccessor(e).Set("devnull", "/dev/xxx")
+		return out, err, c, e
+	} else if p.cmd.IsMode(ProcessReleaseFailure) {
+		e := cmd.NewExecutor()
+		test.NewAccessor(e).Set("finish",
+			func(_ cmd.Mode, _ *exec.Cmd) error {
+				return assert.AnError
+			})
+		return out, err, c, e
+	}
+
+	return out, err, c, e
+}
+
+var execTestCases = map[string]ExecParams{
+	"nil executor": {
+		expectError: cmd.NewCmdError("nil executor", nil, nil),
+	},
+	"nil command": {
+		expectError: cmd.NewCmdError("nil command", nil, nil),
+	},
+
 	"attached cat": {
-		mode:         cmd.Attached,
-		args:         []string{"cat", "-"},
+		cmd:          cmd.New().WithArgs("cat", "-"),
 		stdin:        "Hello, World!",
 		expectStdout: "Hello, World!",
 	},
 	"attached echo stdout": {
-		mode:         cmd.Attached,
-		args:         []string{"echo", "Hello, World!"},
+		cmd:          cmd.New("echo", "Hello, World!"),
 		expectStdout: "Hello, World!\n",
 	},
 	"attached bash stdout": {
-		mode:         cmd.Attached,
-		args:         []string{"bash"},
+		cmd:          cmd.New().WithArgs("bash"),
 		stdin:        "echo Hello, World!\n",
 		expectStdout: "Hello, World!\n",
 	},
 	"attached bash stderr": {
-		mode:         cmd.Attached,
-		args:         []string{"bash"},
+		cmd:          cmd.New().WithArgs("bash"),
 		stdin:        "echo Hello, World! >&2\n",
 		expectStderr: "Hello, World!\n",
 	},
 	"attached sleep": {
-		mode: cmd.Attached,
-		args: []string{"sleep", "0.01"},
+		cmd: cmd.NewExecutor().New("sleep", "0.01"),
 	},
 	"attached background sleep": {
-		mode: cmd.Attached | cmd.Background,
-		args: []string{"sleep", "30"},
+		cmd: cmd.New("sleep", "30").WithMode(cmd.Background),
 	},
 	"attached command error": {
-		mode: cmd.Attached,
-		args: []string{"_non-existing-command_"},
-		expectError: cmd.NewCmdError("starting process",
-			".", nil, []string{"_non-existing-command_"}, &exec.Error{
+		cmd: cmd.New("_non-existing-command_"),
+		expectError: cmd.New("_non-existing-command_").
+			Error("starting process", &exec.Error{
 				Name: "_non-existing-command_", Err: exec.ErrNotFound,
 			}),
 	},
 	"attached background command error": {
-		mode: cmd.Attached | cmd.Background,
-		args: []string{"_non-existing-command_"},
-		expectError: cmd.NewCmdError("starting process",
-			".", nil, []string{"_non-existing-command_"}, &exec.Error{
+		cmd: cmd.New("_non-existing-command_").WithMode(cmd.Background),
+		expectError: cmd.New("_non-existing-command_").WithMode(cmd.Background).
+			Error("starting process", &exec.Error{
 				Name: "_non-existing-command_", Err: exec.ErrNotFound,
 			}),
 	},
 
 	"detached echo stdout": {
-		mode: cmd.Detached,
-		args: []string{"echo", "Hello, World!"},
+		cmd: cmd.New("echo", "Hello, World!").WithMode(cmd.Detached),
 	},
 	"detached bash stdout": {
-		mode:  cmd.Detached,
-		args:  []string{"bash"},
+		cmd:   cmd.New("bash").WithMode(cmd.Detached),
 		stdin: "echo Hello, World!\n",
 	},
 	"detached bash stderr": {
-		mode:  cmd.Detached,
-		args:  []string{"bash"},
+		cmd:   cmd.New("bash").WithMode(cmd.Detached),
 		stdin: "echo Hello, World! >&2\n",
 	},
 	"detached sleep": {
-		mode: cmd.Detached,
-		args: []string{"sleep", "0.01"},
+		cmd: cmd.New("sleep", "0.01").WithMode(cmd.Detached),
 	},
 	"detached background sleep": {
-		mode: cmd.Detached | cmd.Background,
-		args: []string{"sleep", "30"},
+		cmd: cmd.NewExecutor().New("sleep", "30").
+			WithMode(cmd.Detached | cmd.Background),
 	},
 	"detached command error": {
-		mode: cmd.Detached,
-		args: []string{"_non-existing-command_"},
-		expectError: cmd.NewCmdError("starting process",
-			".", nil, []string{"_non-existing-command_"}, &exec.Error{
+		cmd: cmd.New("_non-existing-command_").WithMode(cmd.Detached),
+		expectError: cmd.New("_non-existing-command_").WithMode(cmd.Detached).
+			Error("starting process", &exec.Error{
 				Name: "_non-existing-command_", Err: exec.ErrNotFound,
 			}),
 	},
 	"detached devnull open failure": {
-		mode: cmd.Detached | DevNullFileOpenFailure,
-		args: []string{"echo", "Hello, World!"},
-		expectError: cmd.NewCmdError("opening /dev/null",
-			".", nil, []string{"echo", "Hello, World!"}, &os.PathError{
+		cmd: cmd.New("echo", "Hello, World!").
+			WithMode(cmd.Detached | DevNullFileOpenFailure),
+		expectError: cmd.New("echo", "Hello, World!").
+			WithMode(cmd.Detached|DevNullFileOpenFailure).
+			Error("opening /dev/null", &os.PathError{
 				Op: "open", Path: "/dev/xxx", Err: syscall.Errno(2),
 			}),
 	},
 	"detached background command error": {
-		mode: cmd.Detached | cmd.Background,
-		args: []string{"_non-existing-command_"},
-		expectError: cmd.NewCmdError("starting process",
-			".", nil, []string{"_non-existing-command_"}, &exec.Error{
+		cmd: cmd.New("_non-existing-command_").
+			WithMode(cmd.Detached | cmd.Background),
+		expectError: cmd.New("_non-existing-command_").
+			WithMode(cmd.Detached|cmd.Background).
+			Error("starting process", &exec.Error{
 				Name: "_non-existing-command_", Err: exec.ErrNotFound,
 			}),
 	},
 	"detached background release failure": {
-		mode: cmd.Detached | cmd.Background | ProcessReleaseFailure,
-		args: []string{"echo", "Hello, World!"},
-		expectError: cmd.NewCmdError("releasing process",
-			".", nil, []string{"echo", "Hello, World!"}, assert.AnError),
+		cmd: cmd.New("echo", "Hello, World!").
+			WithMode(cmd.Detached | cmd.Background | ProcessReleaseFailure),
+		expectError: cmd.New("echo", "Hello, World!").
+			WithMode(cmd.Detached|cmd.Background|ProcessReleaseFailure).
+			Error("releasing process", assert.AnError),
 	},
 }
 
 func TestExec(t *testing.T) {
-	test.Map(t, testExecParams).
+	test.Map(t, execTestCases).
+		Filter("nil-executor", false).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
-			unit := cmd.NewExecutor()
-			if param.mode&DevNullFileOpenFailure == DevNullFileOpenFailure {
-				test.NewAccessor(unit).Set("devnull", "/dev/xxx")
-			} else if param.mode&ProcessReleaseFailure == ProcessReleaseFailure {
-				test.NewAccessor(unit).Set("finish",
-					func(_ cmd.Mode, _ *exec.Cmd) error { return assert.AnError })
-			}
-			stdout := &strings.Builder{}
-			stderr := &strings.Builder{}
-			stdin := strings.NewReader(param.stdin)
+			stdout, stderr, cmd, exec := param.setup(cmd.NewExecutor())
 
 			// When
-			err := unit.Exec(param.mode, stdin, stdout, stderr,
-				".", param.env, param.args...)
+			err := exec.Exec(ctx, cmd)
+
+			// Then
+			assert.Equal(t, param.expectError, err)
+			assert.Equal(t, param.expectStdout, stdout.String())
+			assert.Equal(t, param.expectStderr, stderr.String())
+		})
+}
+
+func TestCmdExec(t *testing.T) {
+	test.Map(t, execTestCases).
+		Filter("nil-executor", false).
+		Run(func(t test.Test, param ExecParams) {
+			// Given
+			stdout, stderr, cmd, exec := param.setup(nil)
+
+			// When
+			err := cmd.WithExecutor(exec).Exec(ctx)
+
+			// Then
+			assert.Equal(t, param.expectError, err)
+			assert.Equal(t, param.expectStdout, stdout.String())
+			assert.Equal(t, param.expectStderr, stderr.String())
+		})
+}
+
+func TestNilExec(t *testing.T) {
+	test.Map(t, execTestCases).
+		Filter("nil-executor", true).
+		Run(func(t test.Test, param ExecParams) {
+			// Given
+			stdout, stderr, cmd, exec := param.setup(nil)
+
+			// When
+			err := exec.Exec(ctx, cmd)
 
 			// Then
 			assert.Equal(t, param.expectError, err)
@@ -159,41 +212,38 @@ func TestExec(t *testing.T) {
 
 type CmdErrorParams struct {
 	message       string
-	dir           string
-	env           []string
-	args          []string
+	cmd           *cmd.Cmd
 	cause         error
 	expectedError string
 }
 
-var testCmdErrorParams = map[string]CmdErrorParams{
+var cmdErrorTestCases = map[string]CmdErrorParams{
 	"nil": {
 		message:       "nil",
-		expectedError: "command - nil [dir=, env=[], call=[]]: <nil>",
+		expectedError: "command - nil: <nil>",
 	},
 	"empty": {
 		message:       "empty",
-		env:           []string{},
-		args:          []string{},
-		expectedError: "command - empty [dir=, env=[], call=[]]: <nil>",
+		cmd:           cmd.New(),
+		expectedError: "command - empty [dir=., env=[], call=[]]: <nil>",
 	},
 	"values": {
 		message: "test message",
-		dir:     "/test/dir",
-		env:     []string{"VAR1=value1", "VAR2=value2"},
-		args:    []string{"cmd", "arg1", "arg2"},
-		cause:   assert.AnError,
+		cmd: cmd.New("cmd", "arg1", "arg2").
+			WithEnv("VAR1=value1", "VAR2=value2").
+			WithWorkDir("/test/dir"),
+		cause: assert.AnError,
 		expectedError: "command - test message [dir=/test/dir, " +
 			"env=[VAR1=value1 VAR2=value2], call=[cmd arg1 arg2]]: " +
 			assert.AnError.Error(),
 	},
 }
 
-func TestCmdError_Error(t *testing.T) {
-	test.Map(t, testCmdErrorParams).
+func TestCmdError(t *testing.T) {
+	test.Map(t, cmdErrorTestCases).
 		Run(func(t test.Test, param CmdErrorParams) {
 			// Given
-			cmdErr := cmd.NewCmdError(param.message, param.dir, param.env, param.args, param.cause)
+			cmdErr := param.cmd.Error(param.message, param.cause)
 
 			// When
 			result := cmdErr.Error()
