@@ -25,7 +25,7 @@ type InfoParams struct {
 	expectString string
 }
 
-var testInfoParams = map[string]InfoParams{
+var infoTestCases = map[string]InfoParams{
 	"dirty info": {
 		info:         infoDirty,
 		expectString: "info: " + infoDirty.String() + "\n",
@@ -38,7 +38,7 @@ var testInfoParams = map[string]InfoParams{
 }
 
 func TestInfo(t *testing.T) {
-	test.Map(t, testInfoParams).
+	test.Map(t, infoTestCases).
 		Run(func(t test.Test, param InfoParams) {
 			// Given
 			writer := &strings.Builder{}
@@ -57,7 +57,7 @@ type ExecParams struct {
 	expectString string
 }
 
-var testExecParams = map[string]ExecParams{
+var execTestCases = map[string]ExecParams{
 	"empty args": {
 		expectString: "exec: []\n",
 	},
@@ -87,7 +87,7 @@ var testExecParams = map[string]ExecParams{
 }
 
 func TestExec(t *testing.T) {
-	test.Map(t, testExecParams).
+	test.Map(t, execTestCases).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
 			writer := &strings.Builder{}
@@ -105,7 +105,7 @@ type CallParams struct {
 	expectString string
 }
 
-var testCallParams = map[string]CallParams{
+var callTestCases = map[string]CallParams{
 	"empty args": {
 		expectString: "call: <no-args>\n",
 	},
@@ -120,7 +120,7 @@ var testCallParams = map[string]CallParams{
 }
 
 func TestCall(t *testing.T) {
-	test.Map(t, testCallParams).
+	test.Map(t, callTestCases).
 		Run(func(t test.Test, param CallParams) {
 			// Given
 			writer := &strings.Builder{}
@@ -139,7 +139,7 @@ type ErrorParams struct {
 	expectString string
 }
 
-var testErrorParams = map[string]ErrorParams{
+var errorTestCases = map[string]ErrorParams{
 	"empty message": {
 		expectString: "error: <no-error>\n",
 	},
@@ -159,7 +159,7 @@ var testErrorParams = map[string]ErrorParams{
 }
 
 func TestError(t *testing.T) {
-	test.Map(t, testErrorParams).
+	test.Map(t, errorTestCases).
 		Run(func(t test.Test, param ErrorParams) {
 			// Given
 			writer := &strings.Builder{}
@@ -177,7 +177,7 @@ type MessageParams struct {
 	expectString string
 }
 
-var testMessageParams = map[string]MessageParams{
+var messageTestCases = map[string]MessageParams{
 	"empty message": {
 		expectString: "\n",
 	},
@@ -208,7 +208,7 @@ var testMessageParams = map[string]MessageParams{
 }
 
 func TestMessage(t *testing.T) {
-	test.Map(t, testMessageParams).
+	test.Map(t, messageTestCases).
 		Run(func(t test.Test, param MessageParams) {
 			// Given
 			writer := &strings.Builder{}

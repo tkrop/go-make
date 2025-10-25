@@ -6,10 +6,10 @@
 SHELL := /bin/bash
 
 # Setup variables for special purposes.
-NULL :=
+EMPTY :=
 COMMA := ,
-SPACE := $(NULL) $(NULL)
-TAB := $(NULL)	$(NULL)
+SPACE := $(EMPTY) $(EMPTY)
+TAB := $(EMPTY)	$(EMPTY)
 define NEWLINE
 
 
@@ -134,8 +134,9 @@ $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
 $(call cdebug,using AWK [$(shell echo | awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
-find-all = find $(1) ! -path "./.git/*" ! -path "./run/*" ! -path "./build/*" \
-	\( $(2) \) 2>/dev/null | sed "s/^.\///g"
+find-all = find $(1) ! -path "./.git/*" ! -path "./.github/*" \
+	! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
+	sed "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
 clean-file = $(call find-all,$(1),-type f \( $(2) \) \
 	-exec rm --verbose --force {} \;)
@@ -143,6 +144,17 @@ clean-dir = $(call find-all,$(1),-type d \( $(2) \) \
 	-exec rm --verbose --force --recursive {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
+# Custom abort to stop parent go-make process.
+# TODO: improve make wrapper result handling!
+abort = \
+	CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
+	while [ "$${CMD[0]}" != "1" ]; do \
+	  if [ "$${CMD[2]}" == "go-make" ]; then \
+	    $(call dmsg,debug,aborting [$${CMD[0]}] => "$${CMD[@]:2}"); \
+	    kill -ABRT "$${CMD[0]}"; break; \
+	  fi; CMD=($$(ps -p "$${CMD[1]}" -o pid,ppid,args | tail -n +2)); \
+	done; exit 0
+
 
 
 # Setup default makeflags create consistent behavior.
@@ -159,11 +171,11 @@ DIR_BUILD := $(CURDIR)/build
 DIR_RUN := $(CURDIR)/run
 DIR_CRED := $(DIR_RUN)/creds
 DIR_CONFIG := $(HOME)/.config/go-make
-DIR_TEMP := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
-$(call cdebug,using DIR_TEMP [$(DIR_TEMP)])
+DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
+$(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.156
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.157
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -220,9 +232,9 @@ FILE_IMAGE ?= Dockerfile
 FILE_DEEPCOPY ?= zz_generated.deepcopy.go
 
 # Setup files for caching mocks.
-FILE_MOCKS ?= $(DIR_TEMP)/mocks
+FILE_MOCKS ?= $(DIR_CACHE)/mocks
 # Setup files for caching targets.
-FILE_TARGETS ?= $(DIR_TEMP)/targets
+FILE_TARGETS ?= $(DIR_CACHE)/targets
 FILE_TARGETS_MAKE ?= $(FILE_TARGETS).make
 FILE_TARGETS_GOMAKE ?= $(FILE_TARGETS).go-make
 FILE_TARGETS_ALL ?= $(FILE_TARGETS) $(FILE_TARGETS_MAKE) $(FILE_TARGETS_GOMAKE)
@@ -730,7 +742,7 @@ help:: show-help
 call::;	@$(ARGS)
 
 
-$(DIR_TEMP) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
+$(DIR_CACHE) $(DIR_BUILD) $(DIR_RUN) $(DIR_CRED) $(GOBIN):
 	@if [ ! -d "$@" ]; then mkdir --parents "$@"; fi;
 
 
@@ -789,8 +801,8 @@ show-options-all = sed 's|^ *-|-|; s|, *|\n|g;' | \
 show-options-long = grep --only-matching -- "--[^, ]*" | \
 	sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'
 
-$(FILE_TARGETS_ALL): $(MAKEFILE_LIST) # $(DIR_TEMP) # does not work for make_test.go
-	@$(call emsg,info,updating targets [$@]); mkdir --parents $(DIR_TEMP); \
+$(FILE_TARGETS_ALL): $(MAKEFILE_LIST) # $(DIR_CACHE) # does not work for make_test.go
+	@$(call emsg,info,updating targets [$@]); mkdir --parents $(DIR_CACHE); \
 	if [ "$@" == "$(FILE_TARGETS_MAKE)" ]; then MAKEFILE="Makefile"; \
 	else MAKEFILE="$(GOMAKE_MAKEFILE)"; TARGETS="$(GOMAKE_OPTIONS)"; fi; \
 	( echo "$${TARGETS[@]}" | tr ' ' '\n'; \
@@ -847,10 +859,20 @@ git-number = \
 	while read NUM; do echo $$((NUM + 1)); done)
 git-message = \
 	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
-	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then MESSAGE="$(1): $${MESSAGE}"; fi; \
+	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then \
+	  if [[ "$${MESSAGE}" =~ ^\([a-z]+\)" "+.*$$ ]]; then \
+	    MESSAGE="$(1)$${MESSAGE%% *}: $${MESSAGE\#* }"; \
+	  else MESSAGE="$(1): $${MESSAGE}"; fi; \
+	fi; \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
 	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
+
+# TODO: fix issue numbers and wrapper handling of brackets! 
+# $(addprefix git-message-,$(COMMIT_CONVENTION)):: git-message-%:
+# 	@MESSAGE="$(ARGS)"; $(call git-message,$*,123); \
+# 	echo "$${MESSAGE}"; $(abort);
+
 git-clean = \
 	$(call emsg,info,git-clean [$(1)$(if $(2), - $(2))]); $(GITPRUNE); \
 	HISTORY=($$($(GIT) log --pretty=format:"%T" "$(git-branch-main)")); \
@@ -943,7 +965,7 @@ git-reset::
 	$(GIT) checkout "$${BRANCH}" && $(GIT) pull || ( \
 	  $(GIT) stash && $(call emsg,info,git-reset [$${BRANCH}]) && \
 	  $(GIT) checkout "$${BRANCH}" && $(GIT) pull && $(GIT) stash apply \
-	) || exit 1; $(call git-clean,$${BRANCH},$(ARGS));
+	) || exit 1; $(call git-clean,$${BRANCH},$(ARGS)); $(abort);
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
 git-verify::
 	@$(call dmsg,info,git-verify); MODE="$(firstword $(ARGS))"; \
@@ -971,7 +993,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	if command -v gh >/dev/null 2>&1; then \
 	  gh pr create --base "$(git-branch-main)" \
 	    --head "$${BRANCH}" --draft --assignee "@me" --title "$${MESSAGE}"; \
-	fi || $(GIT) checkout "$${BRANCH}"; exit 0;
+	fi || $(GIT) checkout "$${BRANCH}"; $(abort);
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
 $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
@@ -981,7 +1003,7 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
 	$(call emsg,info,git-commit [$${BRANCH} - $${MESSAGE}]); \
-	$(GIT) commit --signoff --message "$${MESSAGE}"; exit 0;
+	$(GIT) commit --signoff --message "$${MESSAGE}"; $(abort);
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
 $(TARGETS_GIT_FIX):: git-fix%:
@@ -996,7 +1018,7 @@ $(TARGETS_GIT_FIX):: git-fix%:
 	  if [ "$${GITFIX[$${KEY}]}" == "" ]; then unset GITFIX[$${KEY}]; fi; \
 	done; \
 	echo "$${GITFIX[@]} && $${GITPUSH[@]}"; \
-	ARGS="" "$${GITFIX[@]}" && $${GITPUSH[@]}; exit 0;
+	ARGS="" "$${GITFIX[@]}" && $${GITPUSH[@]}; $(abort);
 #@ pushes the current branch to the same branch of the origin.
 git-push::
 	@$(GIT) push --set-upstream origin \
@@ -1045,8 +1067,10 @@ go.sum go.mod&: $(SOURCES)
 
 #@ initialize the generated sources.
 init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
-$(MOCKS_TARGETS)&: $(MOCKS_SOURCES) $(DIR_TEMP) install-mockgen install-mock
-	@GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
+$(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
+$(MOCKS_TARGETS)&:: $(MOCKS_SOURCES)
+	@$(call emsg,info,updating [mocks]); \
+	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
 	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
 	}' | sort -u)"; \
 	echo '$(MOCKS)' | tr ';' '\n' | \
@@ -1054,7 +1078,7 @@ $(MOCKS_TARGETS)&: $(MOCKS_SOURCES) $(DIR_TEMP) install-mockgen install-mock
 	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
 	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
 	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
-	      echo "creating[source]: $${TARGET}" >&2; $${CMD} && sed --in-place \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
 	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
 	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
 	    fi; \
@@ -1063,7 +1087,7 @@ $(MOCKS_TARGETS)&: $(MOCKS_SOURCES) $(DIR_TEMP) install-mockgen install-mock
 	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
 	    if [ ! -f "$${TARGET}" ] || \
 	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
-	      echo "creating[package]: $${TARGET}" >&2; $${CMD} && sed --in-place \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
 	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
 	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
 	    fi; \
@@ -1311,7 +1335,7 @@ $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 
 #@ execute a kind of self-test running the main targets.
 test-self::  clean-all all-clean clean-all install-all update-all? update-all
-	@$(call emsg,success,test-self finished successfully!);
+	@$(call emsg,success,test-self finished successfully!); $(abort);
 
 
 # golangci-lint configuration
@@ -1404,7 +1428,7 @@ lint = @$(call emsg,info,linting [$(1)]); \
 	echo "$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1)))" >&2; \
 	$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1))) | \
 	  sed --regexp-extended 's|^(.*):(.*)\((.*)\)$$|[\3] \1:\2|'; \
-	if [ $${PIPESTATUS[0]} -eq 1 ]; then exit 1; fi;
+	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 ## Lint: targets to lint source code.
 
@@ -1913,7 +1937,7 @@ run-aws:: $(DIR_RUN)
 	elif [ -n "$$($(IMAGE_CMD) ps | \
 	    grep "$(AWS_IMAGE).*$(HOST):4566.*$(HOST):4571")" ]; then \
 	  $(call emsg,info,ports allocated - using existing [aws/localstack]); \
-	  $(call run-setup-aws) || exit 1 && exit 0 ; \
+	  $(call run-setup-aws) || exit 1 && exit 0; \
 	fi; \
 	$(IMAGE_CMD) start $(GITNAME)-aws 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name $(GITNAME)-aws \
@@ -1925,22 +1949,19 @@ run-aws:: $(DIR_RUN)
 	until $(IMAGE_CMD) exec $(GITNAME)-aws \
 	  curl --silent http://$(HOST):4566; \
 	do $(call emsg,info,waiting for aws service); sleep 1; done && \
-	$(call run-setup-aws) || exit 1) | \
-	tee -a $(DIR_RUN)/$(GITNAME)-aws.log;
+	$(call run-setup-aws) || exit 1) | tee -a $(DIR_RUN)/$(GITNAME)-aws.log;
 
 #@ run-*: start the matched command using the native binary.
 $(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(DIR_BUILD)/$* $(ARGS) 2>&1 | \
-	  tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
-	exit $${PIPESTATUS[0]};
+	  $(DIR_BUILD)/$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
+	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ run-go-*: start the matched command using go run.
 $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(GO) run cmd/$*/main.go $(ARGS) 2>&1 | \
-	  tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
-	exit $${PIPESTATUS[0]};
+	  $(GO) run cmd/$*/main.go $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
+	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ run-image-*: start the matched command via the container images.
 $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
@@ -1956,8 +1977,8 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $${NAME} \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
 	  --network=host $(call run-vars,--env) $(call run-vars-image,--env) \
-	  ${IMAGE} /$* $(ARGS) 2>&1 | \
-	tee -a $(DIR_RUN)/$${NAME}.log; exit $${PIPESTATUS[0]};
+	  ${IMAGE} /$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$${NAME}.log; \
+	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ clean up all running container images.
 run-clean:: $(TARGETS_RUN_CLEAN)
@@ -1966,8 +1987,8 @@ $(TARGETS_RUN_CLEAN):: run-clean-%:
 	@NAME="$(GITNAME)-$*"; \
 	$(call emsg,info,cleaning container [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
-	  aborting - no docker command [$${NAME}]!); exit 0; fi; \
-	if [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
+	  aborting - no docker command [$${NAME}]!); exit 0; \
+	elif [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
 	  $(IMAGE_CMD) kill $${NAME} > /dev/null && \
 	  $(call emsg,success,killed container [$${NAME}]); \
 	fi; \
@@ -1984,11 +2005,14 @@ clean:: $(TARGETS_CLEAN)
 #@ clean up all resources, i.e. also tools installed for the build.
 clean-all:: $(TARGETS_CLEAN_ALL)
 #@ clean up all resources created by initialization.
-clean-init:: clean-hooks
+clean-init:: clean-hooks clean-cache
 #@ clean up all hooks created by initialization.
 clean-hooks::
 	@rm --verbose --force $(DIR_GIT)/hooks/pre-commit;
 	@rm --verbose --force $(DIR_GIT)/hooks/commit-msg;
+#@ clean up all temp files created during building and testing.
+clean-cache::
+	@rm --verbose --force --recursive $(DIR_CACHE);
 #@ clean up all resources created by building and testing.
 clean-build::
 	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
@@ -2209,7 +2233,7 @@ debug-dirs::
 	echo 'DIR_RUN $(DIR_RUN)'; \
 	echo 'DIR_CRED $(DIR_CRED)'; \
 	echo 'DIR_CONFIG $(DIR_CONFIG)'; \
-	echo 'DIR_TEMP $(DIR_TEMP)'; \
+	echo 'DIR_CACHE $(DIR_CACHE)'; \
 
 #@ debug the file environment variables.
 debug-files::

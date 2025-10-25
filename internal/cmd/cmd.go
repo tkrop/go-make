@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 	"syscall"
 )
 
@@ -23,42 +24,204 @@ const (
 	Background Mode = 0x02
 )
 
+// Cmd represents a command to be executed.
+type Cmd struct {
+	// Mode contains the execution mode.
+	Mode Mode
+	// Dir contains the working directory.
+	Dir string
+	// Env contains the environment variables.
+	Env []string
+	// Args contains the command arguments.
+	Args []string
+	// Stdin is the input stream for the command.
+	Stdin io.Reader
+	// Stdout is the output stream for the command.
+	Stdout io.Writer
+	// Stderr is the error stream for the command.
+	Stderr io.Writer
+
+	// exec is the command exec.
+	exec Executor
+}
+
+// New creates a new command with the given arguments.
+func New(args ...string) *Cmd {
+	return &Cmd{
+		Mode:   Attached,
+		Dir:    ".",
+		Env:    []string{},
+		Args:   args,
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}
+}
+
+// IsMode returns whether the execution mode of the command includes the
+// specified mode.
+func (c *Cmd) IsMode(mode Mode) bool {
+	if c != nil {
+		return c.Mode&mode == mode
+	}
+	return false
+}
+
+// WithMode sets the execution mode for the command.
+func (c *Cmd) WithMode(mode Mode) *Cmd {
+	if c != nil {
+		c.Mode = mode
+	}
+	return c
+}
+
+// WithWorkDir sets the working directory for the command.
+func (c *Cmd) WithWorkDir(dir string) *Cmd {
+	if c != nil {
+		c.Dir = dir
+	}
+	return c
+}
+
+// WithEnv adds environment variables to the command.
+func (c *Cmd) WithEnv(env ...string) *Cmd {
+	if c != nil {
+		c.Env = append(c.Env, env...)
+	}
+	return c
+}
+
+// WithArgs adds arguments to the command.
+func (c *Cmd) WithArgs(args ...string) *Cmd {
+	if c != nil {
+		c.Args = append(c.Args, args...)
+	}
+	return c
+}
+
+// WithIO sets the input, output, and error streams for the command.
+func (c *Cmd) WithIO(stdin io.Reader, stdout, stderr io.Writer) *Cmd {
+	if c != nil {
+		c.Stdin = stdin
+		c.Stdout = stdout
+		c.Stderr = stderr
+	}
+	return c
+}
+
+// WithStdin sets the input stream for the command.
+func (c *Cmd) WithStdin(stdin io.Reader) *Cmd {
+	if c != nil {
+		c.Stdin = stdin
+	}
+	return c
+}
+
+// WithStdout sets the output stream for the command.
+func (c *Cmd) WithStdout(stdout io.Writer) *Cmd {
+	if c != nil {
+		c.Stdout = stdout
+	}
+	return c
+}
+
+// WithStderr sets the error stream for the command.
+func (c *Cmd) WithStderr(stderr io.Writer) *Cmd {
+	if c != nil {
+		c.Stderr = stderr
+	}
+	return c
+}
+
+// WithExecutor sets the executor for the command.
+func (c *Cmd) WithExecutor(exec Executor) *Cmd {
+	if c != nil {
+		c.exec = exec
+	}
+	return c
+}
+
+// Copy creates a copy of the command to allow command templating.
+func (c *Cmd) Copy() *Cmd {
+	if c == nil {
+		return nil
+	}
+
+	return &Cmd{
+		Args:   append([]string{}, c.Args...),
+		Env:    append([]string{}, c.Env...),
+		Dir:    c.Dir,
+		Mode:   c.Mode,
+		Stdin:  c.Stdin,
+		Stdout: c.Stdout,
+		Stderr: c.Stderr,
+		exec:   c.exec,
+	}
+}
+
+// Executor returns the executor of the command. If no executor is set, a new
+// default executor is created.
+func (c *Cmd) Executor() Executor {
+	if c == nil || c.exec == nil || reflect.ValueOf(c.exec).IsNil() {
+		return NewExecutor()
+	}
+	return c.exec
+}
+
+// Exec executes the command using the provided context. If the command has no
+// executor set, a new default executor is created for execution.
+func (c *Cmd) Exec(ctx context.Context) error {
+	return c.Executor().Exec(ctx, c) //nolint:wrapcheck // is wrapped.
+}
+
+// Error creates a new command error with error message and causing error. The
+// basic command in the command error is stripped of I/O streams and executor
+// for clarity and testability.
+func (c *Cmd) Error(msg string, cause error) error {
+	if c == nil {
+		return &CmdError{
+			Message: msg,
+			Cause:   cause,
+		}
+	}
+	return &CmdError{
+		Cmd: New(c.Args...).WithMode(c.Mode).
+			WithWorkDir(c.Dir).WithEnv(c.Env...),
+		Message: msg,
+		Cause:   cause,
+	}
+}
+
 // ErrCmd is a sentinel error for command execution failures.
 var ErrCmd = errors.New("command")
 
 // CmdError represents a command execution error with full context information.
 type CmdError struct {
+	// Cmd is the command that caused the failure.
+	Cmd *Cmd
 	// Message provides additional context about the failure
 	Message string
-	// Dir is the working directory where the command was executed
-	Dir string
-	// Env contains the environment variables passed to the command
-	Env []string
-	// Args contains the command arguments
-	Args []string
 	// Cause is the underlying error that caused the failure
 	Cause error
 }
 
-// NewCmdError creates a new command execution error with failure context
-// information, including an error message, as well as the working directory,
-// environment variables, command arguments, and underlying error.
-func NewCmdError(
-	msg, dir string, env, args []string, cause error,
-) error {
+// NewCmdError creates a new command error with the given message, command,
+// and cause.
+func NewCmdError(message string, cmd *Cmd, cause error) *CmdError {
 	return &CmdError{
-		Message: msg,
-		Dir:     dir,
-		Env:     env,
-		Args:    args,
+		Cmd:     cmd,
+		Message: message,
 		Cause:   cause,
 	}
 }
 
 // Error returns a formatted error message with full context.
 func (e *CmdError) Error() string {
+	if e.Cmd == nil {
+		return fmt.Sprintf("%v - %s: %v", ErrCmd, e.Message, e.Cause)
+	}
 	return fmt.Sprintf("%v - %s [dir=%s, env=%v, call=%v]: %v",
-		ErrCmd, e.Message, e.Dir, e.Env, e.Args, e.Cause)
+		ErrCmd, e.Message, e.Cmd.Dir, e.Cmd.Env, e.Cmd.Args, e.Cause)
 }
 
 // Unwrap returns the underlying cause error for error unwrapping.
@@ -73,24 +236,23 @@ func (*CmdError) Is(target error) bool {
 
 // Executor provides a common interface for executing commands.
 type Executor interface {
-	// Exec executes the command provided by given arguments in given working
-	// directory using stdin as input while redirecting stdout and stderr to
-	// given writers.
-	Exec(mode Mode, stdin io.Reader, stdout, stderr io.Writer,
-		dir string, env []string, args ...string) error
+	// Exec executes the given command with provided context using the executor.
+	Exec(ctx context.Context, cmd *Cmd) error
+	// New creates a new command with the given arguments.
+	New(args ...string) *Cmd
 }
 
-// executor provides a default command executor using `os/exec`
+// CmdExecutor provides a default command CmdExecutor using `os/exec`
 // supporting optional tracing.
-type executor struct {
+type CmdExecutor struct {
 	devnull string
 	start   func(mode Mode, cmd *exec.Cmd) error
 	finish  func(mode Mode, cmd *exec.Cmd) error
 }
 
 // NewExecutor creates a new default command process.
-func NewExecutor() Executor {
-	return &executor{
+func NewExecutor() *CmdExecutor {
+	return &CmdExecutor{
 		devnull: os.DevNull,
 		start: func(mode Mode, cmd *exec.Cmd) error {
 			if mode&Background == Background {
@@ -107,36 +269,39 @@ func NewExecutor() Executor {
 	}
 }
 
-// Exec executes the command provided by given arguments in given working
-// directory using stdin as input while redirecting stdout and stderr to given
-// writers.
-//
-// TODO: expose context for cancellation and timeouts.
-// TODO: refactor interface to improve usability and testability.
-func (e *executor) Exec( //revive:disable-line:argument-limit
-	mode Mode, stdin io.Reader, stdout, stderr io.Writer,
-	dir string, env []string, args ...string,
-) error {
-	// #nosec G204 -- caller ensures safe commands
-	cmd := exec.CommandContext(context.TODO(), args[0], args[1:]...)
-	cmd.Dir, cmd.Env = dir, os.Environ()
-	cmd.Env = append(cmd.Env, env...)
+// Exec executes the given command with provided context using the executor.
+func (e *CmdExecutor) Exec(ctx context.Context, cmd *Cmd) error {
+	if e == nil {
+		return cmd.Error("nil executor", nil)
+	} else if cmd == nil {
+		return cmd.Error("nil command", nil)
+	}
 
-	if mode&Detached == Detached {
+	// #nosec G204 -- caller ensures safe commands
+	cc := exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...)
+	cc.Dir, cc.Env = cmd.Dir, os.Environ()
+	cc.Env = append(cc.Env, cmd.Env...)
+
+	if cmd.IsMode(Detached) {
 		devnull, err := os.OpenFile(e.devnull, os.O_RDWR, 0)
 		if err != nil {
-			return NewCmdError("opening /dev/null", dir, env, args, err)
+			return cmd.Error("opening /dev/null", err)
 		}
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, devnull, devnull
+		cc.Stdin, cc.Stdout, cc.Stderr = devnull, devnull, devnull
 		defer devnull.Close()
 	} else {
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+		cc.Stdin, cc.Stdout, cc.Stderr = cmd.Stdin, cmd.Stdout, cmd.Stderr
 	}
 
-	if err := e.start(mode, cmd); err != nil {
-		return NewCmdError("starting process", dir, env, args, err)
-	} else if err := e.finish(mode, cmd); err != nil {
-		return NewCmdError("releasing process", dir, env, args, err)
+	if err := e.start(cmd.Mode, cc); err != nil {
+		return cmd.Error("starting process", err)
+	} else if err := e.finish(cmd.Mode, cc); err != nil {
+		return cmd.Error("releasing process", err)
 	}
 	return nil
+}
+
+// New creates a new command with the given arguments.
+func (e *CmdExecutor) New(args ...string) *Cmd {
+	return New(args...).WithExecutor(e)
 }
