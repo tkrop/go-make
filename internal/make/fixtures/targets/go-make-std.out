@@ -54,6 +54,7 @@ call
 clean
 clean-all
 clean-build
+clean-cache
 clean-deps
 clean-hooks
 clean-init

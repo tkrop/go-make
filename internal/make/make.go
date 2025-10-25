@@ -2,6 +2,7 @@
 package make //nolint:predeclared // package name is make.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go/build"
@@ -9,10 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 
 	"github.com/tkrop/go-config/info"
 	"github.com/tkrop/go-make/internal/cmd"
 	"github.com/tkrop/go-make/internal/log"
+	"github.com/tkrop/go-make/internal/sys"
 )
 
 const (
@@ -128,10 +132,27 @@ const (
 
 // Available exit code constants.
 const (
-	ExitSuccess       int = 0
+	// ExitSuccess indicates that the command completed successfully.
+	ExitSuccess int = 0
+	// ExitConfigFailure indicates that finding the configuration failed.
 	ExitConfigFailure int = 2
+	// ExitTargetFailure indicates that executing targets failed.
 	ExitTargetFailure int = 3
 )
+
+var (
+	// SuffixTargetsGoMake provides the suffix for the go-make targets file.
+	SuffixTargetsGoMake = ptr("go-make")
+	// SuffixTargetsMake provides the suffix for the make targets file.
+	SuffixTargetsMake = ptr("make")
+	// SuffixTargets provides the suffix for the general targets file.
+	SuffixTargets = ptr("")
+)
+
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	return &v
+}
 
 // AbsPath returns the absolute path of given directory.
 func AbsPath(path string) string {
@@ -140,33 +161,35 @@ func AbsPath(path string) string {
 }
 
 // CmdGoInstall creates the argument array of a `go install <path>@<version>`
-// command.
-func CmdGoInstall(path, version string) []string {
-	return []string{
-		"go", "install", "-v", "-mod=readonly",
-		"-buildvcs=true", path + "@" + version,
-	}
+// command with the given working directory and environment variables.
+func CmdGoInstall(path, version, dir string, env ...string) *cmd.Cmd {
+	return cmd.New("go", "install", "-v", "-mod=readonly",
+		"-buildvcs=true", path+"@"+version).WithEnv(env...).WithWorkDir(dir)
 }
 
-// CmdTestDir creates the argument array of a `test -d <path>` command. We
-// use this to test if a directory exists, since it allows us to mock the
-// check.
-func CmdTestDir(path string) []string {
-	return []string{"test", "-d", path}
+// CmdTestDir creates the argument array of a `test -d <path>` command with the
+// given working directory and environment variables. We use this to test if a
+// directory exists, since it allows us to mock the check.
+func CmdTestDir(path, dir string, env ...string) *cmd.Cmd {
+	return cmd.New("test", "-d", path).WithEnv(env...).WithWorkDir(dir)
 }
 
 // CmdMakeTargets creates the argument array of a `make --file <Makefile>
-// <targets...>` command using the given makefile name amd argument list.
-func CmdMakeTargets(file string, args ...string) []string {
-	return append([]string{
+// <targets...>` command using the given makefile name amd argument list with
+// the given working directory and environment variables.
+func CmdMakeTargets(
+	file string, targets []string, dir string, env ...string,
+) *cmd.Cmd {
+	return cmd.New(append([]string{
 		"make", "--file", file, "--no-print-directory",
-	}, args...)
+	}, targets...)...).WithEnv(env...).WithWorkDir(dir)
 }
 
 // CmdGitTop creates the argument array of a `git rev-parse` command to
 // get the root path of the current git repository.
-func CmdGitTop() []string {
-	return []string{"git", "rev-parse", "--show-toplevel"}
+func CmdGitTop(dir string, env ...string) *cmd.Cmd {
+	return cmd.New("git", "rev-parse", "--show-toplevel").
+		WithEnv(env...).WithWorkDir(dir)
 }
 
 // GetEnvDefault returns the value of the environment variable with given key
@@ -182,6 +205,25 @@ func GetEnvDefault(key, value string) string {
 func GoMakePath(path, version string) string {
 	return filepath.Join(GetEnvDefault(EnvGoPath, build.Default.GOPATH),
 		"pkg", "mod", path+"@"+version, "config")
+}
+
+// ErrNotFound represent a version not found error.
+var ErrNotFound = errors.New("version not found")
+
+// NewErrNotFound wraps the error of failed command to install the requested
+// go-make config version.
+func NewErrNotFound(dir, version string, err error) error {
+	return fmt.Errorf("%w [dir=%s, version=%s]: %w",
+		ErrNotFound, dir, version, err)
+}
+
+// ErrCallFailed represent a version not found error.
+var ErrCallFailed = errors.New("call failed")
+
+// NewErrCallFailed wraps the error of a failed command call.
+func NewErrCallFailed(cmd *cmd.Cmd, err error) error {
+	return fmt.Errorf("%w [dir=%s, call=%s]: %w",
+		ErrCallFailed, cmd.Dir, cmd.Args, err)
 }
 
 // GoMake provides the default `go-make` application context.
@@ -213,6 +255,9 @@ type GoMake struct {
 	Makefile string
 	// Trace provides the flags to trace calls.
 	Trace bool
+
+	// Aborted indicates whether go-make was Aborted.
+	Aborted atomic.Bool
 }
 
 // NewGoMake returns a new default `go-make` service context with given
@@ -238,10 +283,10 @@ func NewGoMake( //revive:disable-line:argument-limit // kiss.
 // setupWorkDir ensures that the working directory is setup to the root of the
 // current git repository since this is where the go-make targets should be
 // executed.
-func (gm *GoMake) setupWorkDir() {
+func (gm *GoMake) setupWorkDir(ctx context.Context) {
 	buffer := &strings.Builder{}
-	if err := gm.exec(cmd.Attached, nil, buffer, gm.Stderr,
-		gm.WorkDir, gm.Env, CmdGitTop()...); err == nil {
+	if err := gm.exec(ctx, CmdGitTop(gm.WorkDir, gm.Env...).
+		WithIO(nil, buffer, gm.Stderr)); err == nil {
 		gm.WorkDir = strings.TrimSpace(buffer.String())
 	}
 }
@@ -250,53 +295,53 @@ func (gm *GoMake) setupWorkDir() {
 // as provided by the command line arguments, the environment variables, or the
 // context of the executed go-make command. The setup ensures that the expected
 // go-make config is installed and the correct Makefile is referenced.
-func (gm *GoMake) setupConfig() error {
+func (gm *GoMake) setupConfig(ctx context.Context) error {
 	if gm.Config == "" {
-		return gm.ensureConfig(gm.Info.Version,
+		return gm.ensureConfig(ctx, gm.Info.Version,
 			GoMakePath(gm.Info.Path, gm.Info.Version))
 	}
 
 	path := AbsPath(gm.Config)
-	if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr,
-		gm.WorkDir, gm.Env, CmdTestDir(path)...); err != nil {
-		return gm.ensureConfig(gm.Config,
+	if err := gm.exec(ctx, CmdTestDir(path, gm.WorkDir, gm.Env...).
+		WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
+		return gm.ensureConfig(ctx, gm.Config,
 			GoMakePath(gm.Info.Path, gm.Config))
 	}
-	return gm.ensureConfig("custom", path)
+	return gm.ensureConfig(ctx, "custom", path)
 }
 
 // ensureConfig ensures that the go-make config is valid and installed and
 // the correct Makefile is referenced.
-func (gm *GoMake) ensureConfig(version, dir string) error {
+func (gm *GoMake) ensureConfig(
+	ctx context.Context, version, dir string,
+) error {
 	gm.ConfigVersion, gm.ConfigDir = version, dir
 	gm.Makefile = filepath.Join(dir, Makefile)
 	if version == "custom" {
 		return nil
 	}
 
-	if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr,
-		gm.WorkDir, gm.Env, CmdTestDir(gm.ConfigDir)...); err != nil {
-		if err := gm.exec(cmd.Attached, nil, gm.Stderr, gm.Stderr, gm.WorkDir,
-			gm.Env, CmdGoInstall(gm.Info.Path, gm.ConfigVersion)...); err != nil {
+	if err := gm.exec(ctx,
+		CmdTestDir(gm.ConfigDir, gm.WorkDir, gm.Env...).
+			WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
+		if err := gm.exec(ctx,
+			CmdGoInstall(gm.Info.Path, gm.ConfigVersion, gm.WorkDir, gm.Env...).
+				WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
 			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
 		}
 	}
 	return nil
 }
 
-// Executes the command with given name and arguments in given directory
-// calling the command executor taking care to wrap the resulting error.
-func (gm *GoMake) exec( //revive:disable-line:argument-limit
-	mode cmd.Mode, stdin io.Reader, stdout, stderr io.Writer,
-	dir string, env []string, args ...string,
-) error {
+// Executes given command using given context calling the command executor and
+// taking care to wrap the resulting error.
+func (gm *GoMake) exec(ctx context.Context, cmd *cmd.Cmd) error {
 	if gm.Trace {
-		gm.Logger.Exec(stderr, dir, args...)
+		gm.Logger.Exec(cmd.Stderr, cmd.Dir, cmd.Args...)
 	}
 
-	if err := gm.Executor.Exec(mode,
-		stdin, stdout, stderr, dir, env, args...); err != nil {
-		return NewErrCallFailed(dir, args, errors.Unwrap(err))
+	if err := gm.Executor.Exec(ctx, cmd); err != nil {
+		return NewErrCallFailed(cmd, errors.Unwrap(err))
 	}
 	return nil
 }
@@ -305,7 +350,7 @@ func (gm *GoMake) exec( //revive:disable-line:argument-limit
 // and error.
 func (gm *GoMake) Make(args ...string) (int, error) {
 	var mode cmd.Mode
-	suffix := []string{}
+	var suffix *string
 	var targets []string
 	for _, arg := range args[1:] {
 		switch {
@@ -330,47 +375,68 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 		case strings.HasPrefix(arg, "--config="):
 			gm.Config = arg[len("--config="):]
 
-			// case arg == "--async":
-			// 	mode |= cmd.Detached | cmd.Background
-			// case arg == "--detached":
-			// 	mode |= cmd.Detached
-			// case arg == "--background":
-			// 	mode |= cmd.Background
+		// case arg == "--async":
+		// 	mode |= cmd.Detached | cmd.Background
+		// case arg == "--detached":
+		// 	mode |= cmd.Detached
+		// case arg == "--background":
+		// 	mode |= cmd.Background
 
 		case arg == "show-targets-go-make":
-			suffix = append(suffix, "go-make")
 			targets = append(targets, arg)
+			suffix = SuffixTargetsGoMake
 
 		case arg == "show-targets-make":
-			suffix = append(suffix, "make")
 			targets = append(targets, arg)
+			suffix = SuffixTargetsMake
 
 		case arg == "show-targets":
-			suffix = append(suffix, "")
 			targets = append(targets, arg)
+			suffix = SuffixTargets
 
 		default:
 			targets = append(targets, arg)
 		}
 	}
 
+	return gm.makeTargets(mode, suffix, targets)
+}
+
+// makeTargets executes the provided make targets with given command mode and
+// targets suffix. If the targets suffix indicates that the targets should be
+// shown, it displays them and returns immediately. Otherwise, it calls the
+// targets and returns the exit code and error.
+func (gm *GoMake) makeTargets(
+	mode cmd.Mode, suffix *string, targets []string,
+) (int, error) {
 	if gm.showTargets(suffix) {
 		mode = cmd.Detached | cmd.Background
 	}
 
-	return gm.callTargets(mode, targets)
+	ctx := sys.NewSignaler(gm.HandleSignal, sys.Signals...).
+		Signal(context.Background())
+
+	return gm.callTargets(ctx, mode, targets)
+}
+
+// HandleSignal handles received OS signals during go-make execution.
+func (gm *GoMake) HandleSignal(cancel context.CancelFunc, signal os.Signal) {
+	if signal == syscall.SIGABRT {
+		gm.Aborted.Store(true)
+	}
+	cancel()
 }
 
 // showTargets reads the targets from the go-make targets file and displays
 // them via standard output. If the file does not exist, it returns false
 // indicating that no targets were found.
-func (gm *GoMake) showTargets(suffix []string) bool {
-	if gm.Trace || len(suffix) == 0 {
+func (gm *GoMake) showTargets(suffix *string) bool {
+	if gm.Trace || suffix == nil {
 		return false
 	}
 
 	// Read the targets file, iff it exists.
-	file := gm.fileTargets(suffix[0])
+	file := gm.fileTargets(*suffix)
 	// #nosec G304 -- file is safe to dump.
 	if content, err := os.ReadFile(file); err == nil {
 		gm.Logger.Message(gm.Stdout, string(content))
@@ -420,36 +486,22 @@ func (gm *GoMake) GetEnvDefault(name, deflt string) string {
 // callTargets executes the provided make targets after setting up the working
 // directory and the go-make config. It returns the exit code and error if any
 // step of the setup or the targets execution fails.
-func (gm *GoMake) callTargets(mode cmd.Mode, targets []string) (int, error) {
-	gm.setupWorkDir()
-	if err := gm.setupConfig(); err != nil {
+func (gm *GoMake) callTargets(
+	ctx context.Context, mode cmd.Mode, targets []string,
+) (int, error) {
+	gm.setupWorkDir(ctx)
+	if err := gm.setupConfig(ctx); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
 		return ExitConfigFailure, err
-	} else if err := gm.exec(mode, gm.Stdin, gm.Stdout, gm.Stderr, gm.WorkDir,
-		gm.Env, CmdMakeTargets(gm.Makefile, targets...)...); err != nil {
-		gm.Logger.Error(gm.Stderr, "execute make", err)
-		return ExitTargetFailure, err
+	} else if err := gm.exec(ctx,
+		CmdMakeTargets(gm.Makefile, targets, gm.WorkDir, gm.Env...).
+			WithMode(mode).WithIO(gm.Stdin, gm.Stdout, gm.Stderr)); err != nil {
+		if !gm.Aborted.Load() {
+			gm.Logger.Error(gm.Stderr, "execute make", err)
+			return ExitTargetFailure, err
+		}
 	}
 	return ExitSuccess, nil
-}
-
-// ErrNotFound represent a version not found error.
-var ErrNotFound = errors.New("version not found")
-
-// NewErrNotFound wraps the error of failed command to install the requested
-// go-make config version.
-func NewErrNotFound(dir, version string, err error) error {
-	return fmt.Errorf("%w [dir=%s, version=%s]: %w",
-		ErrNotFound, dir, version, err)
-}
-
-// ErrCallFailed represent a version not found error.
-var ErrCallFailed = errors.New("call failed")
-
-// NewErrCallFailed wraps the error of a failed command call.
-func NewErrCallFailed(dir string, args []string, err error) error {
-	return fmt.Errorf("%w [dir=%s, call=%s]: %w",
-		ErrCallFailed, dir, args, err)
 }
 
 // Make runs the go-make command with given build information, standard output
