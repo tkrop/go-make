@@ -4,6 +4,7 @@
 ## You can provide custom variables in \x1b[1;95mMakefile.vars\x1b[0m
 ## You can provide custom targets in \x1b[1;95mMakefile.ext\x1b[0m
 SHELL := /bin/bash
+USER ?= $(shell whoami)
 
 # Setup variables for special purposes.
 EMPTY :=
@@ -175,7 +176,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.157
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.158
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1066,9 +1067,9 @@ go.sum go.mod&: $(SOURCES)
 	  touch go.mod go.sum && $(GO) mod download;)
 
 #@ initialize the generated sources.
-init-code:: init-hooks $(MOCKS_TARGETS) gen-kube-apis
-$(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
-$(MOCKS_TARGETS)&:: $(MOCKS_SOURCES)
+init-code:: init-hooks gen-mocks gen-kube-apis
+gen-mocks $(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
+gen-mocks $(MOCKS_TARGETS) &:: $(MOCKS_SOURCES)
 	@$(call emsg,info,updating [mocks]); \
 	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
 	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
