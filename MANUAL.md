@@ -480,10 +480,12 @@ files.
 ```bash
 make update        # short cut for 'update-{go,deps,make}'
 make update-all    # short cut to execute all update targets
-make update-go     # updates the go to the given, current, or latest version
-make update-deps   # updates the project dependencies to the latest version
-make update-make   # updates the build environment to a given/latest version
-make update-tools  # updates the project tools to a given/latest version
+make update-go     # updates go to the given, current, or latest version
+make update-deps   # updates project dependencies to the latest version
+make update-make   # updates build environment to a given/latest version
+make update-tools  # updates project tools to a given/latest version
+make update-mocks  # updates generated mock sources to latest version
+make update-kube   # updates generated kubernetes source to latest version
 make update-*      # updates a specific tool to a given/latest version
 ```
 

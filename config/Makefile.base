@@ -145,17 +145,15 @@ clean-dir = $(call find-all,$(1),-type d \( $(2) \) \
 	-exec rm --verbose --force --recursive {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
-# Custom abort to stop parent go-make process.
-# TODO: improve make wrapper result handling!
+# Custom abort to stop parent make/go-make process.
 abort = \
 	CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
 	while [ "$${CMD[0]}" != "1" ]; do \
-	  if [ "$${CMD[2]}" == "go-make" ]; then \
+	  if [[ "$${CMD[2]}" =~ ^.*go-make$$ ]]; then \
 	    $(call dmsg,debug,aborting [$${CMD[0]}] => "$${CMD[@]:2}"); \
 	    kill -ABRT "$${CMD[0]}"; break; \
 	  fi; CMD=($$(ps -p "$${CMD[1]}" -o pid,ppid,args | tail -n +2)); \
 	done; exit 0
-
 
 
 # Setup default makeflags create consistent behavior.
@@ -176,7 +174,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.158
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.159
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -190,8 +188,8 @@ $(call cdebug,using GOMAKE_MODE [$(GOMAKE_MODE)])
 gomake-install = if [ ! -d "$(GOMAKE_PATH)" ] && \
 	! [[ "$(GOMAKE_MAKEFILE)" =~ .*/config/Makefile.base ]]; then \
 		$(GO) install $(GOMAKE_DEP) >/dev/null 2>&1 && \
-		$(call emsg,info,installing go-make [$(GOMAKE_DEP)]) || \
-		$(call emsg,failure,installing go-make [$(GOMAKE_DEP)]); \
+		$(call emsg,info,installing [go-make => $(GOMAKE_DEP)]) || \
+		$(call emsg,failure,installing [go-make => $(GOMAKE_DEP)]); \
 	fi
 # Call to ensure that we can find default config files.
 $(shell $(gomake-install))
@@ -230,7 +228,7 @@ FILE_HEADER ?=
 
 # Setup default files with special meaning.
 FILE_IMAGE ?= Dockerfile
-FILE_DEEPCOPY ?= zz_generated.deepcopy.go
+FILE_DEEPCOPY ?= deepcopy_gen.go
 
 # Setup files for caching mocks.
 FILE_MOCKS ?= $(DIR_CACHE)/mocks
@@ -558,7 +556,7 @@ KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
 	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
 	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
 	fi)
-GEN_KUBE_APIS ?= $(KUBE_APIS:%=gen-kube-apis/%)
+GEN_KUBE_APIS ?= $(KUBE_APIS:%=update-kube/%)
 $(call cdebug,using GEN_KUBE_APIS [$(GEN_KUBE_APIS)])
 GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 	install-lister-gen install-informer-gen install-controller-gen
@@ -611,7 +609,7 @@ run-token-link = \
 GEN_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
 $(call cdebug,using GEN_DIRS [$(GEN_DIRS)])
 GEN_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
-		-name "mock_*.go" -o -name "zz_generated.*.go")) \
+		-name "mock_*.go" -o -name "$(FILE_DEEPCOPY)")) \
 	$(shell if [ -n "$(GEN_DIRS)" ]; then $(call find-go,$(GEN_DIRS),); fi))
 SOURCES := $(filter-out $(GEN_SOURCES),$(shell $(call find-go,.,)))
 MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
@@ -646,7 +644,7 @@ endif
 $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS)\"])
 
 # Optimized generation of mocks.
-gen-mocks = \
+update-mocks = \
 	awk 'BEGIN { \
 	  sarg="-source"; targ = "-destination"; dlen = length("$(CURDIR)") + 2; \
 	} $(awk-gensub) \
@@ -672,9 +670,9 @@ gen-mocks = \
 	  if (!source) { package = $$(NF-1); } \
 	  print target "|" source "|" package "|" command \
 	}' $(SOURCES) | sort -u | sed ':a; N; s/\n/;/; ta';
-#$(call cdebug, gen-mocks = $(call escape,$(gen-mocks)))
+#$(call cdebug, update-mocks = $(call escape,$(update-mocks)))
 
-MOCKS := $(if $(SOURCES),$(shell $(gen-mocks)))
+MOCKS := $(if $(SOURCES),$(shell $(update-mocks)))
 $(call cdebug,using MOCKS [$(MOCKS)])
 MOCKS_TARGETS := $(strip $(shell echo "$(MOCKS)" | \
 	awk 'BEGIN {FS="|"; RS=";"} ($$1 != "") { print $$1 }' | sort --unique))
@@ -803,7 +801,7 @@ show-options-long = grep --only-matching -- "--[^, ]*" | \
 	sed --regexp-extended 's|=.*|=|; s|^(.*)\[=|\1\n\1=|;'
 
 $(FILE_TARGETS_ALL): $(MAKEFILE_LIST) # $(DIR_CACHE) # does not work for make_test.go
-	@$(call emsg,info,updating targets [$@]); mkdir --parents $(DIR_CACHE); \
+	@$(call emsg,info,updating [$@]); mkdir --parents $(DIR_CACHE); \
 	if [ "$@" == "$(FILE_TARGETS_MAKE)" ]; then MAKEFILE="Makefile"; \
 	else MAKEFILE="$(GOMAKE_MAKEFILE)"; TARGETS="$(GOMAKE_OPTIONS)"; fi; \
 	( echo "$${TARGETS[@]}" | tr ' ' '\n'; \
@@ -875,7 +873,7 @@ git-message = \
 # 	echo "$${MESSAGE}"; $(abort);
 
 git-clean = \
-	$(call emsg,info,git-clean [$(1)$(if $(2), - $(2))]); $(GITPRUNE); \
+	$(call emsg,info,git-clean [$(1)$(if $(2), => $(2))]); $(GITPRUNE); \
 	HISTORY=($$($(GIT) log --pretty=format:"%T" "$(git-branch-main)")); \
 	for BRANCH in $$($(GIT) branch | cut -c 3- | grep -vw "$(1)"); do \
 	  TIP="$$($(GITTIP) "$${BRANCH}")"; \
@@ -883,7 +881,7 @@ git-clean = \
 	    $(GIT) branch --delete --force "$${BRANCH}"; \
 	  elif [ "$(2)" == "all" ]; then \
 	    $(GIT) branch --delete "$${BRANCH}"; \
-	  else $(call emsg,info,keeping branch [$${BRANCH}]); fi; \
+	  else $(call emsg,info,keeping [$${BRANCH}]); fi; \
 	done; $(GITPRUNE)
 git-verify = awk -v mode="$(1)" -v author="$(GITAUTHOR)" '$(awk-gensub) \
 	BEGIN { \
@@ -987,7 +985,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
 	$(call git-message,$*,$(git-number)); \
-	$(call emsg,info,git-create [$${BRANCH} - $${MESSAGE}]); \
+	$(call emsg,info,git-create [$${BRANCH} => $${MESSAGE}]); \
 	$(GIT) checkout -B "$${BRANCH}" && \
 	$(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
@@ -1003,7 +1001,7 @@ $(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
 	grep -Eo "[(,]#[0-9]+" | sed "s|.*[,(]#||g" | grep -v "^$$" | head --lines=1)"; \
 	if [ -z "$${NUMBER}" ]; then NUMBER="$(call git-number)"; fi; \
 	MESSAGE="$(ARGS)"; $(call git-message,$*,$${NUMBER}); \
-	$(call emsg,info,git-commit [$${BRANCH} - $${MESSAGE}]); \
+	$(call emsg,info,git-commit [$${BRANCH} => $${MESSAGE}]); \
 	$(GIT) commit --signoff --message "$${MESSAGE}"; $(abort);
 #@ [(no-)edit|(no-)verify] # pushes the latest changes to the previous commit of the origin.
 TARGETS_GIT_FIX := git-fix git-fix-all git-fix-edit git-fix-no-edit git-fix-verify git-fix-no-verify
@@ -1033,7 +1031,7 @@ init:: $(TARGETS_INIT)
 #@ initialize the project with git revision management.
 init-git:
 	@if [ ! -d "$(DIR_GIT)" ]; then \
-	  $(call emsg,info,initializing repository [$(DIR_GIT)]); \
+	  $(call emsg,info,initializing [$(DIR_GIT)]); \
 	  $(GIT) init; \
 	fi;
 #@ initialize git pre-commit and commit-message hooks.
@@ -1067,33 +1065,7 @@ go.sum go.mod&: $(SOURCES)
 	  touch go.mod go.sum && $(GO) mod download;)
 
 #@ initialize the generated sources.
-init-code:: init-hooks gen-mocks gen-kube-apis
-gen-mocks $(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
-gen-mocks $(MOCKS_TARGETS) &:: $(MOCKS_SOURCES)
-	@$(call emsg,info,updating [mocks]); \
-	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
-	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
-	}' | sort -u)"; \
-	echo '$(MOCKS)' | tr ';' '\n' | \
-	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
-	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
-	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
-	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
-	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
-	    fi; \
-	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
-	    PACKAGE="$$(echo "$${GOMOD}" | awk -v pkg="$${PACKAGE}" \
-	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
-	    if [ ! -f "$${TARGET}" ] || \
-	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
-	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
-	    fi; \
-	  else $(call emsg,error,mock creation [$${TARGET}]); fi; \
-	done; \
+init-code:: init-hooks update-mocks update-kube
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1121,14 +1093,14 @@ init-jre init-java:: init-%:
 	  XPATH="temurin$${VERSION%%.*}-binaries/releases/download/jdk-$${VERSION}"; \
 	  FILE="/tmp/temurin-$*-$${VERSION}.tar.gz"; \
 	  if [ ! -f "$${FILE}" ]; then \
-	    $(call emsg,info,downloading $*-$${VERSION} [$${DIR}]); \
+	    $(call emsg,info,downloading [$*-$${VERSION} => $${DIR}]); \
 	    CMD=(curl --silent --location --show-error --fail \
 		  "https://github.com/adoptium/$${XPATH}/$${XFILE}" \
 		  --output "$${FILE}"); \
 		echo $${CMD[@]}; $${CMD[@]}; \
 	  fi; \
 	  if [ -f "$${FILE}" ]; then mkdir --parents "$${DIR}"; \
-	    $(call emsg,info,installing $*-$${VERSION} [$${DIR}]); \
+	    $(call emsg,info,installing [$*-$${VERSION} => $${DIR}]); \
 	    case "$$(uname)" in (Linux) SUB="1";; (Darwin) SUB="3";; esac; \
 	    tar -C "$${DIR}" "--strip-components=$${SUB}" -zxf "$${FILE}"; \
 	  fi; \
@@ -1148,49 +1120,6 @@ $(TARGETS_INIT_ALL):: init/%:
 #@ <version> # initialize project by copying Makefile.base from template.
 init-make!::
 	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile";
-
-
-## Generate: targets to generate code and documentation.
-
-#@ generate kubernetes api clients and manifests.
-gen-kube-apis:: $(GEN_KUBE_APIS)
-$(GEN_KUBE_APIS):: gen-kube-apis/%: $(GEN_KUBE_TARGETS)
-	@HEADER="$(FILE_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
-	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
-	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
-	    ! -name "$(FILE_DEEPCOPY)" -printf '%T@ %p\n' 2>/dev/null | \
-	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
-	  $(call emsg,info,generating apis skipped [$${BPKG}]); exit 0; \
-	else $(call emsg,info,generating apis [$${BPKG}]); fi; \
-	\
-	$(GO) get k8s.io/api/core/v1; \
-	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
-	  MANDIR="$${BPKG}/manifests"; \
-	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
-	  CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
-	  $(call emsg,info,generating manifests [$${APKG}]); \
-	  $(GOBIN)/controller-gen crd:crdVersions=v1 paths=./$${BPKG}/apis/... \
-	    "output:crd:dir=$${MANDIR}"; \
-	  $(call emsg,info,generating deepcopy [$${APKG}]); \
-	  $(GOBIN)/deepcopy-gen --go-header-file="$${HEADER}" \
-	    --output-file="$(FILE_DEEPCOPY)" --bounding-dirs="$${APIBPKG}" \
-	    "$${APIPKG}"; \
-	  $(call emsg,info,generating clients [$${APKG}:clientsets]); \
-	  $(GOBIN)/client-gen --go-header-file="$${HEADER}" \
-	    --clientset-name=versioned --input-base="" --input="$${APIPKG}" \
-	    --output-pkg="$${CLIPKG}/clientset" --output-dir="$${CLIDIR}/clientset"; \
-	  $(call emsg,info,generating clients [$${APKG}:listeners]); \
-	  $(GOBIN)/lister-gen --go-header-file="$${HEADER}" \
-	    --output-pkg="$${CLIPKG}/listers" --output-dir="$${CLIDIR}/listers" \
-	    "$${APIPKG}"; \
-	  $(call emsg,info,generating clients [$${APKG}:informers]); \
-	  $(GOBIN)/informer-gen --go-header-file="$${HEADER}" \
-	    --versioned-clientset-package="$${CLIPKG}/clientset/versioned" \
-	    --output-pkg="$${CLIPKG}/informers" --output-dir="$${CLIDIR}/informers" \
-	    --listers-package="$${CLIPKG}/listers" "$${APIPKG}"; \
-	done; \
-	$(call emsg,info,updating packages [$${BPKG}]); \
-	$(GO) get ./$${BPKG}/clients/...;
 
 
 ## Test: targets to test the source code (and compiler environment).
@@ -1216,7 +1145,7 @@ test-cover::
 	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
 	  "$(TEST_BENCH)" 2>/dev/null); \
 	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
-	if [ "$(ARGS)" == "white" ]; then \
+	if [ "$(ARGS)" != "dark" ]; then \
 	  sed --in-place --expression='s/black/whitesmoke/g' "$${FILE}.html"; \
 	fi; \
 	sensible-browser "$${FILE}.html";
@@ -1239,11 +1168,11 @@ test-upload::
 	  LARGS+=("--username=$(CODACY_USER)"); \
 	  LARGS+=("--project-name=$(CODACY_PROJECT)"); \
 	  LARGS+=("--api-token=$(CODACY_API_TOKEN)"); \
-	else $(call emsg,info,uploading coverage report (skipped)); exit 0; fi; \
+	else $(call emsg,info,uploading [coverage => skipped]); exit 0; fi; \
 	bash <(curl --silent --location $${SCRIPT}) \
 	  report "$${LARGS[@]}" --coverage-reports=$${FILE} && \
-	$(call emsg,info,uploading coverage report (uploadad)) || \
-	$(call emsg,info,uploading coverage report (failed));
+	$(call emsg,info,uploading [coverage => uploaded]) || \
+	$(call emsg,info,uploading [coverage => failed]);
 
 #@ test whether project creates conflicting program names.
 test-build::
@@ -1315,8 +1244,14 @@ test-args = \
 	else \
 	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
 	fi; \
-  else echo "./..."; fi
-
+  else echo "$(addprefix ./,$(MODULES))"; fi
+# filter to exclude deep-copy generated files from test coverage (disabled).
+#
+# TODO: unclear whether this is necessary and helpful, since `go test` would
+# still show incomplete coverage in the output. Besides, the solution is not
+# general enough to cover other generated file scenarios.
+test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
+	  if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi
 TEST_ARGS ?= $(shell $(call test-args,$(ARGS)))
 TEST_DEPS ?=
 
@@ -1329,10 +1264,12 @@ $(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
 	  -cover -coverprofile $@ -short $(TEST_ARGS);)
+	@$(abort);
 $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);)
+	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
+	@$(abort);
 
 #@ execute a kind of self-test running the main targets.
 test-self::  clean-all all-clean clean-all install-all update-all? update-all
@@ -1596,7 +1533,7 @@ lint-markdown:: init-code $(GOBIN)/markdownlint
 		echo "$${CMD[*]}" >&2; echo "$${CMD[@]}" | $(IMAGE_CMD) run \
 		  --interactive --volume=$(abspath $(FILE_MARKDOWN)):/markdownlint.yaml:ro \
 	      --volume=$${PWD}:/src:ro node:slim /bin/bash; \
-	  else $(call emsg,warning,linting [markdown] - command not found!); fi; \
+	  else $(call emsg,warning,linting [markdown => command not found]!); fi; \
 	fi;
 
 #@ execute shellcheck to find potential shell script issues (sh-files).
@@ -1612,7 +1549,7 @@ lint-shell:: init-code
 	  elif [ -n "$(IMAGE_CMD)" ]; then \
 	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" --network host \
 	      koalaman/shellcheck:stable "$${ARGS[@]}" "$${FILES[@]}"; \
-	  else $(call emsg,warning, linting [shell] - command not found!); fi; \
+	  else $(call emsg,warning, linting [shell => command not found]!); fi; \
 	fi;
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
@@ -1736,7 +1673,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
 	fi; \
 	REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
 	BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
-	$(call emsg,info,building image [$${IMAGE}] from [$${FILE}]); \
+	$(call emsg,info,building [$${IMAGE} => $${FILE}]); \
 	$(IMAGE_CMD) build --tag "$${IMAGE}" --file="$${FILE}" . \
 	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
 	  --label=org.opencontainers.image.vendor="zalando/$(TEAM)" \
@@ -1884,17 +1821,17 @@ $(TARGETS_PUBLISH): version-publish-%:
 	TARGET="$(GITURL)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOST)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
-	    $(call emsg,info,publishing via curl [$${TARGET}]); \
+	    $(call emsg,info,publishing - curl [$${TARGET}]); \
 	    curl  --silent --show-error --fail --location \
 	      https://sum.golang.org/lookup/$${TARGET} && \
-	    $(call emsg,success,publishing via curl [$${TARGET}]) || \
-	    $(call emsg,failure,publishing via curl [$${TARGET}]); \
+	    $(call emsg,success,publishing - curl [$${TARGET}]) || \
+	    $(call emsg,failure,publishing - curl [$${TARGET}]); \
 	  fi; \
 	  if [ -f ".$${CMD}/main.go" ]; then \
-	    $(call emsg,info,publishing go install [$${TARGET}]); \
+	    $(call emsg,info,publishing - go install [$${TARGET}]); \
 	    $(GO) install $(INSTALL_FLAGS) $${TARGET}; \
-	    $(call emsg,success,publishing go install [$${TARGET}]) || \
-	    $(call emsg,failure,publishing go install [$${TARGET}]); \
+	    $(call emsg,success,publishing - go install [$${TARGET}]) || \
+	    $(call emsg,failure,publishing - go install [$${TARGET}]); \
 	  fi; \
 	fi;
 
@@ -1906,7 +1843,7 @@ RUN_DEPS ?=
 #@ start a postgres database instance for testing.
 run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
-	$(call emsg,info,ensure $(DB_IMAGE) running on $(HOST):$(DB_PORT)); \
+	$(call emsg,info,ensuring [$(DB_IMAGE) => $(HOST):$(DB_PORT)); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [postgres]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
@@ -1932,7 +1869,7 @@ run-db:: $(DIR_RUN)
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
-	$(call emsg,info,ensuring $(AWS_IMAGE) is running on $(HOST):4566/4571) && \
+	$(call emsg,info,ensuring [$(AWS_IMAGE) => $(HOST):4566/4571]) && \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [aws/localstack]!); exit 0; \
 	elif [ -n "$$($(IMAGE_CMD) ps | \
@@ -1967,7 +1904,7 @@ $(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 #@ run-image-*: start the matched command via the container images.
 $(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@NAME="$(GITNAME)-$*"; \
-	$(call emsg,info,running image [$${NAME}]); \
+	$(call emsg,info,running [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
 		aborting - no docker command [$${NAME}]!); exit 1; fi; \
 	trap "$(IMAGE_CMD) rm $${NAME} >/dev/null" EXIT; \
@@ -1986,7 +1923,7 @@ run-clean:: $(TARGETS_RUN_CLEAN)
 #@ run-clean-*: kill and remove the container image of the matched command.
 $(TARGETS_RUN_CLEAN):: run-clean-%:
 	@NAME="$(GITNAME)-$*"; \
-	$(call emsg,info,cleaning container [$${NAME}]); \
+	$(call emsg,info,cleaning [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning,\
 	  aborting - no docker command [$${NAME}]!); exit 0; \
 	elif [ -n "$$($(IMAGE_CMD) ps | grep "$${NAME}")" ]; then \
@@ -2017,7 +1954,7 @@ clean-cache::
 #@ clean up all resources created by building and testing.
 clean-build::
 	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
-	$(call clean-file,.,-name "mock_*_test.go" -o -name "zz_generated.*.go");
+	$(call clean-file,.,-name "mock_*_test.go" -o -name "$(FILE_DEEPCOPY)");
 #@ clean up all package dependencies by removing packages.
 clean-deps::
 	for PACKAGE in $$(cat go.sum | cut -d ' ' -f 1 | sort --unique); do \
@@ -2040,6 +1977,76 @@ update-all:: $(TARGETS_UPDATE_ALL)
 #@ check all components for udpdates.
 update-all?:: $(TARGETS_UPDATE_ALL?)
 
+#@ updates mock source files using mockgen to latest version.
+update-mocks $(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
+update-mocks $(MOCKS_TARGETS) &:: $(MOCKS_SOURCES)
+	@$(call emsg,info,updating [go-mocks]); \
+	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
+	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
+	}' | sort -u)"; \
+	echo '$(MOCKS)' | tr ';' '\n' | \
+	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
+	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
+	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
+	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
+	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
+	    fi; \
+	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
+	    PACKAGE="$$(echo "$${GOMOD}" | awk -v pkg="$${PACKAGE}" \
+	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
+	    if [ ! -f "$${TARGET}" ] || \
+	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
+	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
+	    fi; \
+	  elif [ -n "$${TARGET}" ]; then \
+	    $(call emsg,error,mock creation [$${TARGET}]); \
+	  fi; \
+	done; \
+
+#@ update kubernetes sources (api clients and manifests) to latest version.
+update-kube:: $(GEN_KUBE_APIS)
+$(GEN_KUBE_APIS):: update-kube/%: $(GEN_KUBE_TARGETS)
+	@HEADER="$(FILE_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
+	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
+	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
+	    ! -name "$(FILE_DEEPCOPY)" -printf '%T@ %p\n' 2>/dev/null | \
+	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
+	  $(call emsg,info,updating [kube-apis => $${BPKG}]); exit 0; \
+	else $(call emsg,info,updating [kube-apis => $${BPKG}]); fi; \
+	\
+	$(GO) get k8s.io/api/core/v1; \
+	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
+	  MANDIR="$${BPKG}/manifests"; \
+	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
+	  CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
+	  CMD=($(GOBIN)/controller-gen crd:crdVersions=v1 \
+	    paths=./$${BPKG}/apis/... "output:crd:dir=$${MANDIR}"); \
+	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	  CMD=($(GOBIN)/deepcopy-gen --go-header-file="$${HEADER}" \
+	    --output-file="$(FILE_DEEPCOPY)" --bounding-dirs="$${APIBPKG}" \
+	    "$${APIPKG}"); \
+	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	  CMD=($(GOBIN)/client-gen --go-header-file="$${HEADER}" \
+	    --clientset-name=versioned --input-base="" --input="$${APIPKG}" \
+	    --output-pkg="$${CLIPKG}/clientset" --output-dir="$${CLIDIR}/clientset"); \
+	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	  CMD=($(GOBIN)/lister-gen --go-header-file="$${HEADER}" \
+	    --output-pkg="$${CLIPKG}/listers" --output-dir="$${CLIDIR}/listers" \
+	    "$${APIPKG}"); \
+	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	  CMD=($(GOBIN)/informer-gen --go-header-file="$${HEADER}" \
+	    --versioned-clientset-package="$${CLIPKG}/clientset/versioned" \
+	    --output-pkg="$${CLIPKG}/informers" --output-dir="$${CLIDIR}/informers" \
+	    --listers-package="$${CLIPKG}/listers" "$${APIPKG}"); \
+	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	done; \
+	$(call emsg,info,updating [kube-packages => $${BPKG}]); \
+	$(GO) get ./$${BPKG}/clients/...;
+
 # Function to determine the latest go version.
 update-go-latest = \
 	$$(ARCH="$$($(GO) env GOOS)-$$($(GO) env GOARCH)" && \
@@ -2053,7 +2060,7 @@ update-go::
 	if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
-	$(call emsg,info,updating golang version [$${VERSION}]); \
+	$(call emsg,info,updating [$${VERSION}]); \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  $(call emsg,warning,current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
