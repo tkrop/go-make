@@ -1,5 +1,5 @@
 /root/go-make/config/Makefile.base: update target '/test/go-make/targets.make'
-echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [/test/go-make/targets.make]" >&2; mkdir --parents /tmp/go-make/test/go-make; \
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating [/test/go-make/targets.make]" >&2; mkdir --parents /tmp/go-make/test/go-make; \
 if [ "/test/go-make/targets.make" == "/test/go-make/targets.make" ]; then MAKEFILE="Makefile"; \
 else MAKEFILE="/root/go-make/config/Makefile.base"; TARGETS="--completion= --config= "; fi; \
 ( echo "${TARGETS[@]}" | tr ' ' '\n'; \

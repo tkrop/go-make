@@ -1,5 +1,5 @@
 /root/go-make/config/Makefile.base: update target '/test/go-make/targets'
-echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating targets [/test/go-make/targets]" >&2; mkdir --parents /tmp/go-make/test/go-make; \
+echo -e "$(date '+%F %T.%3N') \033[1;96minfo:\033[0m updating [/test/go-make/targets]" >&2; mkdir --parents /tmp/go-make/test/go-make; \
 if [ "/test/go-make/targets" == "/test/go-make/targets.make" ]; then MAKEFILE="Makefile"; \
 else MAKEFILE="/root/go-make/config/Makefile.base"; TARGETS="--completion= --config= "; fi; \
 ( echo "${TARGETS[@]}" | tr ' ' '\n'; \
@@ -95,8 +95,6 @@ debug-targets-uninstall
 debug-targets-update
 format
 format-go
-gen-kube-apis
-gen-mocks
 git-clean
 git-commit
 git-commit-build
@@ -281,12 +279,14 @@ update-govulncheck
 update-grype
 update-informer-gen
 update-kind
+update-kube
 update-lister-gen
 update-make
 update-make?
 update-markdownlint
 update-mock
 update-mockgen
+update-mocks
 update-python
 update-revive
 update-staticcheck

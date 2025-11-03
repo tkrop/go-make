@@ -23,6 +23,8 @@ github.com/tkrop/go-config v0.0.19 h1:k4KFo56x/+ImmylIF11pHplcB/fjWh65utj9auLXGH
 github.com/tkrop/go-config v0.0.19/go.mod h1:4vkOQBYzypAUdIXkVTSnCNXEcgWV62X8HeeXi42goTw=
 github.com/tkrop/go-testing v0.0.34 h1:yv9uFBntFOFGKfHYaqbWN0AAW3qPEdvBhum0zkQtNsQ=
 github.com/tkrop/go-testing v0.0.34/go.mod h1:zA+nf5U80EqqEBuRF8PaRjium1UcQmyX27usZCd+fcE=
+github.com/tkrop/go-testing v0.0.36 h1:zqdegv/3kYN/YeFrVdicQ5pk1HXAy+kp3sjV/1Az1U4=
+github.com/tkrop/go-testing v0.0.36/go.mod h1:zA+nf5U80EqqEBuRF8PaRjium1UcQmyX27usZCd+fcE=
 go.uber.org/mock v0.6.0 h1:hyF9dfmbgIX5EfOdasqLsWD6xqpNZlXblLB/Dbnwv3Y=
 go.uber.org/mock v0.6.0/go.mod h1:KiVJ4BqZJaMj4svdfmHM0AUx4NJYO8ZNpPnZn1Z+BBU=
 golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
