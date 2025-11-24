@@ -649,21 +649,21 @@ Signed-of-by: <author-name> <<author-email>>
 The [Makefile](config/Makefile.base) supports the following commit types as
 described by the [GitHub Development Convention][github-commit].
 
-|    Type       | Title         | Description                    |
-|:-------------:|---------------|--------------------------------|
-| ✨ `feat`     | Features      | Adds a new feature. |
-| ⌛ `deprecate`| Deprecation   | Deprecates an existing feature. |
-| ❌ `remove`   | Removal       | Removes an existing feature. |
-| 🗑 `revert`   | Reverts       | Reverts a previous commit. |
-| 🪲 `fix`      | Bug Fix       | Fixes a bug in a feature. |
-| ♻️ `chore`     | Chores        | Regular update for maintenance. |
-| 📚 `docs`     | Documentation | Updates documentation only. |
-| 💎 `style`    | Style Change  | Changes the code style only.  |
-| 🛠 `refactor` | Refactoring   | Improves code quality by refactoring. |
-| 🚀 `perf`     | Performance   | Improves the performance of a feature. |
+| Type          | Title         | Description                                  |
+|:-------------:|---------------|----------------------------------------------|
+| ✨ `feat`      | Features      | Adds a new feature.                          |
+| ⌛ `deprecate` | Deprecation   | Deprecates an existing feature.              |
+| ❌ `remove`    | Removal       | Removes an existing feature.                 |
+| 🗑 `revert`   | Reverts       | Reverts a previous commit.                   |
+| 🪲 `fix`      | Bug Fix       | Fixes a bug in a feature.                    |
+| ♻️ `chore`    | Chores        | Regular update for maintenance.              |
+| 📚 `docs`     | Documentation | Updates documentation only.                  |
+| 💎 `style`    | Style Change  | Changes the code style only.                 |
+| 🛠 `refactor` | Refactoring   | Improves code quality by refactoring.        |
+| 🚀 `perf`     | Performance   | Improves the performance of a feature.       |
 | 🚗 `test`     | Tests         | Adds a missing or corrects an existing test. |
-| 📦 `build`    | Builds        | Changes the product delivery. |
-| 🏗️ `ci`       | Integrations  | Improves the build process. |
+| 📦 `build`    | Builds        | Changes the product delivery.                |
+| 🏗️  `ci`     | Integrations  | Improves the build process.                  |
 
 [github-commit]: https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md
 

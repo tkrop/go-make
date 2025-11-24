@@ -174,7 +174,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.159
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.160
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -421,6 +421,7 @@ $(shell $(call go-check-version,go-make,))
 IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
+TEST_BENCHTIME ?= 10s
 
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
@@ -556,9 +557,9 @@ KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
 	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
 	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
 	fi)
-GEN_KUBE_APIS ?= $(KUBE_APIS:%=update-kube/%)
-$(call cdebug,using GEN_KUBE_APIS [$(GEN_KUBE_APIS)])
-GEN_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
+UPDATE_KUBE_APIS ?= $(KUBE_APIS:%=update-kube/%)
+$(call cdebug,using UPDATE_KUBE_APIS [$(UPDATE_KUBE_APIS)])
+UPDATE_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 	install-lister-gen install-informer-gen install-controller-gen
 
 
@@ -642,42 +643,6 @@ ifdef CMDARGS
   $(eval $(subst :,\:,$(CMDARGS))::;@:)
 endif
 $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS)\"])
-
-# Optimized generation of mocks.
-update-mocks = \
-	awk 'BEGIN { \
-	  sarg="-source"; targ = "-destination"; dlen = length("$(CURDIR)") + 2; \
-	} $(awk-gensub) \
-	$(awk-beginfile) { path = gensub("/[^/]*$$", "", "1", FILENAME); } \
-	function file(path, arg, param, len,    link) { \
-	  if (arg != param) { arg = substr(arg, len) } else { i++; arg = $$i; } \
-	  cmd = "readlink -f \"" path "/" arg "\""; cmd | getline link; close(cmd); \
-	  return substr(link, dlen) \
-	} \
-	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?") { \
-	  source = ""; target = ""; package = ""; \
-	  command = $$2; \
-	  for (i = 3; i <= NF; i++) { arg = $$i; \
-	    if (arg ~ "^" sarg) { \
-	      source = file(path, arg, sarg, 9); arg = sarg "=" source; \
-	    } else if (arg ~ "^" targ) { \
-	      target = file(path, arg, targ, 14); arg = targ "=" target; \
-	    } \
-	    command = command " " arg; \
-	  } \
-	  if (!target) { printf($(call amsg,error,target missing \
-		  [%s]\n), command) > "/dev/stderr"; } \
-	  if (!source) { package = $$(NF-1); } \
-	  print target "|" source "|" package "|" command \
-	}' $(SOURCES) | sort -u | sed ':a; N; s/\n/;/; ta';
-#$(call cdebug, update-mocks = $(call escape,$(update-mocks)))
-
-MOCKS := $(if $(SOURCES),$(shell $(update-mocks)))
-$(call cdebug,using MOCKS [$(MOCKS)])
-MOCKS_TARGETS := $(strip $(shell echo "$(MOCKS)" | \
-	awk 'BEGIN {FS="|"; RS=";"} ($$1 != "") { print $$1 }' | sort --unique))
-MOCKS_SOURCES := $(strip $(shell echo "$(MOCKS)" | \
-	awk 'BEGIN {FS="|"; RS=";"} ($$2 != "") { print $$2 }' | sort --unique))
 
 # Prepare target lists used to define rules and preconditions.
 TARGETS_PUBLISH := $(addprefix version-publish-,all $(COMMANDS))
@@ -839,9 +804,24 @@ GITPRUNE ?=$(GIT) fetch --all --prune --verbose
 GITTIP ?= $(GIT) log --max-count=1 --pretty=format:"%T"
 GITHASH ?= $(GIT) log --max-count=1 --pretty=format:"%H"
 GITLOG ?= $(GIT) log --pretty=format
+## Setup of conventional commit types.
 # https://github.com/pvdlg/conventional-changelog-metahub#commit-types
 COMMIT_CONVENTION ?= feat deprecate remove docs fix style refactor \
 	perf test build ci chore
+GIT_LABEL_FEAT ?= minor
+GIT_LABEL_DEPRECATE ?= minor
+GIT_LABEL_REMOVE ?= minor
+GIT_LABEL_DOCS ?= documentation
+GIT_LABEL_FIX ?= bugfix
+GIT_LABEL_STYLE ?= minor
+GIT_LABEL_REFACTOR ?= minor
+GIT_LABEL_PERF ?= minor
+GIT_LABEL_TEST ?= minor
+GIT_LABEL_BUILD ?= minor
+GIT_LABEL_CI ?= minor
+GIT_LABEL_CHORE ?= minor
+
+## Git helper functions.
 git-branch = \
 	$$(if [ -n "$(1)" ] && [ "$(1)" != "all" ]; then echo "$(1)"; \
 	else echo "$(git-branch-main)"; fi)
@@ -866,6 +846,8 @@ git-message = \
 	if ! [[ "$${MESSAGE}" =~ ^.*\([^()]*\#[0-9]+\)$$ ]]; then \
 	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
+git-labels = \
+	--label "$(GIT-LABELS-$(call upper,$(1)))"
 
 # TODO: fix issue numbers and wrapper handling of brackets! 
 # $(addprefix git-message-,$(COMMIT_CONVENTION)):: git-message-%:
@@ -990,8 +972,8 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	$(GIT) commit --signoff --message="$${MESSAGE}" && \
 	$(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
-	  gh pr create --base "$(git-branch-main)" \
-	    --head "$${BRANCH}" --draft --assignee "@me" --title "$${MESSAGE}"; \
+	  gh pr create --base "$(git-branch-main)" --head "$${BRANCH}" \
+	    --draft --assignee "@me" --title "$${MESSAGE}"; \
 	fi || $(GIT) checkout "$${BRANCH}"; $(abort);
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
@@ -1065,7 +1047,11 @@ go.sum go.mod&: $(SOURCES)
 	  touch go.mod go.sum && $(GO) mod download;)
 
 #@ initialize the generated sources.
-init-code:: init-hooks update-mocks update-kube
+init-code:: init-hooks init-kube init-mocks
+#@ initialize kubernetes sources (api clients and manifests) with latest version.
+init-kube:: update-kube
+#@ initialize mock source files using mockgen to latest version.
+init-mocks:: update-mocks
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1121,11 +1107,17 @@ $(TARGETS_INIT_ALL):: init/%:
 init-make!::
 	cp "$(GOMAKE_CONFIG)/Makefile.base" "Makefile";
 
+#@ <version> # initialize project by copying AGENTS.md from template.
+init-agents::
+	cp "$(GOMAKE_CONFIG)/AGENTS.md" "AGENTS.md";
+
 
 ## Test: targets to test the source code (and compiler environment).
 TEST_ALL := $(DIR_BUILD)/test-all.cover
 TEST_UNIT := $(DIR_BUILD)/test-unit.cover
 TEST_BENCH := $(DIR_BUILD)/test-bench.cover
+TEST_DEPS ?=
+TEST_ARGS ?=
 
 #@ execute default test set.
 test:: $(TARGETS_TEST)
@@ -1216,35 +1208,37 @@ test-go::
 	done;
 
 # process test arguments.
-test-args = \
-  if [ -n "$(1)" ]; then ARGS=($(1)); \
+test-args = ARGS=($(ARGS)); \
 	if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
 	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
 	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
 	  else echo "-coverpkg=./..."; fi; \
 	  ARGS=($${ARGS[@]:1}); \
 	fi; \
-    if [[ -f "$${ARGS[0]}" && ! -d "$${ARGS[0]}" && \
-			 "$${ARGS[0]}" == *_test.go ]]; then \
+    if [ -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ] && \
+	    [ "$${ARGS[0]}" == *_test.go ]; then \
 	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
 		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
 		-o -name "common_test.go" -o -name "mock_*_test.go" | sed "s|^|./|"; \
 	  echo $${ARGS[@]/\#/./}; \
-	elif [[ -d "$${ARGS[0]}" && ! -f "$${ARGS[0]}" ]]; then \
+	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ] || \
+	    [[ "$${ARGS[0]}" =~ /...$$ ]]; then \
 	  echo $${ARGS[@]/\#/./}; \
-	elif [[ ! -f "$${ARGS[0]}" && ! -d "$${ARGS[0]}" ]]; then \
+	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
 	  for ARG in $${ARGS[0]}; do \
 		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
 		else PACKAGES="$${PACKAGES}\n$${ARG%/*}"; fi; \
-		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="-run $${ARG\#\#*/}"; \
-		else TEST_CASES="$${TEST_CASES} -run $${ARG\#\#*/}"; fi; \
+		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="$(1)=$${ARG\#\#*/}"; \
+		else TEST_CASES="$${TEST_CASES} $(1)=$${ARG\#\#*/}"; fi; \
 	  done; \
 	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
 	  echo "$${TEST_CASES}"; \
 	else \
 	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
-	fi; \
-  else echo "$(addprefix ./,$(MODULES))"; fi
+	fi
+# test-args::
+# 	$(call test-args,-run)
+
 # filter to exclude deep-copy generated files from test coverage (disabled).
 #
 # TODO: unclear whether this is necessary and helpful, since `go test` would
@@ -1252,23 +1246,27 @@ test-args = \
 # general enough to cover other generated file scenarios.
 test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
 	  if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi
-TEST_ARGS ?= $(shell $(call test-args,$(ARGS)))
-TEST_DEPS ?=
 
 # actuall targets for testing.
 $(TEST_ALL):: $(SOURCES) init-code $(TEST_DEPS) $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ $(TEST_ARGS);)
+	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
+	  -coverprofile $@ $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS), $(shell $(call test-args,-run)), \
+	    $(addprefix ./,$(MODULES))));)
 $(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ -short $(TEST_ARGS);)
+	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
+	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS),$(shell $(call test-args,-run)), \
+	    $(addprefix ./,$(MODULES))));)
 	@$(abort);
 $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_TIMEOUT) \
-	  -cover -coverprofile $@ -short -bench=. $(TEST_ARGS);
+	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
+	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS), $(shell $(call test-args,-bench)), \
+	    $(addprefix ./,$(MODULES))));)
 	@$(abort);
 
 #@ execute a kind of self-test running the main targets.
@@ -1977,39 +1975,9 @@ update-all:: $(TARGETS_UPDATE_ALL)
 #@ check all components for udpdates.
 update-all?:: $(TARGETS_UPDATE_ALL?)
 
-#@ updates mock source files using mockgen to latest version.
-update-mocks $(MOCKS_TARGETS):: $(DIR_CACHE) install-mockgen install-mock
-update-mocks $(MOCKS_TARGETS) &:: $(MOCKS_SOURCES)
-	@$(call emsg,info,updating [go-mocks]); \
-	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
-	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
-	}' | sort -u)"; \
-	echo '$(MOCKS)' | tr ';' '\n' | \
-	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
-	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
-	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
-	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
-	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
-	    fi; \
-	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
-	    PACKAGE="$$(echo "$${GOMOD}" | awk -v pkg="$${PACKAGE}" \
-	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
-	    if [ ! -f "$${TARGET}" ] || \
-	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
-	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
-	    fi; \
-	  elif [ -n "$${TARGET}" ]; then \
-	    $(call emsg,error,mock creation [$${TARGET}]); \
-	  fi; \
-	done; \
-
 #@ update kubernetes sources (api clients and manifests) to latest version.
-update-kube:: $(GEN_KUBE_APIS)
-$(GEN_KUBE_APIS):: update-kube/%: $(GEN_KUBE_TARGETS)
+update-kube:: $(UPDATE_KUBE_APIS)
+$(UPDATE_KUBE_APIS):: update-kube/%: $(UPDATE_KUBE_TARGETS)
 	@HEADER="$(FILE_HEADER)"; BPKG="$*"; BPKG="$${BPKG%/apis}"; \
 	if [ -d "$${BPKG}/clients" ] && [ -d "$${BPKG}/manifests" ] && \
 	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
@@ -2046,6 +2014,62 @@ $(GEN_KUBE_APIS):: update-kube/%: $(GEN_KUBE_TARGETS)
 	done; \
 	$(call emsg,info,updating [kube-packages => $${BPKG}]); \
 	$(GO) get ./$${BPKG}/clients/...;
+
+# Helper to optimized generation of mocks without relying on go:generate.
+update-mocks = \
+	awk 'BEGIN { \
+	  sarg="-source"; targ = "-destination"; dlen = length("$(CURDIR)") + 2; \
+	} $(awk-gensub) \
+	$(awk-beginfile) { path = gensub("/[^/]*$$", "", "1", FILENAME); } \
+	function file(path, arg, param, len,    link) { \
+	  if (arg != param) { arg = substr(arg, len) } else { i++; arg = $$i; } \
+	  cmd = "readlink -f \"" path "/" arg "\""; cmd | getline link; close(cmd); \
+	  return substr(link, dlen) \
+	} \
+	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?") { \
+	  source = ""; target = ""; package = ""; \
+	  command = $$2; \
+	  for (i = 3; i <= NF; i++) { arg = $$i; \
+	    if (arg ~ "^" sarg) { \
+	      source = file(path, arg, sarg, 9); arg = sarg "=" source; \
+	    } else if (arg ~ "^" targ) { \
+	      target = file(path, arg, targ, 14); arg = targ "=" target; \
+	    } \
+	    command = command " " arg; \
+	  } \
+	  if (!target) { printf($(call amsg,error,target missing \
+		  [%s]\n), command) > "/dev/stderr"; } \
+	  if (!source) { package = $$(NF-1); } \
+	  print target "|" source "|" package "|" command \
+	}' $(SOURCES) | sort -u #  | sed ':a; N; s/\n/;/; ta' | tr ';' '\n'
+
+#@ updates mock source files using mockgen to latest version.
+update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
+	@$(call emsg,info,updating [go-mocks]); \
+	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
+	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
+	}' | sort -u)"; $(update-mocks) | \
+	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
+	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
+	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
+	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
+	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
+	    fi; \
+	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
+	    PACKAGE="$$(echo "$${GOMOD}" | awk -v pkg="$${PACKAGE}" \
+	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
+	    if [ ! -f "$${TARGET}" ] || \
+	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
+	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
+	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
+	    fi; \
+	  elif [ -n "$${TARGET}" ]; then \
+	    $(call emsg,error,mock creation [$${TARGET}]); \
+	  fi; \
+	done; \
 
 # Function to determine the latest go version.
 update-go-latest = \
@@ -2110,23 +2134,24 @@ update-config = \
 
 # TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
-#@ [major|pre|minor] # update minor (and major) dependencies to latest versions.
+#@ [current|major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
 update/go.mod:: install-gomajor
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
-	if [ -n "$(ARGS)" ]; then $(call update-args,$(ARGS)); \
+	if [ -n "$(ARGS)" ] && [[ " $(ARGS) " =~ " current " ]]; then \
 	  if [[ " $(ARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
-	  readarray -t UPDATES < <($(call update-list,$${ARGS},$${PACKAGES})); \
+	  $(call update-args,$(ARGS)); readarray -t UPDATES \
+	    < <($(call update-list,$${ARGS},$${PACKAGES})); \
 	  for UPDATE in "$${UPDATES[@]}"; do ARGS=($${UPDATE}); \
 	    SMAJOR="$${ARGS[1]%%.*}"; TMAJOR="$${ARGS[3]%%.*}"; \
 	    if [ "$${SMAJOR}" != "$${TMAJOR}" ]; then \
 	      if [[ "$${ARGS[0]}" == *$${SMAJOR}* ]]; then \
 	        TARGET="$${ARGS[0]/$${SMAJOR}/$${TMAJOR}}"; \
-	      else TARGET="$${ARGS[0]}/$${TMAJOR}"; fi; \
-	      echo "update: $${ARGS[0]}@$${ARGS[2]} => $${TARGET}@$${ARGS[3]}"; \
+	      else TARGET="$${ARGS[0]}/$${TMAJOR}"; fi; $(call dmsg,debug, \
+	      updating [$${ARGS[0]}@$${ARGS[2]} => $${TARGET}@$${ARGS[3]}]); \
 	      sed --in-place --expression="s#$${ARGS[0]}#$${TARGET}#g" $(SOURCES); \
 	    else \
-	      echo "update: $${ARGS[0]}@$${ARGS[1]} => $${ARGS[3]}"; \
+	      $(call dmsg,debug,updating [$${ARGS[0]}@$${ARGS[1]} => $${ARGS[3]}]); \
 	      $(GO) get "$${ARGS[0]}@$${ARGS[3]}"; \
 	    fi; \
 	  done; \
@@ -2276,12 +2301,6 @@ debug-commands::
 	echo 'COMMANDS_SH $(COMMANDS_SH)'; \
 	echo 'COMMANDS_GO $(COMMANDS_GO)'; \
 	echo 'COMMANDS_PKG $(COMMANDS_PKG)';
-
-#@debug the mock environment variables.
-debug-mocks::
-	@echo 'MOCKS $(MOCKS)'; \
-	echo 'MOCKS_TARGETS $(MOCKS_TARGETS)'; \
-	echo 'MOCKS_SOURCES $(MOCKS_SOURCES)'; \
 
 #@ debug the image environment variables.
 debug-image::

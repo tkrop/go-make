@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/tkrop/go-make/internal/cmd"
+	"github.com/tkrop/go-testing/reflect"
 	"github.com/tkrop/go-testing/test"
 )
 
@@ -45,11 +46,11 @@ func (p ExecParams) setup(e *cmd.CmdExecutor) (
 	// Configure executor failure.
 	if p.cmd.IsMode(DevNullFileOpenFailure) {
 		e := cmd.NewExecutor()
-		test.NewAccessor(e).Set("devnull", "/dev/xxx")
+		reflect.NewAccessor(e).Set("devnull", "/dev/xxx")
 		return out, err, c, e
 	} else if p.cmd.IsMode(ProcessReleaseFailure) {
 		e := cmd.NewExecutor()
-		test.NewAccessor(e).Set("finish",
+		reflect.NewAccessor(e).Set("finish",
 			func(_ cmd.Mode, _ *exec.Cmd) error {
 				return assert.AnError
 			})
@@ -161,7 +162,7 @@ var execTestCases = map[string]ExecParams{
 
 func TestExec(t *testing.T) {
 	test.Map(t, execTestCases).
-		Filter("nil-executor", false).
+		Filter(test.Not(test.Pattern[ExecParams]("nil-executor"))).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
 			stdout, stderr, cmd, exec := param.setup(cmd.NewExecutor())
@@ -178,7 +179,7 @@ func TestExec(t *testing.T) {
 
 func TestCmdExec(t *testing.T) {
 	test.Map(t, execTestCases).
-		Filter("nil-executor", false).
+		Filter(test.Not(test.Pattern[ExecParams]("nil-executor"))).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
 			stdout, stderr, cmd, exec := param.setup(nil)
@@ -195,7 +196,7 @@ func TestCmdExec(t *testing.T) {
 
 func TestNilExec(t *testing.T) {
 	test.Map(t, execTestCases).
-		Filter("nil-executor", true).
+		Filter(test.Pattern[ExecParams]("nil-executor")).
 		Run(func(t test.Test, param ExecParams) {
 			// Given
 			stdout, stderr, cmd, exec := param.setup(nil)

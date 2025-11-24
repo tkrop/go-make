@@ -69,7 +69,6 @@ debug-files
 debug-gen
 debug-image
 debug-make
-debug-mocks
 debug-sources
 debug-targets
 debug-targets-build
@@ -129,6 +128,7 @@ image
 image-build
 image-push
 init
+init-agents
 init-analysis-cli
 init-codacy
 init-code
@@ -138,8 +138,10 @@ init-gosec
 init-hooks
 init-java
 init-jre
+init-kube
 init-make
 init-make!
+init-mocks
 init-staticcheck
 init/.codacy.yaml
 init/.gitleaks.toml
