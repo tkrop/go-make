@@ -174,7 +174,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.161
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.162
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1382,18 +1382,18 @@ lint:: $(TARGETS_LINT)
 #@ <fix|linters> # execute golangci linters for the custom code quality level.
 lint-code:: lint-$(CODE_QUALITY)
 #@ <fix|linters> # execute golangci linters for minimal code quality level (go-files).
-lint-min:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,min))
+lint-min:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,min))
 #@ <fix|linters> # execute golangci linters for base code quality level (go-files).
-lint-base:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,base))
+lint-base:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,base))
 #@ <fix|linters> # execute golangci linters for plus code quality level (go-files).
-lint-plus:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,plus))
+lint-plus:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,plus))
 #@ <fix|linters> # execute golangci linters for maximal code quality level (go-files).
-lint-max:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,max))
+lint-max:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,max))
 #@ <fix|linters> # execute all golangci linters for insane code quality level (go-files).
-lint-all:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,all))
+lint-all:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,all))
 
 #@ create a golangci linter config using the custom code quality level.
-lint-config::
+lint-config:: install-golangci-lint install-yq
 	@LINT=$$(awk '($$0 ~ "^linters:.*"){print NR}' $(FILE_GOLANGCI)); \
 	FORMAT=$$(awk '($$0 ~ "^formatters:.*"){print NR}' $(FILE_GOLANGCI)); \
 	LINTERS=$$($(GOBIN)/golangci-lint linters | grep --only-matching "^[^: ]*" | \
