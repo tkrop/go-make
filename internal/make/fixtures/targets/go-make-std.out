@@ -66,8 +66,8 @@ debug-bash
 debug-commands
 debug-dirs
 debug-files
-debug-gen
 debug-image
+debug-kube
 debug-make
 debug-sources
 debug-targets

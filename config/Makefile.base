@@ -95,7 +95,7 @@ export GOPRIVATE ?=
 export PATH := $(GOBIN):$(PATH)
 ifeq ("$(shell uname)","Linux")
   $(call cdebug,using UNAME [$(shell uname --all)])
-else ifeq ($(shell uname),Darwin)
+else ifeq ("$(shell uname)","Darwin")
   $(call cdebug,using UNAME [$(shell uname -a)])
   BREW_PREFIX ?= $(shell brew --prefix)
   path-setup = \
@@ -174,7 +174,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.160
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.161
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -607,12 +607,12 @@ run-token-link = \
 
 
 # Setup default environment variables.
-GEN_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
-$(call cdebug,using GEN_DIRS [$(GEN_DIRS)])
-GEN_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
+KUBE_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
+$(call cdebug,using KUBE_DIRS [$(KUBE_DIRS)])
+KUBE_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
 		-name "mock_*.go" -o -name "$(FILE_DEEPCOPY)")) \
-	$(shell if [ -n "$(GEN_DIRS)" ]; then $(call find-go,$(GEN_DIRS),); fi))
-SOURCES := $(filter-out $(GEN_SOURCES),$(shell $(call find-go,.,)))
+	$(shell if [ -n "$(KUBE_DIRS)" ]; then $(call find-go,$(KUBE_DIRS),); fi))
+SOURCES := $(filter-out $(KUBE_SOURCES),$(shell $(call find-go,.,)))
 MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
 COMMANDS := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
 	awk -F '/' '{ for ( field = NF-1; field > 0; field--) { \
@@ -1274,10 +1274,19 @@ test-self::  clean-all all-clean clean-all install-all update-all? update-all
 	@$(call emsg,success,test-self finished successfully!); $(abort);
 
 
-# golangci-lint configuration
-GOLANGCI_CONFIG := --config "$(FILE_GOLANGCI)"
+# Support for merging yaml configuration files. However this is not perfect,
+# since merging w
+merge-yq = $(if $(wildcard $(2)),<(yq --slurp --yaml-output \
+	'reduce .[] as $$item ({}; . * $$item)' "$(1)" "$(2)"),"$(1)")
+merge-yq = $(if $(wildcard $(2)),<($(GOBIN)/yq eval-all \
+	'. as $$item ireduce ({}; . * $$item)' "$(1)" "$(2)"),"$(1)")
 
-FORMATERS ?= gofmt gofumpt goimports golines
+# Repleace golangci-lint configuration file with merged version.
+FILE_GOLANGCI := $(call merge-yq,$(FILE_GOLANGCI),.golangci-ext.yaml)
+# Setup golangci-lint configuration.
+GOLANGCI_CONFIG ?= --config $(FILE_GOLANGCI)
+# Setup golangci-lint formatters (not yet supported).
+GOLANGCI_FORMATTERS ?= gofmt gofumpt goimports golines
 
 # discouraged (noisy): embeddedstructfieldcheck tagalign testifylint wsl wsl_v5
 # discouraged (destructive): exhaustruct gochecknoglobals gochecknoinits
@@ -1334,7 +1343,7 @@ LINT_ARGS_MAX := --enable $(LINT_MAX) --disable $(LINT_DISABLED)
 LINT_ARGS_ALL := --enable $(LINT_MAX),$(LINT_DISABLED)
 
 LINT_FLAGS ?= --allow-serial-runners --allow-parallel-runners --color=always
-#  --formatters.enable=$(subst $(SPACE),$(COMMA),$(FORMATERS)) # not yet supported.
+#  --formatters.enable=$(subst $(SPACE),$(COMMA),$(GOLANGCI_FORMATTERS))
 ifeq ($(ARGS),linters)
   LINT_CMD := $(GOBIN)/golangci-lint linters $(GOLANGCI_CONFIG)
 else ifeq ($(ARGS),config)
@@ -1385,17 +1394,17 @@ lint-all:: init-code install-golangci-lint; $(if $(SOURCES),$(call lint,all))
 
 #@ create a golangci linter config using the custom code quality level.
 lint-config::
-	@LINT=$$(awk '($$0 ~ "^linters:.*"){print NR}' "$(FILE_GOLANGCI)"); \
-	FORMAT=$$(awk '($$0 ~ "^formatters:.*"){print NR}' "$(FILE_GOLANGCI)"); \
+	@LINT=$$(awk '($$0 ~ "^linters:.*"){print NR}' $(FILE_GOLANGCI)); \
+	FORMAT=$$(awk '($$0 ~ "^formatters:.*"){print NR}' $(FILE_GOLANGCI)); \
 	LINTERS=$$($(GOBIN)/golangci-lint linters | grep --only-matching "^[^: ]*" | \
 	  grep --invert-match "\(Enabled\|Disabled\)" | sed -e ':a; N; s/\n/,/; ta'); \
-	(sed --silent '1,'$${FORMAT}'p' "$(FILE_GOLANGCI)"; \
+	(sed --silent '1,'$${FORMAT}'p' $(FILE_GOLANGCI); \
 	echo -e "  enable:"; \
 	for FORMATTER in "# List of formatters (default)" $(sort $(FORMATERS)); do \
 	  if [ "$${FORMATTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${FORMATTER}"; \
     done; \
-	sed --silent $$((FORMAT+3))','$${LINT}'p' "$(FILE_GOLANGCI)"; \
+	sed --silent $$((FORMAT+3))','$${LINT}'p' $(FILE_GOLANGCI); \
 	echo -e "  enable:"; \
 	for LINTER in "# List of min-set linters (min)" $(sort $(LINTERS_MINIMUM)) \
 		"# List of base-set linters (base)" $(sort $(LINTERS_BASELINE)) \
@@ -1409,7 +1418,7 @@ lint-config::
 	  if [ "$${LINTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${LINTER}"; \
 	done; \
-	echo; sed --silent $$((LINT+2))',$$p' "$(FILE_GOLANGCI)") | \
+	echo; sed --silent $$((LINT+2))',$$p' $(FILE_GOLANGCI)) | \
 	awk -v enabled="${LINT_ENABLED}" -v disabled="${LINT_DISABLED}" \
 	  -v linters="$${LINTERS}" '$(awk-gensub) \
 	  function missing(msg, map,   keys, n, i) { \
@@ -1951,7 +1960,7 @@ clean-cache::
 	@rm --verbose --force --recursive $(DIR_CACHE);
 #@ clean up all resources created by building and testing.
 clean-build::
-	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(GEN_DIRS); \
+	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(KUBE_DIRS); \
 	$(call clean-file,.,-name "mock_*_test.go" -o -name "$(FILE_DEEPCOPY)");
 #@ clean up all package dependencies by removing packages.
 clean-deps::
@@ -2289,10 +2298,10 @@ debug-sources::
 	echo 'MODULES $(MODULES)'; \
 
 #@ debug then generated directories, sources, and targets.
-debug-gen::
-	@echo 'GEN_DIRS $(GEN_DIRS)'; \
-	echo 'GEN_SOURCES $(GEN_SOURCES)'; \
-	echo 'GEN_TARGETS $(GEN_TARGETS)';
+debug-kube::
+	@echo 'KUBE_DIRS $(KUBE_DIRS)'; \
+	echo 'KUBE_SOURCES $(KUBE_SOURCES)'; \
+	echo 'KUBE_TARGETS $(KUBE_TARGETS)';
 
 #@ debug the command environment variables.
 debug-commands::
