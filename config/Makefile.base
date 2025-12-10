@@ -93,22 +93,26 @@ export GOPRIVATE ?=
 
 # Setup System dependent default variables.
 export PATH := $(GOBIN):$(PATH)
-ifeq ("$(shell uname)","Linux")
-  $(call cdebug,using UNAME [$(shell uname --all)])
-else ifeq ("$(shell uname)","Darwin")
-  $(call cdebug,using UNAME [$(shell uname -a)])
+UNAME ?= $(shell uname)
+ifeq ("$(UNAME)","Linux")
+  $(call cdebug,using UNAME [$(UNAME)=$(shell uname --all)])
+else ifeq ("$(UNAME)","Darwin")
+  $(call cdebug,using UNAME [$(UNAME)=$(shell uname -a)])
   BREW_PREFIX ?= $(shell brew --prefix)
+  BREW_INSTALL ?= brew install
+  path-if = \
+	$(if $(filter opt,$(1)),$(BREW_PREFIX)/$(2),$(BREW_PREFIX)/$(1))
   path-setup = \
-    if [ "$(1)" == "opt" ]; then \
-      XPATH="$(BREW_PREFIX)/$(1)/$(2)/$(3)"; \
-    else XPATH="$(BREW_PREFIX)/$(1)"; fi; echo -n "$${XPATH}:"; \
-    if [ ! -e "$${XPATH}/$(4)" ]; then brew install $(2) >&2; fi;
-  export PATH := $(shell $(call path-setup,bin,bash,,bash) \
-    $(call path-setup,opt,coreutils,libexec/gnubin,ls) \
-    $(call path-setup,opt,findutils,libexec/gnubin,find) \
-    $(call path-setup,opt,gawk,libexec/gnubin,awk) \
-    $(call path-setup,opt,gsed,libexec/gnubin,sed) \
-    $(call path-setup,opt,make,libexec/gnubin,make))$(PATH)
+	XPATH="$(call path-if,$(1),$(1)/$(2)/$(3))"; echo -n "$${XPATH}:"; \
+	if [ ! -e "$${XPATH}/$(4)" ]; then $(BREW_INSTALL) $(2) >&2; fi
+  SCRIPT = ($(call path-setup,bin,bash,,bash); \
+    $(call path-setup,opt,coreutils,libexec/gnubin,ls); \
+    $(call path-setup,opt,findutils,libexec/gnubin,find); \
+    $(call path-setup,opt,gawk,libexec/gnubin,awk); \
+    $(call path-setup,opt,gsed,libexec/gnubin,sed); \
+    $(call path-setup,opt,make,libexec/gnubin,make))
+  #$(error $(SCRIPT))
+  export PATH := $(shell $(SCRIPT))$(PATH)
   # Needs additional filters for testing.
   # export PATH := $(shell $(call path-setup,bin,curl,bin,curl))$(PATH)
   # Install and start colima if no image command found.
@@ -124,11 +128,10 @@ else ifeq ("$(shell uname)","Darwin")
     export SHELL := $(BREW_PREFIX)/bin/bash
   endif
 else
-  $(call cerror,unsupported operating system [$(shell uname -a)])
+  $(call cerror,unsupported system [$(UNAME)=$(shell uname -a)])
 endif
 
 # Log execution environment for debugging.
-$(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using PATH [$${PATH}])
 $(call cdebug,using SHELL [$${SHELL}])
 $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
@@ -174,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.162
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.163
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1219,11 +1222,13 @@ test-args = ARGS=($(ARGS)); \
 	    [ "$${ARGS[0]}" == *_test.go ]; then \
 	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
 		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-		-o -name "common_test.go" -o -name "mock_*_test.go" | sed "s|^|./|"; \
+		-o -name "common_test.go" -o -name "mock_*_test.go" | \
+		sed "s|^|./|"; \
 	  echo $${ARGS[@]/\#/./}; \
-	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ] || \
-	    [[ "$${ARGS[0]}" =~ /...$$ ]]; then \
-	  echo $${ARGS[@]/\#/./}; \
+	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ]; then \
+	  for ARG in $(MODULES); do \
+	    [[ "$${ARG}" == $${ARGS[@]}* ]] && echo "./$${ARG}"; \
+	  done; \
 	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
 	  for ARG in $${ARGS[0]}; do \
 		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
@@ -1236,8 +1241,8 @@ test-args = ARGS=($(ARGS)); \
 	else \
 	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
 	fi
-# test-args::
-# 	$(call test-args,-run)
+#test-args::
+#	$(call test-args,-run)
 
 # filter to exclude deep-copy generated files from test coverage (disabled).
 #
@@ -1252,7 +1257,7 @@ $(TEST_ALL):: $(SOURCES) init-code $(TEST_DEPS) $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
 	  -coverprofile $@ $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS), $(shell $(call test-args,-run)), \
+	  $(if $(ARGS),$(shell $(call test-args,-run)), \
 	    $(addprefix ./,$(MODULES))));)
 $(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
@@ -1265,7 +1270,7 @@ $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
 	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS), $(shell $(call test-args,-bench)), \
+	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
 	    $(addprefix ./,$(MODULES))));)
 	@$(abort);
 
@@ -1282,7 +1287,8 @@ merge-yq = $(if $(wildcard $(2)),<($(GOBIN)/yq eval-all \
 	'. as $$item ireduce ({}; . * $$item)' "$(1)" "$(2)"),"$(1)")
 
 # Repleace golangci-lint configuration file with merged version.
-FILE_GOLANGCI := $(call merge-yq,$(FILE_GOLANGCI),.golangci-ext.yaml)
+FILE_GOLANGCI := $(if $(filter format%,$(word 1,$(MAKECMDGOALS))) \
+	,$(FILE_GOLANGCI),$(call merge-yq,$(FILE_GOLANGCI),.golangci-ext.yaml))
 # Setup golangci-lint configuration.
 GOLANGCI_CONFIG ?= --config $(FILE_GOLANGCI)
 # Setup golangci-lint formatters (not yet supported).
@@ -1399,8 +1405,8 @@ lint-config:: install-golangci-lint install-yq
 	LINTERS=$$($(GOBIN)/golangci-lint linters | grep --only-matching "^[^: ]*" | \
 	  grep --invert-match "\(Enabled\|Disabled\)" | sed -e ':a; N; s/\n/,/; ta'); \
 	(sed --silent '1,'$${FORMAT}'p' $(FILE_GOLANGCI); \
-	echo -e "  enable:"; \
-	for FORMATTER in "# List of formatters (default)" $(sort $(FORMATERS)); do \
+	echo -e "  enable:"; echo "    # List of formatters (default)"; \
+	for FORMATTER in $(sort $(GOLANGCI_FORMATTERS)); do \
 	  if [ "$${FORMATTER:0:1}" == "#" ]; then X=""; else X="- "; fi; \
 	  echo -e "    $${X}$${FORMATTER}"; \
     done; \
@@ -1616,7 +1622,7 @@ format:: $(TARGETS_FORMAT)
 format-go:: install-golangci-lint
 	@$(call emsg,info,formatting [golangci-lint]);
 	$(GOBIN)/golangci-lint fmt $(GOLANGCI_CONFIG) --color=always \
-	  --enable=$(subst $(SPACE),$(COMMA),$(FORMATERS)) \
+	  --enable=$(subst $(SPACE),$(COMMA),$(GOLANGCI_FORMATTERS)) \
 	  $(filter-out $(FILTER_NOFORMAT),$(SOURCES));
 
 
@@ -2054,7 +2060,8 @@ update-mocks = \
 
 #@ updates mock source files using mockgen to latest version.
 update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
-	@$(call emsg,info,updating [go-mocks]); \
+	@if [ ! -f "go.mod" ]; then exit 0; fi; \
+	$(call emsg,info,updating [go-mocks]); \
 	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
 	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
 	}' | sort -u)"; $(update-mocks) | \
