@@ -150,13 +150,13 @@ clean-dir = $(call find-all,$(1),-type d \( $(2) \) \
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 # Custom abort to stop parent make/go-make process.
 abort = \
-	CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
+	$(if $(ARGS),CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
 	while [ "$${CMD[0]}" != "1" ]; do \
 	  if [[ "$${CMD[2]}" =~ ^.*go-make$$ ]]; then \
 	    $(call dmsg,debug,aborting [$${CMD[0]}] => "$${CMD[@]:2}"); \
 	    kill -ABRT "$${CMD[0]}"; break; \
 	  fi; CMD=($$(ps -p "$${CMD[1]}" -o pid,ppid,args | tail -n +2)); \
-	done; exit 0
+	done; exit 0,:)
 
 
 # Setup default makeflags create consistent behavior.
@@ -177,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.163
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.164
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))

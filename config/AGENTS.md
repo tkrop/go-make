@@ -243,7 +243,9 @@ patterns:
 * Use `github.com/stretchr/testify/require` to validate setup values.
 * Use `github.com/stretchr/testify/{assert,require}` to validate setup values.
 * Use minimal assertions needed to validate expected values and errors.
-* Prefer exact matches in assertions above partial or type validation.
+  * Always test against the actual instances using `assert.Equal` - espacially
+    errors must be tested this way.
+  * Prefer exact matches in assertions above partial or type validation.
 * Use `assert.AnError` for generic error scenarios.
 * Do never comments on assertions; testify is providing meaningful context
   information.
