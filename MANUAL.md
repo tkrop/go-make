@@ -359,14 +359,15 @@ linting according to different quality levels, i.e. `min`,`base` (default),
 ```bash
 make lint          # short cut to execute default lint targets
 make lint-code     # lints the go-code using the default custom config
-make lint-min      # lints the go-code using a minimal config
-make lint-base     # lints the go-code using a baseline config
-make lint-plus     # lints the go-code using an advanced config
-make lint-max      # lints the go-code using an expert config
+make lint-min      # lints the go-code using a minimal config (golangci-lint)
+make lint-base     # lints the go-code using a baseline config (golangci-lint)
+make lint-plus     # lints the go-code using an advanced config (golangci-lint)
+make lint-max      # lints the go-code using an expert config (golangci-lint)
 make lint-all      # lints the go-code using an insane all-in config
 make lint-codacy   # lints the go-code using codacy client side tools
-make lint-markdown # lints the documentation using markdownlint
 make lint-revive   # lints the go-code using the revive standalone linter
+make lint-golangci # lints the go-code using the golangci linter (codacy upload)
+make lint-markdown # lints the documentation using markdownlint
 make lint-shell    # lints the sh-code using shellcheck to find issues
 make lint-leaks    # lints committed code using gitleaks for leaked secrets
 make lint-leaks?   # lints un-committed code using gitleaks for leaked secrets
@@ -484,8 +485,8 @@ make update-go     # updates go to the given, current, or latest version
 make update-deps   # updates project dependencies to the latest version
 make update-make   # updates build environment to a given/latest version
 make update-tools  # updates project tools to a given/latest version
-make update-mocks  # updates generated mock sources to latest version
 make update-kube   # updates generated kubernetes source to latest version
+make update-mocks  # updates generated mock sources to latest version
 make update-*      # updates a specific tool to a given/latest version
 ```
 
@@ -577,14 +578,17 @@ need to call them manually.
 
 
 ```bash
-make init         # short cut for 'init-git init-hooks init-go init-make'
-make init-go      # initializes go project files
-make init-git     # initializes git resource revision control
-make init-hooks   # initializes git hooks for pre-commit, etc
+make init         # short cut for 'init-code'
+make init-code    # initializes project with generated code files
+make init-code!   # initializes project with generated code and project files
+make init-go      # initializes the go modules and dependencies
+make init-kube    # initializes generated kubernetes source files
+make init-mocks   # initializes generated mock source files
+make init-git     # initializes the project with git revision management
+make init-hooks   # initializes the pre-commit and commit-msg hooks
 make init-codacy  # initializes tools for running the codacy targets
-make init-code    # initializes code by generating mocks and kube-apis
-make init-make    # initializes project by copying template files
-make init-make!   # initializes Makefile to contain a copy of Makefile.base
+make init-make    # initializes template config and project files
+make init-make!   # initializes the non-template Makefile
 ```
 
 The `init-make` targets support a `<version>` argument to install the config

@@ -24,6 +24,7 @@ generic Go conventions when different.
 * Add short, concise doc comments for all exported functions, types, and
   constants.
 * Be sparse with inline comments and let the code speak.
+* Add an empty line before `return` statements.
 
 
 ## Naming & documentation
@@ -157,6 +158,14 @@ patterns:
   * Mocks should be dynamically generated via `go:generate mockgen` using
     `go.uber.org/mock/mockgen` into `mock_<name>_test.go` files.
   * Mock setup should be based on `github.com/tkrop/go-testing/mock`.
+  * Mock setup should always prefer `mock.Chain` and `Times(1)` (default) over
+    `mock.Setup` and `AnyTimes` to validate the correct order of calls.
+    * If mock calls happen from different go routines, use `mock.Parallel` to
+      coordinate the different `mock.Chain`s.
+  * Mocks should avoid `gomock.Any` and instead validate the actual values.
+* In test always prefer using `github.com/tkrop/go-testing` methods and modules
+  over custom implementations. Imporant examples are: `test.Must`, `test.Cast`,
+  `test.Ptr`, `test.First`, `test.Main`, `test.Recover`, and `test.DeepCopy`.
 
 
 ### Parameter type definition
@@ -188,7 +197,9 @@ patterns:
 * Ensure that parameters are unexported if possible.
 * Ensure that expectations provide the exact match and can be compared
   by a single `assert.Equal`.
-* Ensure that expectations cover both, validity and outcome.
+* Ensure that expectations cover both, validity and outcome by value.
+* If test case parameters are set to `nil`, `false`, or `0` they should be
+  in general omitted instead of being explicitly set.
 
 
 ### Test case declaration
