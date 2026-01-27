@@ -177,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.164
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.165
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -527,13 +527,14 @@ CODACY_PROVIDER ?= ghe
 CODACY_USER ?= $(GITOWNER)
 CODACY_PROJECT ?= $(GITREPO)
 CODACY_API_BASE_URL ?= https://api.codacy.com
+CODACY_QUALITY ?= $(CODE_QUALITY)
 CODACY_CLIENTS ?= aligncheck
-CODACY_BINARIES ?= gosec staticcheck
+CODACY_BINARIES ?= golangci gosec staticcheck
 ifdef CODACY_JRE_HOME
   JRE_HOME := $(CODACY_JRE_HOME)
 endif
 # https://github.com/codacy/codacy-gosec/tags
-CODACY_GOSEC_VERSION ?= 1.0.0
+CODACY_GOSEC_VERSION ?= 1.0.2
 CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
 # https://github.com/codacy/codacy-staticcheck/tags
 CODACY_STATICCHECK_VERSION ?= 3.0.18
@@ -541,9 +542,12 @@ CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
 # https://github.com/codacy/codacy-analysis-cli/tags
 CODACY_ANALYSIS-CLI_VERSION ?= 7.10.0
 CODACY_ANALYSIS-CLI_EXTENSION ?= assembly.jar
+# https://github.com/codacy/codacy-golangci-lint/tags
+CODACY_GOLANGCI_VERSION ?= lint-0.0.4
+CODACY_GOLANGCI_EXTENSION ?= $(CODACY_GOLANGCI_VERSION)
 # https://github.com/codacy/codacy-coverage-reporter/tags
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
-	CODACY_REPORTER_VERSION ?= 13.13.13
+	CODACY_REPORTER_VERSION ?= 14.1.0
 else # always use latest version for codacy.com
 	CODACY_REPORTER_VERSION ?=
 endif
@@ -567,8 +571,8 @@ UPDATE_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
 
 
 # Default target list for all and pipeline builds.
-TARGETS_ALL ?= init-hooks test lint build image
-TARGETS_INIT ?= init-git init-hooks init-go init-make
+TARGETS_ALL ?= test lint build image
+TARGETS_INIT ?= init-hooks init-kube init-mocks
 TARGETS_COMMIT ?= test-go test-unit lint-leaks? lint-$(CODE_QUALITY) lint-markdown
 TARGETS_TEST ?= test-all $(if $(filter $(CODACY),enabled),test-upload,)
 TARGETS_LINT ?= lint-leaks? lint-$(CODE_QUALITY) lint-markdown lint-apis \
@@ -1011,8 +1015,17 @@ git-push::
 
 ## Init: targets to initialize tools and (re-)sources.
 
-#@ initialize the project to prepare it for building.
-init:: $(TARGETS_INIT)
+#@ initialize a project for building, testing, and running.
+init:: init-code
+#@ initialize a project with generated sources for building, testing, and running.
+init-code:: $(TARGETS_INIT)
+#@ initialize a new project with generated sources for building, testing, and running.
+init-code!:: init-git init-hooks init-make init-go init-code
+#@ initialize kubernetes sources (api clients and manifests) with latest version.
+init-kube:: update-kube
+#@ initialize mock source files using mockgen with latest version.
+init-mocks:: update-mocks
+
 #@ initialize the project with git revision management.
 init-git:
 	@if [ ! -d "$(DIR_GIT)" ]; then \
@@ -1040,21 +1053,14 @@ $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
 	  $(git-hooks-pre-commit) >$@; chmod 755 $@; \
 	fi;
 
-#@ initialize the go module and package dependencies.
-init-go:: go.mod
+#@ initialize the go modules and dependencies.
+init-go:: go.mod go.sum
 go.sum go.mod&: $(SOURCES)
 	@$(call emsg,info,updating [go.mod&go.sum]);
 	$(if $(SOURCES), \
 	  $(if $(wildcard go.mod),,$(GO) mod init "$(GITURL)" &&) \
-	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) && \
-	  touch go.mod go.sum && $(GO) mod download;)
-
-#@ initialize the generated sources.
-init-code:: init-hooks init-kube init-mocks
-#@ initialize kubernetes sources (api clients and manifests) with latest version.
-init-kube:: update-kube
-#@ initialize mock source files using mockgen to latest version.
-init-mocks:: update-mocks
+	  $(GO) mod download all && touch go.mod go.sum && \
+	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION))
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1497,6 +1503,11 @@ LINT_ARGS_GOSEC_LOCAL := -log /dev/null -exclude G307 ./...
 LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
 LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
+LINT_ARGS_GOLANGCI_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
+	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY)))
+LINT_ARGS_GOLANGCI_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
+	--output.json.path stdout $(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) \
+	2>/dev/null
 
 $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	@$(call emsg,info,linting [$*]); COMMIT=$$($(GITHASH)); \
@@ -1721,6 +1732,8 @@ install:: $(TARGETS_INSTALL)
 #@ install all software created and used by the project.
 install-all:: $(TARGETS_INSTALL_ALL)
 #@ install-*: install the matched software command or service.
+install-golangci:: install-golangci-lint
+	ln --symbolic --force "$(GOBIN)/golangci-lint" "$(GOBIN)/golangci";
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
@@ -1754,6 +1767,8 @@ uninstall:: $(TARGETS_UNINSTALL)
 #@ uninstall all software created and used by the projct.
 uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 #@ uninstall-*: uninstall the matched software command or service.
+uninstall-golangci:: uninstall-golangci-lint
+	@rm --verbose --force "$(GOBIN)/golangci";
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
