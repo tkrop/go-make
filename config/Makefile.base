@@ -177,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.166
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.167
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -319,6 +319,8 @@ go-check-update = \
 # Function to install go programs from package the go tooling list.
 go-install-module = \
 	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
+go-install? = \
+	$(if $(wildcard $(GOBIN)/$(1)),:,$(call go-install-module,$(1),$(2)))
 go-install = \
 	rm --force "$(GOBIN)/$(1)";$(if $(filter latest,$(call go-version,$(2))),, \
 	GONOSUMDB=$(call go-path,$(2))) $(GO) install $(INSTALL_FLAGS) "$(2)"
