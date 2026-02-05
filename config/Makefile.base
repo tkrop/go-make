@@ -177,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.168
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.169
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -394,7 +394,9 @@ GOLANGCI_VERSION ?= v2.5.0
 REVIVE_VERSION ?= v1.12.0
 
 # Setup default tool command versions to be installed.
-TOOLS_GO += \
+TOOL_MOCK ?= $(or $(shell awk '($$1 ~ "/mock$$") && ($$3 != "//") \
+	{ print $$1 }' go.mod 2>/dev/null),go.uber.org/mock)/mockgen
+TOOLS_GO += $(TOOL_MOCK) \
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
@@ -405,7 +407,6 @@ TOOLS_GO += \
 	honnef.co/go/tools/cmd/staticcheck \
 	github.com/zricethezav/gitleaks/v8 \
 	github.com/icholy/gomajor \
-	go.uber.org/mock/mockgen \
 	github.com/tkrop/go-testing/cmd/mock \
 	github.com/itchyny/gojq/cmd/gojq \
 	github.com/mikefarah/yq/v4 \
@@ -2056,19 +2057,30 @@ $(UPDATE_KUBE_APIS):: update-kube/%: $(UPDATE_KUBE_TARGETS)
 # Helper to optimized generation of mocks without relying on go:generate.
 update-mocks = \
 	awk 'BEGIN { \
-	  sarg="-source"; targ = "-destination"; dlen = length("$(CURDIR)") + 2; \
+	  parg = "-package"; sarg = "-source"; targ = "-destination"; \
+	  dlen = length("$(CURDIR)") + 2; \
 	} $(awk-gensub) \
 	$(awk-beginfile) { path = gensub("/[^/]*$$", "", "1", FILENAME); } \
-	function file(path, arg, param, len,    link) { \
-	  if (arg != param) { arg = substr(arg, len) } else { i++; arg = $$i; } \
-	  cmd = "readlink -f \"" path "/" arg "\""; cmd | getline link; close(cmd); \
+	function norm(path,    cmd, link) { \
+	  cmd = "readlink -f \"" path "\""; cmd | getline link; close(cmd); \
+	  if (link == "") { \
+	    cmd = "readlink -m \"" path "\""; cmd | getline link; close(cmd); \
+	  } \
 	  return substr(link, dlen) \
 	} \
+	function file(path, arg, param, len) { \
+	  if (arg != param) { return norm(path "/" substr(arg, len)) } \
+	  else { i++; return norm(path "/" $$i); } \
+	} \
+	function value(arg, param, len) { \
+	  if (arg != param) { return substr(arg, len) } else { i++; return $$i; } \
+	} \
 	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?") { \
-	  source = ""; target = ""; package = ""; \
-	  command = $$2; \
+	  package = ""; source = ""; target = ""; command = $$2; \
 	  for (i = 3; i <= NF; i++) { arg = $$i; \
-	    if (arg ~ "^" sarg) { \
+	    if (arg ~ "^" parg) { \
+		  package = value(arg, parg, 10); arg = parg "=" package; \
+	    } else if (arg ~ "^" sarg) { \
 	      source = file(path, arg, sarg, 9); arg = sarg "=" source; \
 	    } else if (arg ~ "^" targ) { \
 	      target = file(path, arg, targ, 14); arg = targ "=" target; \
@@ -2078,7 +2090,7 @@ update-mocks = \
 	  if (!target) { printf($(call amsg,error,target missing \
 		  [%s]\n), command) > "/dev/stderr"; } \
 	  if (!source) { package = $$(NF-1); } \
-	  print target "|" source "|" package "|" command \
+	  print target "|" source "|" package "|" command; \
 	}' $(SOURCES) | sort -u #  | sed ':a; N; s/\n/;/; ta' | tr ';' '\n'
 
 #@ updates mock source files using mockgen to latest version.
@@ -2092,7 +2104,7 @@ update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
 	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
 	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
 	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && sed --in-place \
 	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
 	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
 	    fi; \
@@ -2101,7 +2113,7 @@ update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
 	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
 	    if [ ! -f "$${TARGET}" ] || \
 	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} && touch "$${TARGET}" && sed --in-place \
+	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && sed --in-place \
 	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
 	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
 	    fi; \
