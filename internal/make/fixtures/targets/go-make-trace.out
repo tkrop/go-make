@@ -92,6 +92,7 @@ debug-targets-run
 debug-targets-test
 debug-targets-uninstall
 debug-targets-update
+debug-tools
 format
 format-go
 git-clean
