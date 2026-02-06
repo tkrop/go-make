@@ -73,9 +73,9 @@ LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
 TESTFLAGS ?=
 TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
 BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
-BUILD_FLAGS ?=  $(strip $(mod-readonly) -buildvcs=auto -trimpath $(BUILDFLAGS))
+BUILD_FLAGS ?=  $(strip $(mod-readonly) -trimpath $(BUILDFLAGS))
 INSTALLFLAGS ?=
-INSTALL_FLAGS ?= $(strip $(mod-readonly) -buildvcs=auto $(INSTALLFLAGS))
+INSTALL_FLAGS ?= $(strip $(mod-readonly) $(INSTALLFLAGS))
 
 # Find container image command (docker, podman, or colima).
 find-cmd-image := $(shell command -v docker || \
