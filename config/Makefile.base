@@ -177,7 +177,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.169
+GOMAKE_DEP := github.com/tkrop/go-make@v0.0.170
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -393,10 +393,23 @@ GOLANGCI_VERSION ?= v2.5.0
 # https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
 REVIVE_VERSION ?= v1.12.0
 
+# Setup default variables for kubernetes code generation.
+KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
+	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
+	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
+	fi)
+KUBE_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
+$(call cdebug,using KUBE_DIRS [$(KUBE_DIRS)])
+KUBE_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
+		-name "mock_*.go" -o -name "$(FILE_DEEPCOPY)")) \
+	$(shell if [ -n "$(KUBE_DIRS)" ]; then $(call find-go,$(KUBE_DIRS),); fi))
+SOURCES := $(filter-out $(KUBE_SOURCES),$(shell $(call find-go,.,)))
+MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
+
 # Setup default tool command versions to be installed.
-TOOL_MOCK ?= $(or $(shell awk '($$1 ~ "/mock$$") && ($$3 != "//") \
-	{ print $$1 }' go.mod 2>/dev/null),go.uber.org/mock)/mockgen
-TOOLS_GO += $(TOOL_MOCK) \
+TOOL_MOCKGEN ?= $(or $(shell awk '($$1 ~ "/mock$$") {  print $$1 }' \
+	go.mod 2>/dev/null | head --line=1),go.uber.org/mock)/mockgen
+TOOLS_GO += $(TOOL_MOCKGEN) \
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
 	github.com/zalando/zally/cli/zally \
 	golang.org/x/vuln/cmd/govulncheck \
@@ -569,10 +582,6 @@ $(call cdebug,using CODACY_PROJECT_TOKEN [$(CODACY_PROJECT_TOKEN)])
 $(call cdebug,using CODACY_API_BASE_URL [$(CODACY_API_BASE_URL)])
 $(call cdebug,using CODACY_REPORTER_VERSION [$(CODACY_REPORTER_VERSION)])
 
-KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
-	if [ -n "$${FILES}" ]; then grep -E "\+(kubebuilder|k8s)" "$${FILES[@]}" | \
-	  sed "s|apis/[^/]*/[^/]*/[^/]*.go:.*|apis|" | sort --unique; \
-	fi)
 UPDATE_KUBE_APIS ?= $(KUBE_APIS:%=update-kube/%)
 $(call cdebug,using UPDATE_KUBE_APIS [$(UPDATE_KUBE_APIS)])
 UPDATE_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
@@ -623,13 +632,6 @@ run-token-link = \
 
 
 # Setup default environment variables.
-KUBE_DIRS += $(strip $(KUBE_APIS:%/apis=%/clients) $(KUBE_APIS:%/apis=%/manifests))
-$(call cdebug,using KUBE_DIRS [$(KUBE_DIRS)])
-KUBE_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
-		-name "mock_*.go" -o -name "$(FILE_DEEPCOPY)")) \
-	$(shell if [ -n "$(KUBE_DIRS)" ]; then $(call find-go,$(KUBE_DIRS),); fi))
-SOURCES := $(filter-out $(KUBE_SOURCES),$(shell $(call find-go,.,)))
-MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
 COMMANDS := $(shell $(call find-go,.,-name "main.go") | xargs -r readlink -f | \
 	awk -F '/' '{ for ( field = NF-1; field > 0; field--) { \
 	  if ($$field != "cmd") { print $$field; break; } \
@@ -2344,6 +2346,12 @@ debug-kube::
 	@echo 'KUBE_DIRS $(KUBE_DIRS)'; \
 	echo 'KUBE_SOURCES $(KUBE_SOURCES)'; \
 	echo 'KUBE_TARGETS $(KUBE_TARGETS)';
+
+#@ debug the command environment variables.
+debug-tools::
+	@echo 'TOOLS_GO $(TOOLS_GO)'; \
+	echo 'TOOLS_SH $(TOOLS_SH)'; \
+	echo 'TOOLS_NPM $(TOOLS_NPM)';
 
 #@ debug the command environment variables.
 debug-commands::
