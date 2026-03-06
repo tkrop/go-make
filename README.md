@@ -4,40 +4,48 @@
 [![Coverage][coveralls-badge]][coveralls-link]
 [![Coverage][coverage-badge]][coverage-link]
 [![Quality][quality-badge]][quality-link]
+![Quality][code-ql]
 [![Report][report-badge]][report-link]
 [![FOSSA][fossa-badge]][fossa-link]
 [![License][license-badge]][license-link]
 [![Docs][docs-badge]][docs-link]
+
 <!--
+[![Release][release-badge]][release-link]
 [![Libraries][libs-badge]][libs-link]
 [![Security][security-badge]][security-link]
 -->
 
-[build-badge]: https://github.com/tkrop/go-make/actions/workflows/build.yaml/badge.svg
-[build-link]: https://github.com/tkrop/go-make/actions/workflows/build.yaml
+[build-badge]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml/badge.svg>
+[build-link]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml>
 
-[coveralls-badge]: https://coveralls.io/repos/github/tkrop/go-make/badge.svg?branch=main
-[coveralls-link]: https://coveralls.io/github/tkrop/go-make?branch=main
+[coveralls-badge]: <https://coveralls.io/repos/github/tkrop/go-make/badge.svg?branch=main>
+[coveralls-link]: <https://coveralls.io/github/tkrop/go-make?branch=main>
 
-[coverage-badge]: https://app.codacy.com/project/badge/Coverage/b2bb898346ae4bb4be6414cd6dfe4932
-[coverage-link]: https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage
+[coverage-badge]: <https://app.codacy.com/project/badge/Coverage/b2bb898346ae4bb4be6414cd6dfe4932>
+[coverage-link]: <https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage>
 
-[quality-badge]: https://app.codacy.com/project/badge/Grade/b2bb898346ae4bb4be6414cd6dfe4932
-[quality-link]: https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade
+[quality-badge]: <https://app.codacy.com/project/badge/Grade/b2bb898346ae4bb4be6414cd6dfe4932>
+[quality-link]: <https://app.codacy.com/gh/tkrop/go-make/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade>
 
-[report-badge]: https://goreportcard.com/badge/github.com/tkrop/go-make
-[report-link]: https://goreportcard.com/report/github.com/tkrop/go-make
+[report-badge]: <https://goreportcard.com/badge/github.com/tkrop/go-make>
+[report-link]: <https://goreportcard.com/report/github.com/tkrop/go-make>
 
-[fossa-badge]: https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make.svg?type=shield&issueType=license
-[fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make?ref=badge_shield&issueType=license
+[fossa-badge]: <https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make.svg?type=shield&issueType=license>
+[fossa-link]: <https://app.fossa.com/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make?ref=badge_shield&issueType=license>
 
-[license-badge]: https://img.shields.io/badge/License-MIT-yellow.svg
-[license-link]: https://opensource.org/licenses/MIT
+[license-badge]: <https://img.shields.io/badge/License-MIT-yellow.svg>
+[license-link]: <https://opensource.org/licenses/MIT>
 
-[docs-badge]: https://pkg.go.dev/badge/github.com/tkrop/go-make.svg
-[docs-link]: https://pkg.go.dev/github.com/tkrop/go-make
+[docs-badge]: <https://pkg.go.dev/badge/github.com/tkrop/go-make.svg>
+[docs-link]: <https://pkg.go.dev/github.com/tkrop/go-make>
+
+[code-ql]: <https://github.com/zalando/skipper/actions/workflows/codeql-analysis.yml/badge.svg>
 
 <!--
+[release-badge]: <https://img.shields.io/github/release/tkrop/go-make.svg>
+[release-link]: <https://github.com/tkrop/go-make/releases>
+
 [libs-badge]: https://img.shields.io/librariesio/release/github/tkrop/go-make
 [libs-link]: https://libraries.io/github/tkrop/go-make
 
