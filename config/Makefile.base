@@ -70,6 +70,7 @@ mod-readonly = $(call xifeq,$(VERSION),latest,,-mod=readonly)
 LDFLAGS ?=
 LD_FLAGS ?= $(strip $(LDFLAGS))
 LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
+LD_FLAGS_DARWIN ?= $(strip $(LDFLAGS))
 TESTFLAGS ?=
 TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
 BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
@@ -93,11 +94,18 @@ export GOPRIVATE ?=
 
 # Setup System dependent default variables.
 export PATH := $(GOBIN):$(PATH)
-UNAME ?= $(shell uname)
-ifeq ("$(UNAME)","Linux")
-  $(call cdebug,using UNAME [$(UNAME)=$(shell uname --all)])
-else ifeq ("$(UNAME)","Darwin")
-  $(call cdebug,using UNAME [$(UNAME)=$(shell uname -a)])
+OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+ARCH := $(shell case "$$(uname -m)" in \
+	  ( x86_64 | amd64 ) echo "amd64";; \
+	  ( aarch64 | arm64 ) echo "arm64";; \
+	  ( * ) echo "unknown";; \
+	esac)
+
+# Setup OS specific variables and paths.
+ifeq ("$(OS)","linux")
+  $(call cdebug,using OS [$(OS)=$(shell uname --all)])
+else ifeq ("$(OS)","darwin")
+  $(call cdebug,using OS [$(OS)=$(shell uname -a)])
   BREW_PREFIX ?= $(shell brew --prefix)
   BREW_INSTALL ?= brew install
   path-if = \
@@ -128,7 +136,7 @@ else ifeq ("$(UNAME)","Darwin")
     export SHELL := $(BREW_PREFIX)/bin/bash
   endif
 else
-  $(call cerror,unsupported system [$(UNAME)=$(shell uname -a)])
+  $(call cerror,unsupported system [$(OS)=$(shell uname -a)])
 endif
 
 # Log execution environment for debugging.
@@ -148,6 +156,7 @@ clean-dir = $(call find-all,$(1),-type d \( $(2) \) \
 	-exec rm --verbose --force --recursive {} \;)
 # Helper function for conversion of variables name.
 upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
+lower = $(shell echo "$(1)" | tr '[:upper:]' '[:lower:]')
 # Custom abort to stop parent make/go-make process.
 abort = \
 	$(if $(ARGS),CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
@@ -177,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.0.170
+GOMAKE_DEP := github.com/tkrop/go-make@v0.1.0
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -274,6 +283,15 @@ awk-color = $(awk-gensub) \
 	} \
 
 
+# Setup build specific flags.
+GOOS ?= $(shell $(GO) env GOOS)
+GOARCH ?= $(shell $(GO) env GOARCH)
+ifdef CGO_ENABLED
+	GODYNAMIC := $(CGO_ENABLED)
+else
+	GODYNAMIC ?= 1
+endif
+PLATFORM ?= $(GOOS)/$(GOARCH)
 # Setup go to use desired and consistent go versions.
 GOVERSION ?= $(shell $(GO) version | \
 	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
@@ -284,44 +302,46 @@ $(call cdebug,using GOVERSION [$(GOVERSION)])
 go-path = $(word 1,$(subst @,$(SPACE),$(1)))
 # Function to extract the go package version from a go package spec.
 go-version = $(word 2,$(subst @,$(SPACE),$(1)))
-# Function for checking and warning about go and package version mismatches.
-go-check-version = \
+# Function for updating tools and warning about package version mismatches.
+go-update = \
 	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
 	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if [[ "$${GOVERSION}" != "$(GOVERSION)" ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
-		$(call go-check-update,$(1),$${MODULE},$${GOVERSION}, \
+		$(call go-update-check,$(1),$${MODULE},$${GOVERSION}, \
 		  build [$${CHECK}], or install matching compiler version); \
 	  fi; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
 	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
-	    MVERSION="$$($(call go-check-module,$(1),$${MPATH}))"; \
+	    MVERSION="$$($(call go-update-version,$(1),$${MPATH}))"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
-	      $(call go-check-update,$(1),$${MODULE},$${MVERSION}, \
+	      $(call go-update-check,$(1),$${MODULE},$${MVERSION}, \
 	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
 	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); \
-	elif [ -f "$(GOBIN)/$(1)" ]; then $(call go-install-module,$(1),$(2)); fi
+	elif [ -f "$(GOBIN)/$(1)" ]; then $(call go-install,$(1),$(2)); fi
 # Function to check go modules version.
-go-check-module = $(GO) version -m "$(GOBIN)/$(1)" | \
+go-update-version = $(GO) version -m "$(GOBIN)/$(1)" | \
 	grep -E "^\s*(mod|dep)\s*$(2)" | cut -f 4
-# Function to warn about automated updating of go packages.
-go-check-update = \
+# Function to update with warning about automated updating of tools.
+go-update-check = \
 	if [ "$(3)" != "(devel)" ]; then \
-	  $(call emsg,info,$(1) $(4): updating binary now!); \
-	  $(call go-install,$(1),$(2)); \
+	  $(call emsg,info,$(1) $(4): updating [$(1) => $(2)]); \
+	  $(call go-install-module,$(1),$(2)); \
 	else \
 	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
 	fi
 # Function to install go programs from package the go tooling list.
-go-install-module = \
-	$(call go-install,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install? = \
-	$(if $(wildcard $(GOBIN)/$(1)),:,$(call go-install-module,$(1),$(2)))
+	$(if $(wildcard $(GOBIN)/$(1)),:,$(call go-install,$(1),$(2)))
 go-install = \
+	$(call go-install-message,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
+go-install-message = \
+	$(call emsg,info,installing [$(1) => $(2)]); $(call go-install-module,$(1),$(2))
+go-install-module = \
 	rm --force "$(GOBIN)/$(1)";$(if $(filter %-nosumdb,$(call go-version,$(2))), \
 	GONOSUMDB=$(call go-path,$(2)),) $(GO) install $(INSTALL_FLAGS) "$(patsubst \
 	%-nosumdb,%,$(2))"
@@ -382,7 +402,7 @@ go-pkg = $(shell awk -v mode="$(2)" -v filter="$(3)" \
 
 # Function to determine the actual go-make version.
 gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
-		$(call go-check-module,go-make,github.com/tkrop/go-make); \
+		$(call go-update-version,go-make,github.com/tkrop/go-make); \
 	else echo "(devel)"; fi)
 
 # https://github.com/kubernetes/code-generator/tags
@@ -438,9 +458,8 @@ TOOLS_NPM += \
 
 
 # Check for the actually used go-make version.
-#$(call cdebug, go-check-version = $(call \
-	escape,$(call go-check-version,go-make,)))
-$(shell $(call go-check-version,go-make,))
+#$(call cdebug, go-update = $(call escape,$(call go-update,go-make,)))
+$(shell $(call go-update,go-make,))
 
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
@@ -503,7 +522,7 @@ export TEAM ?= $(shell \
 	  grep "X-Zalando-Team:" .zappr.yaml | \
 	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
 	else echo "${GITOWNER}"; fi)
-export IMAGE_NAME ?= $(IMAGE_REGISTRY)/$(TEAM)/$(GITREPO)
+export IMAGE_NAME ?= $(call lower,$(IMAGE_REGISTRY)/$(TEAM)/$(GITREPO))
 ifneq ($(words $(subst :, ,$(subst /, ,$(IMAGE_NAME)))),3)
   $(call cerror,invalid base image name [$(IMAGE_NAME)] \
     - image name format [repo/team/name]!)
@@ -584,8 +603,8 @@ $(call cdebug,using CODACY_REPORTER_VERSION [$(CODACY_REPORTER_VERSION)])
 
 UPDATE_KUBE_APIS ?= $(KUBE_APIS:%=update-kube/%)
 $(call cdebug,using UPDATE_KUBE_APIS [$(UPDATE_KUBE_APIS)])
-UPDATE_KUBE_TARGETS := install-deepcopy-gen install-client-gen \
-	install-lister-gen install-informer-gen install-controller-gen
+UPDATE_KUBE_TARGETS := update-deepcopy-gen update-client-gen \
+	update-lister-gen update-informer-gen update-controller-gen
 
 
 # Default target list for all and pipeline builds.
@@ -672,8 +691,10 @@ TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-,$(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-,$(CODACY_BINARIES))
 TARGETS_IMAGE_BUILD := $(addprefix image-build/,$(IMAGE_FILES))
 TARGETS_IMAGE_PUSH := $(addprefix image-push/,$(IMAGE_FILES))
-TARGETS_BUILD := $(addprefix build-,$(COMMANDS))
-TARGETS_BUILD_LINUX := $(addprefix $(DIR_BUILD)/linux/,$(COMMANDS))
+TARGETS_BUILD_OS := $(addprefix build/$(GOOS)/$(GOARCH)/,$(COMMANDS))
+TARGETS_BUILD_ALL := $(foreach path,$(subst $(COMMA),$(SPACE), \
+	$(PLATFORM)),$(addprefix build/$(path)/,$(COMMANDS)))
+TARGETS_BUILD_CMDS := $(addprefix build-,$(COMMANDS))
 TARGETS_INSTALL := $(addprefix install-,$(COMMANDS))
 TARGETS_INSTALL_GO := $(addprefix install-,$(COMMANDS_GO))
 TARGETS_INSTALL_SH := $(addprefix install-,$(COMMANDS_SH))
@@ -966,7 +987,7 @@ git-reset::
 	  $(GIT) checkout "$${BRANCH}" && $(GIT) pull && $(GIT) stash apply \
 	) || exit 1; $(call git-clean,$${BRANCH},$(ARGS)); $(abort);
 #@ <mode> [msg|log-file] # checks whether git log follows the commit conventions.
-git-verify::
+git-verify:: # TODO: check why it is taking off-line so long!
 	@$(call dmsg,info,git-verify); MODE="$(firstword $(ARGS))"; \
 	case "$${MODE}" in \
 	( "log" ) cat "$(wordlist 2,$(words $(ARGS)),$(ARGS))";; \
@@ -1405,18 +1426,17 @@ lint:: $(TARGETS_LINT)
 #@ <fix|linters> # execute golangci linters for the custom code quality level.
 lint-code:: lint-$(CODE_QUALITY)
 #@ <fix|linters> # execute golangci linters for minimal code quality level (go-files).
-lint-min:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,min))
+lint-min:: init-code update-golangci-lint update-yq; $(if $(SOURCES),$(call lint,min))
 #@ <fix|linters> # execute golangci linters for base code quality level (go-files).
-lint-base:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,base))
+lint-base:: init-code update-golangci-lint update-yq; $(if $(SOURCES),$(call lint,base))
 #@ <fix|linters> # execute golangci linters for plus code quality level (go-files).
-lint-plus:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,plus))
+lint-plus:: init-code update-golangci-lint update-yq; $(if $(SOURCES),$(call lint,plus))
 #@ <fix|linters> # execute golangci linters for maximal code quality level (go-files).
-lint-max:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,max))
+lint-max:: init-code update-golangci-lint update-yq; $(if $(SOURCES),$(call lint,max))
 #@ <fix|linters> # execute all golangci linters for insane code quality level (go-files).
-lint-all:: init-code install-golangci-lint install-yq; $(if $(SOURCES),$(call lint,all))
-
+lint-all:: init-code update-golangci-lint update-yq; $(if $(SOURCES),$(call lint,all))
 #@ create a golangci linter config using the custom code quality level.
-lint-config:: install-golangci-lint install-yq
+lint-config:: update-golangci-lint update-yq
 	@LINT=$$(awk '($$0 ~ "^linters:.*"){print NR}' $(FILE_GOLANGCI)); \
 	FORMAT=$$(awk '($$0 ~ "^formatters:.*"){print NR}' $(FILE_GOLANGCI)); \
 	LINTERS=$$($(GOBIN)/golangci-lint linters | grep --only-matching "^[^: ]*" | \
@@ -1548,7 +1568,7 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	fi;
 
 #@ execute revive linter (go-files).
-lint-revive:: init-code install-revive
+lint-revive:: init-code update-revive
 	@$(call emsg,info,linting [revive]);
 	revive -formatter friendly -config="$(FILE_REVIVE)" $(SOURCES) || \
 	  $(CODACY_CONTINUE);
@@ -1588,22 +1608,22 @@ lint-shell:: init-code
 	fi;
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
-lint-leaks:: install-gitleaks
+lint-leaks:: update-gitleaks
 	@if [ -d "$(DIR_GIT)" ]; then $(call emsg,info,linting [leaks]); \
 	  echo "gitleaks detect --no-banner --verbose --source ."; \
 	  gitleaks detect --no-banner --verbose --source .; \
 	fi;
 #@ execute gitleaks to check un-committed code changes for leaking secrets (all files).
-lint-leaks?:: install-gitleaks
+lint-leaks?:: update-gitleaks
 	@if [ -d "$(DIR_GIT)" ]; then $(call emsg,info,linting [leaks?]); \
 	  echo "gitleaks protect --no-banner --verbose --source ."; \
 	  gitleaks protect --no-banner --verbose --source .; \
 	fi;
 #@ execute govulncheck to find vulnerabilities in dependencies (go-files).
-lint-vuln:: install-govulncheck
+lint-vuln:: update-govulncheck
 	govulncheck -test ./...
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
-lint-gocyclo lint-gocognit:: lint-%: install-%
+lint-gocyclo lint-gocognit:: lint-%: update-%
 	@$(call emsg,info,linting [gocyclo]); ARGS=($(ARGS)); MODS="0"; \
 	while [ "$${#ARGS[@]}" != "0" ]; do \
 	  if [ "$${ARGS[0]}" == "top" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
@@ -1618,7 +1638,7 @@ lint-gocyclo lint-gocognit:: lint-%: install-%
 
 TOKEN_REPLACE := --token=*/--token=...secret...
 #@ execute zally api-linter to find API issues (yaml-files).
-lint-apis:: install-zally
+lint-apis:: update-zally
 	@if [ -z "$(filter %.yaml,$(ARGS))" ]; then \
 	   mapfile -t FILES < <($(call find-all,zalando-apis,-name "*.yaml")); \
 	else mapfile -t FILES < <(echo $(filter %.yaml,$(ARGS))); fi; \
@@ -1641,16 +1661,12 @@ lint-apis:: install-zally
 format:: $(TARGETS_FORMAT)
 
 #@ format the source code using golangci-lint.
-format-go:: install-golangci-lint
+format-go:: update-golangci-lint
 	@$(call emsg,info,formatting [golangci-lint]);
 	$(GOBIN)/golangci-lint fmt $(GOLANGCI_CONFIG) --color=always \
 	  --enable=$(subst $(SPACE),$(COMMA),$(GOLANGCI_FORMATTERS)) \
 	  $(filter-out $(FILTER_NOFORMAT),$(SOURCES));
 
-
-# Variables for setting up container specific build flags.
-BUILD_OS ?= $(shell $(GO) env GOOS)
-BUILD_ARCH ?= $(shell $(GO) env GOARCH)
 
 # Function to select right main package of command.
 main-pkg = $(patsubst $(1)=%,%,$(firstword $(filter $(1)=%,$(COMMANDS_PKG))))
@@ -1664,30 +1680,40 @@ ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 	$(call ld-flag,Commit=$(shell $(GIT) log -1 --date=iso8601-strict --format=%cd)) \
 	$(call ld-flag,Dirty=$(shell $(GIT) diff --quiet && echo false || echo true)) \
 	$(call ld-flag,Path=$(GITURL)$(patsubst .%,%,$(1))) \
-	$(call ld-flag,GitHash=$(shell $(GIT) rev-parse --short HEAD))
+	$(call ld-flag,GitHash=$(shell $(GIT) rev-parse --short HEAD)) \
+	$(LD_FLAGS_$(call upper,$(2)))
 
 
-## Build: targets to build native and linux platform executables.
+## Build: targets to build executables.
 
-#@ build default executables (native).
-build:: build-native
-#@ build native platform executables using system architecture.
-build-native:: $(TARGETS_BUILD)
-$(TARGETS_BUILD):: build-%: $(DIR_BUILD)/%
-$(DIR_BUILD)/%:: test-build init-code $(SOURCES) $(DIR_BUILD)
-	$(strip GOOS=$(BUILD_OS) GOARCH=$(BUILD_ARCH) CGO_ENABLED=1 $(GO) build \
-	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LD_FLAGS)" \
-	  $(BUILD_FLAGS) -race -o $@ $(call main-pkg,$*)/main.go);
+#@ build executables for the default platform.
+build:: build-$(GOOS)
+#@ build executables for all supported platforms.
+build-all:: test-build $(TARGETS_BUILD_ALL)
+#@ build-*: build executables for a specific platform.
+build-$(GOOS):: test-build $(TARGETS_BUILD_OS)
 
-#@ build linux platform executables using default (system) architecture.
-build-linux:: test-build init-code $(TARGETS_BUILD_LINUX)
-$(DIR_BUILD)/linux/%:: $(call main-pkg,%) init-code $(SOURCES) $(DIR_BUILD)
-	$(strip GOOS=linux GOARCH=$(BUILD_ARCH) CGO_ENABLED=0 $(GO) build \
-	  -ldflags="$(call ld-flags,$(call main-pkg,$*)) $(LD_FLAGS_LINUX)" \
-	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$*)/main.go);
+# Setup custom build targets using system architecture.
+$(TARGETS_BUILD_CMDS):: build-%: build/$(GOOS)/$(GOARCH)/%
+
+# Calculate variables for build targets.
+build/%:: GOOS = $(word 1,$(subst /, ,$*))
+build/%:: GOARCH = $(word 2,$(subst /, ,$*))
+build/%:: CMD = $(word 3,$(subst /, ,$*))
+build/%:: $(call main-pkg,%) init-code $(SOURCES) $(DIR_BUILD)
+	$(strip GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(GODYNAMIC) \
+	$(GO) build -ldflags="$(call ld-flags,$(call main-pkg,$(CMD)),$(GOOS))" \
+	  $(BUILD_FLAGS) -o $@ $(call main-pkg,$(CMD))/main.go);
+	@if [ "$(GOOS)" == "$(OS)" ] && [ "$(GOARCH)" == "$(ARCH)" ]; then \
+	  ln --symbolic --force $(GOOS)/$(GOARCH)/$(CMD) build; \
+	fi; \
+	if [ "$(GOARCH)" == "$(ARCH)" ]; then \
+	  ln --symbolic --force $(GOARCH)/$(CMD) build/$(GOOS); \
+	fi;
 
 #@ build container image (alias for image-build).
 build-image:: image-build
+
 
 ## Image: targets to build and push container images.
 
@@ -1696,33 +1722,54 @@ image:: $(if $(filter $(IMAGE_PUSH),never),,image-push)
 #@ build container images.
 image-build:: test-image $(TARGETS_IMAGE_BUILD)
 
+# Helper function to build container images.
+image-build = \
+	if [[ $(PLATFORM) =~ "," ]]; then \
+	  CONTAINERS=($$($(IMAGE_CMD) buildx ls | \
+	    grep "docker-container" | awk '{print $$1}')); \
+	  if [ -z "$${CONTAINERS}" ]; then \
+	    "$(IMAGE_CMD)" buildx create --name go-mock \
+	      --driver docker-container >/dev/null 2>&1; \
+	  elif [ -z "$$(echo "$${CONTAINERS[@]}" | grep "*$$")" ]; then \
+	    "$(IMAGE_CMD)" buildx use "$${CONTAINERS[1]}" >/dev/null 2>&1; \
+	  fi; \
+	  BUILD=("$(IMAGE_CMD)" "buildx" "build" "--platform=$(PLATFORM)"); \
+	  if [[ "$(1)" =~ ^"image-push/" ]]; then BUILD+=("--push"); fi; \
+	elif [[ "$(1)" =~ ^"image-build/" ]]; then \
+	  BUILD=("$(IMAGE_CMD)" "build" --tag="$${IMAGE%%:*}:latest"); \
+	elif [[ "$(1)" =~ ^"image-push/" ]]; then \
+	  BUILD=("$(IMAGE_CMD)" "push" "$${IMAGE}"); \
+	fi; \
+	if [ "$${BUILD[1]}" != "push" ]; then \
+	  REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
+	  BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
+	  BUILD+=(--tag="$${IMAGE}" --file="$${FILE}" . \
+	    --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
+	    --label=org.opencontainers.image.vendor="zalando/$(TEAM)" \
+	    --label=org.opencontainers.image.source="$(GITURL)" \
+	    --label=org.opencontainers.image.version="$${IMAGE\#\#*:}" \
+	    --label=org.opencontainers.image.revision="$${REVISION}" \
+	    --label=org.opencontainers.image.base.name="$${BASE}" \
+	    --label=org.opencontainers.image.ref.name="$${IMAGE}"); \
+	fi
+
 # Setup custom image build target dependencies.
 $(foreach line,$(shell $(call image-build-deps,$(IMAGE_NAMES))),$(eval $(line)))
 # Setup custom image build targets.
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-linux
-	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; \
+	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never build images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
-	REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
-	BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
 	$(call emsg,info,building [$${IMAGE} => $${FILE}]); \
-	$(IMAGE_CMD) build --tag "$${IMAGE}" --file="$${FILE}" . \
-	  --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
-	  --label=org.opencontainers.image.vendor="zalando/$(TEAM)" \
-	  --label=org.opencontainers.image.source="$(GITURL)" \
-	  --label=org.opencontainers.image.version="$${IMAGE##*:}" \
-	  --label=org.opencontainers.image.revision="$${REVISION}" \
-	  --label=org.opencontainers.image.base.name="$${BASE}" \
-	  --label=org.opencontainers.image.ref.name="$${IMAGE}"; \
-	$(IMAGE_CMD) tag "$${IMAGE}" "$${IMAGE%%:*}:latest";
+	$(call image-build,$@); echo "$${BUILD[@]}" >&2; "$${BUILD[@]}";
 
 #@ push contianer images - if setup and allowed.
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
+	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never push images [$${IMAGE}]); exit 0; \
 	elif [ "$${VERSION}" == "latest" ]; then $(call emsg,info, \
@@ -1733,7 +1780,8 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
 	fi; \
-	$(IMAGE_CMD) push "$${IMAGE}";
+	$(call emsg,info,pushing [$${IMAGE} => $${FILE}]); \
+	$(call image-build,$@); echo "$${BUILD[@]}" >&2; "$${BUILD[@]}";
 
 
 ## Install: targets to (un-)install software and tools.
@@ -1743,14 +1791,14 @@ install:: $(TARGETS_INSTALL)
 #@ install all software created and used by the project.
 install-all:: $(TARGETS_INSTALL_ALL)
 #@ install-*: install the matched software command or service.
-install-golangci:: install-golangci-lint
+install-golangci:: update-golangci-lint
 	ln --symbolic --force "$(GOBIN)/golangci-lint" "$(GOBIN)/golangci";
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
-	@$(call go-check-version,$*,$(ARGS));
+	@$(call go-update,$*,$(ARGS));
 $(addprefix $(GOBIN)/,$(COMMANDS_GO)): $(GOBIN)/%: $(GOBIN)
-	@$(call go-install-module,$*,$(ARGS));
+	@$(call go-install,$*,$(ARGS));
 # install go tools providing an install.sh script.
 $(TARGETS_INSTALL_SH):: install-%: $(GOBIN)/%
 $(addprefix $(GOBIN)/,$(COMMANDS_SH)): $(GOBIN)/%: $(GOBIN)
@@ -1770,7 +1818,7 @@ $(addprefix $(GOBIN)/,$(TOOLS_NPM:-cli=)): $(GOBIN)/%:
 
 #@ install software command or service created by the project.
 $(TARGETS_INSTALL):: install-%: $(GOBIN)/%
-$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: $(DIR_BUILD)/%
+$(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: build/$(GOOS)/$(GOARCH)/%
 	cp -f "$<" "$(GOBIN)/$*";
 
 #@ uninstall all software created by the project.
@@ -1882,7 +1930,7 @@ RUN_DEPS ?=
 #@ start a postgres database instance for testing.
 run-db:: $(DIR_RUN)
 	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
-	$(call emsg,info,ensuring [$(DB_IMAGE) => $(HOST):$(DB_PORT)); \
+	$(call emsg,info,ensuring [$(DB_IMAGE) => $(HOST):$(DB_PORT)]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [postgres]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
@@ -1900,9 +1948,11 @@ run-db:: $(DIR_RUN)
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(GITNAME)-db 2>/dev/null)" == "true" ]; \
 	do $(call emsg,info,waiting for db container); sleep 1; done && \
+	$(call emsg,success,db container available) && \
 	until $(IMAGE_CMD) exec $(GITNAME)-db \
 	  pg_isready -h localhost -U $(DB_USER) -d $(DB_NAME); \
-	do $(call emsg,info,waiting for db service); sleep 1; done) | \
+	do $(call emsg,info,waiting for db service); sleep 1; done && \
+	$(call emsg,success,db service available)) | \
 	tee -a $(DIR_RUN)/$(GITNAME)-db;
 
 #@ start an AWS localstack instance for testing.
@@ -1923,9 +1973,10 @@ run-aws:: $(DIR_RUN)
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(GITNAME)-aws 2>/dev/null)" == "true" ]; \
 	do $(call emsg,info,waiting for aws container); sleep 1; done && \
-	until $(IMAGE_CMD) exec $(GITNAME)-aws \
-	  curl --silent http://$(HOST):4566; \
+	$(call emsg,success,aws container available) && \
+	until $(IMAGE_CMD) exec $(GITNAME)-aws curl --silent http://$(HOST):4566; \
 	do $(call emsg,info,waiting for aws service); sleep 1; done && \
+	$(call emsg,success,aws services available) && \
 	$(call run-setup-aws) || exit 1) | tee -a $(DIR_RUN)/$(GITNAME)-aws.log;
 
 #@ run-*: start the matched command using the native binary.
@@ -2093,21 +2144,25 @@ update-mocks = \
 		  [%s]\n), command) > "/dev/stderr"; } \
 	  if (!source) { package = $$(NF-1); } \
 	  print target "|" source "|" package "|" command; \
-	}' $(SOURCES) | sort -u #  | sed ':a; N; s/\n/;/; ta' | tr ';' '\n'
+	}' $(SOURCES) | sort -u
 
 #@ updates mock source files using mockgen to latest version.
-update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
+update-mocks:: $(DIR_CACHE) update-mock update-mockgen update-kube
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
-	$(call emsg,info,updating [go-mocks]); \
+	MOCKS="$$($(update-mocks))"; INIT=""; \
+	if [ -z "$${MOCKS}" ]; then exit 0; fi; \
+	$(call emsg,info,updating [go-mocks]); INIT="done"; \
 	GOMOD="$$(go mod graph | awk '($$1 ~ "@") { \
 	  print substr($$1,0,index($$1,"@")-1) OFS $$1 \
-	}' | sort -u)"; $(update-mocks) | \
+	}' | sort -u)"; \
+	echo -e "$${MOCKS}" | \
 	while IFS="|" read -r TARGET SOURCE PACKAGE CMD; do \
 	  if [ -n "$${SOURCE}" ]; then touch "$(FILE_MOCKS).src"; \
 	    if [ ! -f "$${TARGET}" ] || [ "$${TARGET}" -ot "$${SOURCE}" ] || \
 	       [ -z "$$(grep "$${TARGET} $${CMD}" "$(FILE_MOCKS).src")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${TARGET} .*||; /^$$/d;" "$(FILE_MOCKS).src" && \
+	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && \
+	      sed --in-place --expression="s|^$${TARGET} .*||; /^$$/d;" \
+	        "$(FILE_MOCKS).src" && \
 	      echo "$${TARGET} $${CMD}" >>"$(FILE_MOCKS).src"; \
 	    fi; \
 	  elif [ -n "$${PACKAGE}" ]; then touch "$(FILE_MOCKS).pkg"; \
@@ -2115,8 +2170,9 @@ update-mocks:: $(DIR_CACHE) install-mockgen install-mock update-kube
 	      '(pkg ~ "^"$$1) { print $$2; nextfile }')"; \
 	    if [ ! -f "$${TARGET}" ] || \
 	       [ -z "$$(grep "$${PACKAGE} $${CMD}" "$(FILE_MOCKS).pkg")" ]; then \
-	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && sed --in-place \
-	        --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" "$(FILE_MOCKS).pkg" && \
+	      echo "$${CMD}" >&2; $${CMD} 2>/dev/null && touch "$${TARGET}" && \
+	      sed --in-place --expression="s|^$${PACKAGE%@*}@.* $${CMD}||; /^$$/d;" \
+	        "$(FILE_MOCKS).pkg" && \
 	      echo "$${PACKAGE} $${CMD}" >>"$(FILE_MOCKS).pkg"; \
 	    fi; \
 	  elif [ -n "$${TARGET}" ]; then \
@@ -2182,14 +2238,14 @@ update-config = \
 	  if [ -n "$(1)" ]; then GOMAKE="$${GOMAKE}@$(1)"; else \
 	    GOMAKE="$$($(call go-pkg-latest,$${GOMAKE}))"; \
 	  fi; CONFIG="$(GOPATH)/pkg/mod/$${GOMAKE}/config"; \
-	  $(call go-install,go-make,$${GOMAKE}); \
+	  $(call go-install-module,go-make,$${GOMAKE}); \
 	else CONFIG="$(GOMAKE_CONFIG)"; fi
 
 # TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
 
 #@ [current|major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
-update/go.mod:: install-gomajor
+update/go.mod:: update-gomajor
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
 	if [ -n "$(ARGS)" ] && [[ " $(ARGS) " =~ " current " ]]; then \
 	  if [[ " $(ARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
@@ -2213,7 +2269,7 @@ update/go.mod:: install-gomajor
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
-update/go.mod?:: install-gomajor
+update/go.mod?:: update-gomajor
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
 	$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
 	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
@@ -2279,7 +2335,7 @@ update-python::
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	@$(call go-install-module,$*,$(ARGS));
+	@$(call go-install?,$*,$(ARGS));
 # update tools providing an install.sh tool.
 $(TARGETS_UPDATE_SH):: update-%: $(GOBIN)
 	@if command -v $*; then \
@@ -2400,13 +2456,15 @@ debug-targets-lint::
 
 #@ debug the build target environment variables.
 debug-targets-build::
-	@echo 'TARGETS_BUILD $(TARGETS_BUILD)'; \
-	echo 'TARGETS_BUILD_LINUX $(TARGETS_BUILD_LINUX)';
+	@echo 'TARGETS_BUILD_OS $(TARGETS_BUILD_OS)'; \
+	echo 'TARGETS_BUILD_ALL $(TARGETS_BUILD_ALL)'; \
+	echo 'TARGETS_BUILD_CMDS $(TARGETS_BUILD_CMDS)'; \
 
 #@ debug the image target environment variables.
 debug-targets-image::
 	@echo 'TARGETS_IMAGE_BUILD $(TARGETS_IMAGE_BUILD)'; \
 	echo 'TARGETS_IMAGE_PUSH $(TARGETS_IMAGE_PUSH)'; \
+	echo 'TARGETS_IMAGE_PUSH_DEPS $(TARGETS_IMAGE_PUSH_DEPS)'; \
 
 #@ debug the install target environment variables.
 debug-targets-install::
