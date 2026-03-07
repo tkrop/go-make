@@ -47,9 +47,8 @@
 all
 all-clean
 build
+build-all
 build-image
-build-linux
-build-native
 call
 clean
 clean-all
