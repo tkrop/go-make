@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.1.0
+GOMAKE_DEP := github.com/tkrop/go-make@v0.1.1
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -304,8 +304,8 @@ go-path = $(word 1,$(subst @,$(SPACE),$(1)))
 go-version = $(word 2,$(subst @,$(SPACE),$(1)))
 # Function for updating tools and warning about package version mismatches.
 go-update = \
-	if [ -n "$$($(GO) version -v "$(GOBIN)/$(1)" 2>/dev/null)" ]; then \
-	  MODULE="$(call go-pkg,$(TOOLS_GO),origin,^$(1)$$,,$(2))"; \
+	if [ ! -f "$(GOBIN)/$(1)" ]; then $(call go-install,$(1),$(2)); else \
+	  MODULE="$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2))"; \
 	  GOVERSION="$$($(GO) version -v "$(GOBIN)/$(1)" | sed "s/.*: go//")"; \
 	  if [[ "$${GOVERSION}" != "$(GOVERSION)" ]]; then \
 	    CHECK="$${GOVERSION} => $(GOVERSION)"; \
@@ -313,7 +313,7 @@ go-update = \
 		  build [$${CHECK}], or install matching compiler version); \
 	  fi; \
 	  if [ "$${MODULE\#\#*@}" != "latest" ]; then \
-	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd}"; \
+	    MPATH="$${MODULE%%@*}"; MPATH="$${MPATH%/cmd*}"; \
 	    MVERSION="$$($(call go-update-version,$(1),$${MPATH}))"; \
 	    if [ "$${MVERSION}" != "$${MODULE\#\#*@}" ]; then \
 	      CHECK="$${MVERSION} => $${MODULE\#\#*@}"; \
@@ -321,24 +321,22 @@ go-update = \
 	        version [$${CHECK}], to sync with project version); \
 	    fi; \
 	  fi; \
-	elif [ "$(1)" != "go-make" ]; then $(call emsg,warning,$(1) not installed); \
-	elif [ -f "$(GOBIN)/$(1)" ]; then $(call go-install,$(1),$(2)); fi
+	fi
 # Function to check go modules version.
 go-update-version = $(GO) version -m "$(GOBIN)/$(1)" | \
 	grep -E "^\s*(mod|dep)\s*$(2)" | cut -f 4
 # Function to update with warning about automated updating of tools.
 go-update-check = \
 	if [ "$(3)" != "(devel)" ]; then \
-	  $(call emsg,info,$(1) $(4): updating [$(1) => $(2)]); \
+	  $(call emsg,info,updating [$(1) => $(2)] - $(4)); \
 	  $(call go-install-module,$(1),$(2)); \
 	else \
 	  $(call emsg,warning,$(1) $(4): run 'make update-$(1)' $(5)); \
 	fi
 # Function to install go programs from package the go tooling list.
-go-install? = \
-	$(if $(wildcard $(GOBIN)/$(1)),:,$(call go-install,$(1),$(2)))
 go-install = \
-	$(call go-install-message,$(1),$(call go-pkg,$(TOOLS_GO),module,^$(1)$$,,$(2)))
+	$(call go-install-message,$(1),$(call go-pkg, \
+		$(TOOLS_GO),module,^$(1)$$,,$(2)))
 go-install-message = \
 	$(call emsg,info,installing [$(1) => $(2)]); $(call go-install-module,$(1),$(2))
 go-install-module = \
@@ -406,9 +404,9 @@ gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
 	else echo "(devel)"; fi)
 
 # https://github.com/kubernetes/code-generator/tags
-K8S_CODEGEN_VERSION ?= v0.34.1
+K8S_CODEGEN_VERSION ?= v0.35.2
 # https://github.com/golangci/golangci-lint/tags
-GOLANGCI_VERSION ?= v2.5.0
+GOLANGCI_VERSION ?= v2.11.2
 # https://github.com/mgechev/revive/tags
 # https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
 REVIVE_VERSION ?= v1.12.0
@@ -457,9 +455,11 @@ TOOLS_NPM += \
 	markdownlint-cli
 
 
-# Check for the actually used go-make version.
+# Check and align the actually used go-make version. This is only needed when
+# running `make --file=config/Makefile.base` directly, but not when running
+# `go-make`. 
 #$(call cdebug, go-update = $(call escape,$(call go-update,go-make,)))
-$(shell $(call go-update,go-make,))
+$(if $(wildcard $(GOBIN)/go-make),$(shell $(call go-update,go-make,)))
 
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
@@ -2335,7 +2335,7 @@ update-python::
 #@ update-*: update the matched software command or service.
 # update go tools used by the project.
 $(TARGETS_UPDATE_GO):: update-%: $(GOBIN)
-	@$(call go-install?,$*,$(ARGS));
+	@$(call go-update,$*,$(ARGS));
 # update tools providing an install.sh tool.
 $(TARGETS_UPDATE_SH):: update-%: $(GOBIN)
 	@if command -v $*; then \
