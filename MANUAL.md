@@ -417,14 +417,17 @@ The build targets can build native as well as linux platform executables using
 the default system architecture.
 
 ```bash
-make build         # builds default executables (native)
-make build-native  # builds native executables using system architecture
-make build-linux   # builds linux executable using the default architecture
+make build         # builds executables for the default platform
+make build-all     # builds executables for all supported platforms
+make build-*       # builds executables for a specific platform
 make build-image   # builds container image (alias for image-build)
 ```
 
 The platform and architecture of the created executables can be customized via
-`BUILDOS` and `BUILDARCH` environment variables.
+`GOOS` and `GOARCH` environment variables enabling cross-platform compilation.
+The binaries are stored under `build/$(GOOS)/$(GOARCH)/$(NAME)`. The images of
+matching the system architecture are also directly linked from `build` and
+`build/$(OS)`.
 
 
 ### Image targets
@@ -443,7 +446,18 @@ The targets are checking silently whether there is an image at all, and whether
 it should be build and pushed according to the pipeline setup. You can control
 this behavior by setting `IMAGE_PUSH` to `never` or `test` to disable pushing
 (and building) or enable it in addition for pull requests. Any other value will
-ensure that images are only pushed for `main`-branch and local builds.
+ensure that images are only pushed for the `main`-branch and local builds.
+
+The `image`-targets support building and pushing multi-platorm builds, if you
+customize the `PLATFORM` variable with a comma-separated list of platforms,
+e.g. `linux/amd64,linux/arm64,darwin/arm64`.
+
+**Note:** [`go-make`][go-make] automatically creates a build instance, if no
+multi-platform instance is available. However, it does not support loading of
+images from the instance into a local repository, since supporting a local
+multi-platform repository is too complicated and out-of-scope for now. As a
+consequence, all multi-platform images must be directly pushed into the
+target repository.
 
 
 ### Run targets

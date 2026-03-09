@@ -549,6 +549,8 @@ var (
 	// regexMakeOptions is used to match the `go-make` options output to remove
 	// the options that have added between make 4.3 and make 4.4.
 	regexMakeOptions = regexp.MustCompile(`(?m)(^--(shuffle|jobserver-style)=?)\n`)
+	// regexBuildOs is used to match the build OS-specific target output.
+	regexBuildOs = regexp.MustCompile(`(?m)^build-` + runtime.GOOS + `\n`)
 
 	// phFixtures replaces the placeholders in the test fixture with the
 	// values provided to the replacer.
@@ -594,6 +596,7 @@ func CreateFilter(regexGoMakeTest *regexp.Regexp) func(string) string {
 		str = regexMakeTarget.ReplaceAllString(str, "$1 update target $2")
 		str = regexMakeUpdate.ReplaceAllString(str, "")
 		str = regexMakeOptions.ReplaceAllString(str, "")
+		str = regexBuildOs.ReplaceAllString(str, "")
 		return str
 	}
 }
