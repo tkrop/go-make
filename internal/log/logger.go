@@ -1,4 +1,6 @@
 // Package log provides a common interface for logging.
+//
+// revive:disable-next-line:package-naming // very intentional choice.
 package log
 
 import (
