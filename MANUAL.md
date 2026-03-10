@@ -12,19 +12,19 @@ In the following we use just `make`. Please substitute with `go-make`, if you
 have not installed the wrapper by initially calling `go-make init-make` on a
 project.
 
-[go-make]: https://github.com/tkrop/go-make
+[go-make]: <https://github.com/tkrop/go-make>
 
 
 ## Setup and customization
 
-While [`make`][go-make] should work out-of-the-box by using sensitive defaults,
+While [`go-make`][go-make] should work out-of-the-box using sensitive defaults,
 the latest default [`Makefile`](Makefile) and [`Makefile.vars`](Makefile.vars)
 can be installed in a project directory through calling `make init-make`.
 Similar default config files for tools can be installed using `make init/<file>`
 to allow customization. All files can be updated by calling `make update-make`
 or simpler `make update`.
 
-**Warning:** `go-make` automatically installs `pre-commit` and `commit-msg`
+**Warning:**  [`go-make`] automatically installs `pre-commit` and `commit-msg`
 [hooks][git-hooks] overwriting and deleting pre-existing hooks (see also
 [Customizing Git - Git Hooks][git-hooks]). The `pre-commit` hook calls
 `make commit` as an alias for executing  `test-go`, `test-unit`, `lint-<level>`,
@@ -87,14 +87,14 @@ defined using deputy targets. Please read the great [GNU `make` manual][make]
 for more information on how [`make`][make] works and interacts with its
 execution environment.
 
-[make-vars]: https://www.gnu.org/software/make/manual/html_node/Using-Variables.html
-[make-calls]: https://www.gnu.org/software/make/manual/html_node/Call-Function.html
-[make-rules]: https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html
-[make-prerequisite]: https://www.gnu.org/software/make/manual/html_node/Prerequisite-Types.html
-[make-receipts]: https://www.gnu.org/software/make/manual/html_node/Recipes.html
-[make-double-colon]: https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html
-[make-phony]: https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
-[make]: https://www.gnu.org/software/make/manual/html_node/index.html
+[make-vars]: <https://www.gnu.org/software/make/manual/html_node/Using-Variables.html>
+[make-calls]: <https://www.gnu.org/software/make/manual/html_node/Call-Function.html>
+[make-rules]: <https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html>
+[make-prerequisite]: <https://www.gnu.org/software/make/manual/html_node/Prerequisite-Types.html>
+[make-receipts]: <https://www.gnu.org/software/make/manual/html_node/Recipes.html>
+[make-double-colon]: >https://www.gnu.org/software/make/manual/html_node/Double_002dColon.html>
+[make-phony]: <https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html>
+[make]: <https://www.gnu.org/software/make/manual/html_node/index.html>
 
 
 ### Modifying variables
@@ -258,8 +258,8 @@ compensate this shortcoming the commands need to support setup via command
 specific environment variables following the principles of the
 [Twelf Factor App][12factor].
 
-[12factor]: https://12factor.net/
-[localstack]: https://docs.localstack.cloud/
+[12factor]: <https://12factor.net/>
+[localstack]: <https://docs.localstack.cloud/>
 
 
 ## Standard targets
@@ -428,6 +428,10 @@ The platform and architecture of the created executables can be customized via
 The binaries are stored under `build/$(GOOS)/$(GOARCH)/$(NAME)`. The images of
 matching the system architecture are also directly linked from `build` and
 `build/$(OS)`.
+
+**Note:** By default the `build` targets create statically linked images to
+create selfsufficient software. If you want to make use of dynamically linked
+binaries, you can enable this by setting `CGO_ENABLED` or `GODYNAMIC` to `1`.
 
 
 ### Image targets
@@ -683,7 +687,7 @@ described by the [GitHub Development Convention][github-commit].
 | 📦 `build`    | Builds        | Changes the product delivery.
 | 🏗️  `ci`      | Integrations  | Improves the build process.
 
-[github-commit]: https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md
+[github-commit]: <https://github.com/FlowingCode/DevelopmentConventions/blob/main/conventional-commits.md>
 
 
 ## Compatibility

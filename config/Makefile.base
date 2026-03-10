@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.1.1
+GOMAKE_DEP := github.com/tkrop/go-make@v0.1.2
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -289,7 +289,7 @@ GOARCH ?= $(shell $(GO) env GOARCH)
 ifdef CGO_ENABLED
 	GODYNAMIC := $(CGO_ENABLED)
 else
-	GODYNAMIC ?= 1
+	GODYNAMIC ?= 0
 endif
 PLATFORM ?= $(GOOS)/$(GOARCH)
 # Setup go to use desired and consistent go versions.
