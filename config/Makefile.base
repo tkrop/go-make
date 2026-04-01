@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.1.3
+GOMAKE_DEP := github.com/tkrop/go-make@v0.1.4
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -548,7 +548,7 @@ DB_IMAGE ?= postgres:$(DB_VERSION)
 
 # Setup default aws startup settings.
 AWS_SERVICES ?= sqs s3
-AWS_VERSION ?= latest
+AWS_VERSION ?= 4.14 # Set fixed version because of license changes.
 AWS_IMAGE ?= localstack/localstack:$(AWS_VERSION)
 
 # Setup java support.
@@ -876,7 +876,7 @@ git-number = \
 	fi | sort --numeric-sort --reverse | head --lines=1 | \
 	while read NUM; do echo $$((NUM + 1)); done)
 git-message = \
-	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update deps"; fi; \
+	if [ -z "$${MESSAGE}" ]; then MESSAGE="chore: update dependencies"; fi; \
 	if ! [[ "$${MESSAGE}" =~ ^[^:]+:.*$$ ]]; then \
 	  if [[ "$${MESSAGE}" =~ ^\([a-z]+\)" "+.*$$ ]]; then \
 	    MESSAGE="$(1)$${MESSAGE%% *}: $${MESSAGE\#* }"; \
@@ -1781,6 +1781,8 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	  aborting - we never push pull request images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
+	elif docker buildx imagetools inspect $${IMAGE}; then $(call emsg, \
+	  warning,skipping - image already exists [$${IMAGE}]); exit 0; \
 	fi; \
 	$(call emsg,info,pushing [$${IMAGE} => $${FILE}]); \
 	$(call image-build,$@); echo "$${BUILD[@]}" >&2; "$${BUILD[@]}";

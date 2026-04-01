@@ -238,18 +238,23 @@ You can also override the default setup via the `DB_HOST`, `DB_PORT`, `DB_NAME`,
 **Note:** when running test against a DB you usually have to extend the default
 `TEST_TIMEOUT` of 10s to a less aggressive value.
 
-To enable AWS [LocalStack][localstack] you have to add `run-aws` to the default
-`TEST_DEPS` and `RUN_DEPS` variables, as well as to add your comma separated
-list of required aws services to the `AWS_SERVICES` variable. The empty default
-value enables all services as standard.
+To enable [LocalStack][localstack] for setting up AWS services you have to add
+`run-aws` to the default `TEST_DEPS` and `RUN_DEPS` variables, as well as to add
+your comma separated list of required aws services to the `AWS_SERVICES`
+variable. The empty default value enables all services as standard.
+
+**Note:** since [LocalStack][localstack] recently changed its license terms, I
+have changed support to use the last public available container image version.
 
 ```Makefile
 # Setup required targets before testing (default: <empty>).
 TEST_DEPS := run-aws
 # Setup required targets before running commands (default: <empty>).
 RUN_DEPS := run-aws
-# Setup required aws services for testing (comma separated, default: <empty>).
+# Setup required AWS services for testing (comma separated, default: <empty>).
 AWS_SERVICES := s3,sns,sqs
+# Setup localstack version used for AWS services (default: 4.14)
+AWS_VERSION := 4.14
 ```
 
 **Note:** Currently, the [Makefile](config/Makefile.base) does not support all
