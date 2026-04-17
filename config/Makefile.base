@@ -236,6 +236,7 @@ FILE_MARKDOWN ?= $(call find-config,.markdownlint.yaml)
 FILE_GITLEAKS ?= $(call find-config,.gitleaks.toml)
 FILE_REVIVE ?= $(call find-config,revive.toml)
 FILE_CODACY ?= $(call find-config,.codacy.yaml)
+FILE_GITPR ?= $(call find-config,pull-request.md)
 FILE_HEADER ?=
 
 # Setup default files with special meaning.
@@ -765,8 +766,10 @@ show-help = awk ' $(awk-color) \
 	} \
 	/^\#@ / { \
 	  if (i = index($$0, ":")) { \
+	    o = length($$2) + 4; \
+	    if (o < i) target = $$2 ":" substr($$0, o, i - o); else target = $$2; \
 	    printf("  $(call msg,target,%-25s,) %s\n", \
-	      color(substr($$0, 4, i - 4)), color(substr($$0, i + 2))) \
+	      target, color(substr($$0, i + 2))) \
 	  } else { line = substr($$0, 4) } next \
 	} \
 	/^[a-zA-Z_0-9?-]+:/ { \
@@ -1004,15 +1007,21 @@ git-create:: git-create-feat
 $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	@BRANCH="$(firstword $(ARGS))"; ARGS=""; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
-	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; \
-	$(call git-message,$*,$(git-number)); \
+	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; ISSUE=$(git-number); \
+	$(call git-message,$*,$${ISSUE}); \
 	$(call emsg,info,git-create [$${BRANCH} => $${MESSAGE}]); \
 	$(GIT) checkout -B "$${BRANCH}" && \
-	$(GIT) commit --signoff --message="$${MESSAGE}" && \
-	$(GIT) push --set-upstream origin "$${BRANCH}" && \
+	if git status --porcelain | grep -q '^[AMDR]'; then \
+	  $(GIT) commit --signoff --message="$${MESSAGE}"; \
+	fi && $(GIT) push --set-upstream origin "$${BRANCH}" && \
 	if command -v gh >/dev/null 2>&1; then \
-	  gh pr create --base "$(git-branch-main)" --head "$${BRANCH}" \
-	    --draft --assignee "@me" --title "$${MESSAGE}"; \
+	  PRURL="$$(gh pr create --draft \
+	    --base "$(git-branch-main)" --head "$${BRANCH}" \
+	    --title "$${MESSAGE}" --body "$$(MESSAGE="$${MESSAGE}" \
+	      AUTHOR="$${AUTHOR:-${GITAUTHOR}}" ISSUE="$${ISSUE}"  \
+	      envsubst <"$(FILE_GITPR)")")" && \
+	  gh api "repos/:owner/:repo/issues/$${PRURL##*/}/assignees" --silent \
+	    --raw-field "assignees[]=$$(gh api user --jq ".login")"; \
 	fi || $(GIT) checkout "$${BRANCH}"; $(abort);
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
@@ -1093,6 +1102,13 @@ go.sum go.mod&: $(SOURCES)
 	  $(if $(wildcard go.mod),,$(GO) mod init "$(GITURL)" &&) \
 	  $(GO) mod download all && touch go.mod go.sum && \
 	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION))
+
+#@ initialize the go generated resources.
+init-generate::
+	@$(call emsg,info,updating [go-gen]); \
+	go generate -skip " mock " -skip " mockgen " -skip " deepcopy-gen " \
+	 -skip " client-gen " -skip " lister-gen " -skip " informer-gen " \
+	 -skip " controller-gen " ./...;
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1342,6 +1358,7 @@ GOLANGCI_FORMATTERS ?= gofmt gofumpt goimports golines
 # optional (setup-required): depguard ireturn
 LINTERS_CUSTOM ?=
 LINTERS_DISABLED ?=
+LINTERS_FILTERED ?=
 LINTERS_DISCOURAGED ?= \
 	exhaustruct embeddedstructfieldcheck gochecknoglobals gochecknoinits godox \
 	noinlineerr nonamedreturns paralleltest rowserrcheck tagalign testifylint \
@@ -1366,7 +1383,7 @@ LINTERS_OPTIONAL ?= \
 	canonicalheader forcetypeassert funcorder godoclint inamedparam nlreturn \
 	sloglint zerologlint
 
-LINT_FILTER := $(LINTERS_CUSTOM) $(LINTERS_DISABLED)
+LINT_FILTER := $(LINTERS_CUSTOM) $(LINTERS_DISABLED) $(LINTERS_FILTERED)
 LINT_MIN ?= $(subst $(SPACE),$(COMMA),$(strip \
 	$(filter-out $(LINT_FILTER),$(LINTERS_MINIMUM)) $(LINTERS_CUSTOM)))
 LINT_BASE ?= $(subst $(SPACE),$(COMMA),$(strip $(LINT_MIN) \
@@ -2132,7 +2149,7 @@ update-mocks = \
 	function value(arg, param, len) { \
 	  if (arg != param) { return substr(arg, len) } else { i++; return $$i; } \
 	} \
-	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?") { \
+	($$1 == "//go:generate" && $$2 ~ "^mock(gen)?$$") { \
 	  package = ""; source = ""; target = ""; command = $$2; \
 	  for (i = 3; i <= NF; i++) { arg = $$i; \
 	    if (arg ~ "^" parg) { \
@@ -2197,7 +2214,7 @@ update-go::
 	if [ "$(ARGS)" == "latest" ]; then VERSION="$(update-go-latest)"; \
 	elif [[ "$(ARGS)" =~ ^[0-9.]+$$ ]]; then VERSION="$(ARGS)"; \
 	else VERSION="$(GOVERSION)"; fi; \
-	$(call emsg,info,updating [$${VERSION}]); \
+	$(call emsg,info,updating [go-$${VERSION}]); \
 	if ! [[ "$(GOVERSION)" =~ ^$${VERSION}[0-9.]*$$ ]]; then \
 	  $(call emsg,warning,current compiler differs \
 	    [$(GOVERSION) => $${VERSION}]); \
