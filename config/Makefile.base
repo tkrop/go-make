@@ -147,8 +147,8 @@ $(call cdebug,using AWK [$(shell echo | awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
 find-all = find $(1) ! -path "./.git/*" ! -path "./.github/*" \
-	! -path "./run/*" ! -path "./build/*" \( $(2) \) 2>/dev/null | \
-	sed "s/^.\///g"
+	! -path "*/vendor/*" ! -path "./run/*" ! -path "./build/*" \
+	\( $(2) \) 2>/dev/null | sed "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
 clean-file = $(call find-all,$(1),-type f \( $(2) \) \
 	-exec rm --verbose --force {} \;)
@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.1.4
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.0
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -323,7 +323,7 @@ go-update = \
 	    fi; \
 	  fi; \
 	fi
-# Function to check go modules version.
+# Function to check go versions used in modules.
 go-update-version = $(GO) version -m "$(GOBIN)/$(1)" | \
 	grep -E "^\s*(mod|dep)\s*$(2)" | cut -f 4
 # Function to update with warning about automated updating of tools.
@@ -423,11 +423,15 @@ KUBE_SOURCES += $(strip $(shell $(call find-go,.,-name "mock_*_test.go" -o \
 		-name "mock_*.go" -o -name "$(FILE_DEEPCOPY)")) \
 	$(shell if [ -n "$(KUBE_DIRS)" ]; then $(call find-go,$(KUBE_DIRS),); fi))
 SOURCES := $(filter-out $(KUBE_SOURCES),$(shell $(call find-go,.,)))
-MODULES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
+PACKAGES := $(shell echo $(SOURCES) | xargs -r dirname | sort --unique)
+MODULES := $(shell $(call find-all,.,-type f -name "go.mod" -exec dirname {} \;))
+GOMODS := $(patsubst ./%,%,$(MODULES:%=%/go.mod))
 
 # Setup default tool command versions to be installed.
-TOOL_MOCKGEN ?= $(or $(shell awk '($$1 ~ "/mock$$") {  print $$1 }' \
-	go.mod 2>/dev/null | head --line=1),go.uber.org/mock)/mockgen
+TOOL_MOCKGEN ?= $(or $(if $(GOMODS),$(shell \
+	awk '($$1 ~ "/mock$$") {  print $$1 }' $(GOMODS) | \
+	head --line=1)),go.uber.org/mock)/mockgen
+
 TOOLS_GO += $(TOOL_MOCKGEN) \
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
 	github.com/zalando/zally/cli/zally \
@@ -481,8 +485,8 @@ GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
 GITURL := $(shell $(GIT) config --get remote.origin.url 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/^x-access-token:[^@]*@//; s/:/\//;")
 GITHOST := $(word 1,$(subst /, ,$(GITURL)))
-GITOWNER := $(word 2,$(subst /, ,$(GITURL)))
-GITREPO := $(word 3,$(subst /, ,$(GITURL)))
+GITOWNER := $(or $(word 2,$(subst /, ,$(GITURL))),$(USER))
+GITREPO := $(or $(word 3,$(subst /, ,$(GITURL))),$(notdir $(GITROOT)))
 GITNAME := $(GITOWNER)-$(GITREPO)
 $(call cdebug,using GITURL [$(GITURL)])
 
@@ -690,6 +694,8 @@ TARGETS_INIT_CODACY := $(addprefix init-,$(CODACY_BINARIES) analysis-cli)
 TARGETS_TEST_INIT := test-clean init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-,$(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-,$(CODACY_BINARIES))
+TARGETS_LINT_CODACY :=  lint-revive $(TARGETS_LINT_CODACY_CLIENTS) \
+	$(TARGETS_LINT_CODACY_BINARIES)
 TARGETS_IMAGE_BUILD := $(addprefix image-build/,$(IMAGE_FILES))
 TARGETS_IMAGE_PUSH := $(addprefix image-push/,$(IMAGE_FILES))
 TARGETS_BUILD_OS := $(addprefix build/$(GOOS)/$(GOARCH)/,$(COMMANDS))
@@ -889,7 +895,7 @@ git-message = \
 	  MESSAGE="$${MESSAGE} (\#$(2))"; \
 	fi
 git-labels = \
-	--label "$(GIT-LABELS-$(call upper,$(1)))"
+	--label "$(GIT_LABELS_$(call upper,$(1)))"
 
 # TODO: fix issue numbers and wrapper handling of brackets! 
 # $(addprefix git-message-,$(COMMIT_CONVENTION)):: git-message-%:
@@ -1095,20 +1101,38 @@ $(DIR_GIT)/hooks/pre-commit: $(MAKEFILE_LIST)
 	fi;
 
 #@ initialize the go modules and dependencies.
-init-go:: go.mod go.sum
-go.sum go.mod&: $(SOURCES)
-	@$(call emsg,info,updating [go.mod&go.sum]);
-	$(if $(SOURCES), \
-	  $(if $(wildcard go.mod),,$(GO) mod init "$(GITURL)" &&) \
-	  $(GO) mod download all && touch go.mod go.sum && \
-	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION))
+init-go:: go.mod go.sum go.work
+go.sum go.mod go.work&: $(SOURCES)
+	@if [ "$(MODULES)" == "." ]; then \
+	  $(call emsg,info,updating [go.mod&go.sum]); \
+	  if [ ! -f go.mod ]; then \
+	    echo "$(GO) mod init $(GITURL)"; $(GO) mod init "$(GITURL)"; \
+	  fi; \
+	else \
+	  $(call emsg,info,updating [go.mod&go.sum&go.work]); \
+	  if [ ! -f go.work ]; then \
+	    echo "$(GO) work init"; $(GO) work init; \
+	  fi; \
+	  echo "$(GO) work use $(MODULES)"; $(GO) work use $(MODULES); \
+	fi; \
+	for DIR in $(MODULES); do ( \
+	  echo "cd "$${DIR}" && $(GO) mod download all" && \
+	  cd "$${DIR}"&& $(GO) mod download all && touch go.mod go.sum && \
+	  echo "$(GO) mod tidy -x -v -e -compat=$(GOVERSION)" && \
+	  $(GO) mod tidy -x -v -e -compat=$(GOVERSION) \
+	) done; \
+	if [ "$(MODULES)" != "." ]; then \
+	  echo "$(GO) work sync"; go work sync; \
+	fi;
 
 #@ initialize the go generated resources.
 init-generate::
 	@$(call emsg,info,updating [go-gen]); \
-	go generate -skip " mock " -skip " mockgen " -skip " deepcopy-gen " \
-	 -skip " client-gen " -skip " lister-gen " -skip " informer-gen " \
-	 -skip " controller-gen " ./...;
+	for DIR in $(MODULES); do ( \
+	  cd "$${DIR}"; go generate -skip " mock " -skip " mockgen " \
+	    -skip " deepcopy-gen " -skip " client-gen " -skip " lister-gen " \
+	    -skip " informer-gen " -skip " controller-gen " ./... \
+	); done;
 
 #@ initialize the codacy support.
 init-codacy:: $(TARGETS_INIT_CODACY) init-jre
@@ -1280,7 +1304,7 @@ test-args = ARGS=($(ARGS)); \
 		sed "s|^|./|"; \
 	  echo $${ARGS[@]/\#/./}; \
 	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ]; then \
-	  for ARG in $(MODULES); do \
+	  for ARG in $(PACKAGES); do \
 	    [[ "$${ARG}" == $${ARGS[@]}* ]] && echo "./$${ARG}"; \
 	  done; \
 	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
@@ -1312,20 +1336,20 @@ $(TEST_ALL):: $(SOURCES) init-code $(TEST_DEPS) $(DIR_BUILD)
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
 	  -coverprofile $@ $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(MODULES))));)
+	    $(addprefix ./,$(PACKAGES))));)
 $(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
 	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(MODULES))));)
+	    $(addprefix ./,$(PACKAGES))));)
 	@$(abort);
 $(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
 	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
-	    $(addprefix ./,$(MODULES))));)
+	    $(addprefix ./,$(PACKAGES))));)
 	@$(abort);
 
 #@ execute a kind of self-test running the main targets.
@@ -1342,7 +1366,8 @@ merge-yq = $(if $(wildcard $(2)),<($(GOBIN)/yq eval-all \
 
 # Repleace golangci-lint configuration file with merged version.
 FILE_GOLANGCI := $(if $(filter format%,$(word 1,$(MAKECMDGOALS))) \
-	,$(FILE_GOLANGCI),$(call merge-yq,$(FILE_GOLANGCI),.golangci-ext.yaml))
+	,$(FILE_GOLANGCI),$(call merge-yq,$(FILE_GOLANGCI),$(strip \
+	$(CURDIR)/.golangci-ext.yaml)))
 # Setup golangci-lint configuration.
 GOLANGCI_CONFIG ?= --config $(FILE_GOLANGCI)
 # Setup golangci-lint formatters (not yet supported).
@@ -1431,10 +1456,12 @@ else
 endif
 
 lint = @$(call emsg,info,linting [$(1)]); \
-	echo "$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1)))" >&2; \
-	$(LINT_CMD) $(LINT_ARGS_$(call upper,$(1))) | \
-	  sed --regexp-extended 's|^(.*):(.*)\((.*)\)$$|[\3] \1:\2|'; \
-	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
+	for DIR in $(MODULES); do \
+	  echo """cd "$${DIR}" && $(LINT_CMD) $(LINT_ARGS_$(call upper,$(1)))""" >&2; \
+	  cd "$${DIR}" && $(LINT_CMD) $(LINT_ARGS_$(call upper,$(1))) | \
+	    sed --regexp-extended 's|^(.*):(.*)\((.*)\)$$|[\3] \1:\2|'; \
+	  if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi; \
+	done;
 
 ## Lint: targets to lint source code.
 
@@ -1526,7 +1553,7 @@ lint-config:: update-golangci-lint update-yq
 	  } { print $$0 }';
 
 #@ execute all codacy linters activated by the custom setup (all files).
-lint-codacy:: lint-revive $(TARGETS_LINT_CODACY_CLIENTS) $(TARGETS_LINT_CODACY_BINARIES)
+lint-codacy:: $(TARGETS_LINT_CODACY)
 $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
 	@$(call emsg,info,linting [$*]); \
 	LARGS=("--skip-uncommitted-files-check"); \
@@ -1542,10 +1569,13 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
 	  LARGS+=("--project=$(CODACY_PROJECT)"); \
 	  LARGS+=("--api-token=$(CODACY_API_TOKEN)"); \
 	fi; \
-	CMD=("$(JRE_HOME)/bin/java" \
-	  -jar "$(GOBIN)/codacy-analysis-cli-$(CODACY_ANALYSIS-CLI_VERSION)" \
-	  analyze "$${LARGS[@]}" --tool $*); \
-	echo "$${CMD[@]}"; "$${CMD[@]}" || $(CODACY_CONTINUE);
+	for DIR in $(MODULES); do \
+	  CMD=("$(JRE_HOME)/bin/java" \
+	    -jar "$(GOBIN)/codacy-analysis-cli-$(CODACY_ANALYSIS-CLI_VERSION)" \
+	    analyze "$${LARGS[@]}" --tool $*); \
+	  echo """cd "$${DIR}" && $${CMD[@]};""" >&2; \
+	  cd "$${DIR}" && "$${CMD[@]}" || $(CODACY_CONTINUE); \
+	done; \
 
 LINT_ARGS_GOSEC_LOCAL := -log /dev/null -exclude G307 ./...
 LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
@@ -1556,6 +1586,14 @@ LINT_ARGS_GOLANGCI_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 LINT_ARGS_GOLANGCI_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 	--output.json.path stdout $(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) \
 	2>/dev/null
+
+lint-codacy-echo = \
+	$(if $(or $(CODACY_PROJECT_TOKEN), $(CODACY_API_TOKEN)),$(strip \
+	  cd $${DIR} && $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_UPLOAD) | \
+	    $(GOBIN)/codacy-$*-$${VERSION} | curl "$${LARGS[@]}" --data @- \
+	    "$${BASE}/issuesRemoteResults";),$(strip \
+	  cd $${DIR} && $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL);) \
+	)
 
 $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	@$(call emsg,info,linting [$*]); COMMIT=$$($(GITHASH)); \
@@ -1571,17 +1609,19 @@ $(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
 	  LARGS+=("-H" "api-token: $(CODACY_API_TOKEN)"); \
 	fi; \
 	if [ -n "$${BASE}" ]; then \
-	  echo -e """$(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_UPLOAD) | \
-	    $(GOBIN)/codacy-$*-$${VERSION} | \
-	    curl "$${LARGS[@]}" --data @- "$${BASE}/issuesRemoteResults"; \
-	    curl "$${LARGS[@]}" "$${BASE}/resultsFinal""""; \
-	  ( $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_UPLOAD) | \
-	    $(GOBIN)/codacy-$*-$${VERSION} | \
-	    curl "$${LARGS[@]}" --data @- "$${BASE}/issuesRemoteResults"; echo; \
-	    curl "$${LARGS[@]}" "$${BASE}/resultsFinal"; echo ) || $(CODACY_CONTINUE); \
+	  ( for DIR in $(MODULES); do \
+	      echo -e """$(lint-codacy-echo)""" >&2; cd "$${DIR}" &&  \
+	      $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_UPLOAD) | \
+	      $(GOBIN)/codacy-$*-$${VERSION} | curl "$${LARGS[@]}" \
+	      --data @- "$${BASE}/issuesRemoteResults"; echo; \
+	    done && curl "$${LARGS[@]}" "$${BASE}/resultsFinal"; echo \
+	  ) || $(CODACY_CONTINUE); \
 	else \
-	  echo $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL); \
-	  $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL) || $(CODACY_CONTINUE); \
+	  for DIR in $(MODULES); do \
+	    echo """$(lint-codacy-echo)""" >&2; cd "$${DIR}" && \
+	    $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL) || \
+	    $(CODACY_CONTINUE); \
+	  done; \
 	fi;
 
 #@ execute revive linter (go-files).
@@ -1638,10 +1678,14 @@ lint-leaks?:: update-gitleaks
 	fi;
 #@ execute govulncheck to find vulnerabilities in dependencies (go-files).
 lint-vuln:: update-govulncheck
-	govulncheck -test ./...
+	@$(call emsg,info,linting [govulncheck]); \
+	for DIR in $(MODULES); do \
+	  echo """cd $${DIR} && govulncheck -test ./...;"""; \
+	  cd "$${DIR}" && govulncheck -test ./...; \
+	done;
 #@ <top #|over #|avg> <pkg> # execute go(cyclo|cognit) linter (go-files).
 lint-gocyclo lint-gocognit:: lint-%: update-%
-	@$(call emsg,info,linting [gocyclo]); ARGS=($(ARGS)); MODS="0"; \
+	@$(call emsg,info,linting [$*]); ARGS=($(ARGS)); MODS="0"; \
 	while [ "$${#ARGS[@]}" != "0" ]; do \
 	  if [ "$${ARGS[0]}" == "top" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
 	  elif [ "$${ARGS[0]}" == "over" ]; then ARGS+=(-$${ARGS[0]}); MODS="1"; \
@@ -1649,9 +1693,8 @@ lint-gocyclo lint-gocognit:: lint-%: update-%
 	  else ARGS+=($${ARGS[0]}); MODS=$$((MODS-1)); fi; \
 	  ARGS=("$${ARGS[@]:1}"); \
 	done; \
-	if [[ "$${MODS}" == "0" ]]; then ARGS+=($(MODULES)); fi; \
+	if [[ "$${MODS}" == "0" ]]; then ARGS+=($(PACKAGES)); fi; \
 	$* "$${ARGS[@]}";
-
 
 TOKEN_REPLACE := --token=*/--token=...secret...
 #@ execute zally api-linter to find API issues (yaml-files).
@@ -2411,12 +2454,25 @@ debug-files::
 	echo 'FILE_MOCKS $(FILE_MOCKS)'; \
 	echo 'FILE_TARGETS $(FILE_TARGETS)'; \
 	echo 'FILE_TARGETS_MAKE $(FILE_TARGETS_MAKE)'; \
-	echo 'FILE_TARGETS_GOMAKE $(FILE_TARGETS_GOMAKE)'; \
+	echo 'FILE_TARGETS_GOMAKE $(FILE_TARGETS_GOMAKE)';
 
 #@ debug the source and module environment variables.
 debug-sources::
 	@echo 'SOURCES $(SOURCES)'; \
+	echo 'PACKAGES $(PACKAGES)'; \
 	echo 'MODULES $(MODULES)'; \
+	echo 'GOMODS $(GOMODS)';
+
+#@ debug the git environment variables.
+debug-git::
+	@echo 'GITHOOKS $(GITHOOKS)'; \
+	echo 'GITAUTHOR $(GITAUTHOR)'; \
+	echo 'GITROOT $(GITROOT)'; \
+	echo 'GITURL $(GITURL)'; \
+	echo 'GITHOST $(GITHOST)'; \
+	echo 'GITOWNER $(GITOWNER)'; \
+	echo 'GITREPO $(GITREPO)'; \
+	echo 'GITNAME $(GITNAME)';
 
 #@ debug then generated directories, sources, and targets.
 debug-kube::
@@ -2472,6 +2528,7 @@ debug-targets-test::
 #@ debug the lint target environment variables.
 debug-targets-lint::
 	@echo 'TARGETS_LINT $(TARGETS_LINT)'; \
+	echo 'TARGETS_LINT_CODACY $(TARGETS_LINT_CODACY)'; \
 	echo 'TARGETS_LINT_CODACY_CLIENTS $(TARGETS_LINT_CODACY_CLIENTS)'; \
 	echo 'TARGETS_LINT_CODACY_BINARIES $(TARGETS_LINT_CODACY_BINARIES)';
 
