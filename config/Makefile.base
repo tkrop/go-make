@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.1
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.2
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -575,7 +575,7 @@ CODACY_PROJECT ?= $(GITREPO)
 CODACY_API_BASE_URL ?= https://api.codacy.com
 CODACY_QUALITY ?= $(CODE_QUALITY)
 CODACY_CLIENTS ?= aligncheck
-CODACY_BINARIES ?= golangci gosec staticcheck
+CODACY_BINARIES ?= golangci-lint gosec staticcheck
 ifdef CODACY_JRE_HOME
   JRE_HOME := $(CODACY_JRE_HOME)
 endif
@@ -589,8 +589,8 @@ CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
 CODACY_ANALYSIS-CLI_VERSION ?= 7.10.0
 CODACY_ANALYSIS-CLI_EXTENSION ?= assembly.jar
 # https://github.com/codacy/codacy-golangci-lint/tags
-CODACY_GOLANGCI_VERSION ?= lint-0.0.4
-CODACY_GOLANGCI_EXTENSION ?= $(CODACY_GOLANGCI_VERSION)
+CODACY_GOLANGCI-LINT_VERSION ?= 0.0.4
+CODACY_GOLANGCI-LINT_EXTENSION ?= $(CODACY_GOLANGCI-LINT_VERSION)
 # https://github.com/codacy/codacy-coverage-reporter/tags
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
 	CODACY_REPORTER_VERSION ?= 14.1.0
@@ -690,7 +690,6 @@ $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS
 TARGETS_PUBLISH := $(addprefix version-publish-,all $(COMMANDS))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
-TARGETS_INIT_CODACY := $(addprefix init-,$(CODACY_BINARIES) analysis-cli)
 TARGETS_TEST_INIT := test-clean init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-,$(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-,$(CODACY_BINARIES))
@@ -706,13 +705,16 @@ TARGETS_INSTALL := $(addprefix install-,$(COMMANDS))
 TARGETS_INSTALL_GO := $(addprefix install-,$(COMMANDS_GO))
 TARGETS_INSTALL_SH := $(addprefix install-,$(COMMANDS_SH))
 TARGETS_INSTALL_NPM := $(addprefix install-,$(TOOLS_NPM:-cli=))
+TARGETS_INSTALL_CODACY := $(addprefix install-codacy-,$(CODACY_BINARIES) \
+	analysis-cli)
 TARGETS_INSTALL_ALL := $(TARGETS_INSTALL) $(TARGETS_INSTALL_GO) \
-	$(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM)
+	$(TARGETS_INSTALL_SH) $(TARGETS_INSTALL_NPM) $(TARGETS_INSTALL_CODACY)
 TARGETS_UNINSTALL := $(addprefix uninstall-,$(COMMANDS))
 TARGETS_UNINSTALL_GO := $(addprefix uninstall-,$(COMMANDS_GO))
 TARGETS_UNINSTALL_SH := $(addprefix uninstall-,$(COMMANDS_SH))
 TARGETS_UNINSTALL_NPM := $(addprefix uninstall-,$(TOOLS_NPM:-cli=))
-TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-,$(CODACY_BINARIES))
+TARGETS_UNINSTALL_CODACY := $(addprefix uninstall-codacy-,$(CODACY_BINARIES) \
+	analysis-cli)
 TARGETS_UNINSTALL_ALL := \
 	$(filter-out $(call xifeq,$(gomake-version),(devel),%-go-make,), \
 	$(TARGETS_UNINSTALL) $(TARGETS_UNINSTALL_GO) $(TARGETS_UNINSTALL_SH) \
@@ -1135,20 +1137,7 @@ init-generate::
 	); done;
 
 #@ initialize the codacy support.
-init-codacy:: $(TARGETS_INIT_CODACY) init-jre
-$(TARGETS_INIT_CODACY):: init-%:
-	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	EXTENSION="$(CODACY_$(call upper,$*)_EXTENSION)"; \
-	if [ -z "$${EXTENSION}" ]; then EXTENSION="$${VERSION}"; fi; \
-	FILE="$(GOBIN)/codacy-$*-$${VERSION}"; \
-	if [ ! -f $${FILE} ]; then \
-	  BASE="https://github.com/codacy/codacy-$*/releases/download"; \
-	  echo curl --silent --location --output $${FILE} \
-	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
-	  curl --silent --location --output $${FILE} \
-	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
-	  chmod 700 $${FILE}; \
-	fi;
+init-codacy:: init-jre $(TARGETS_INSTALL_CODACY)
 
 # initialize java development and java runtime support.
 init-jre init-java:: init-%:
@@ -1554,7 +1543,7 @@ lint-config:: update-golangci-lint update-yq
 
 #@ execute all codacy linters activated by the custom setup (all files).
 lint-codacy:: $(TARGETS_LINT_CODACY)
-$(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-analysis-cli init-jre
+$(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-jre install-codacy-analysis-cli
 	@$(call emsg,info,linting [$*]); \
 	LARGS=("--skip-uncommitted-files-check"); \
 	if [ "$(ARGS)" == "verbose" ]; then LARGS+=("--verbose"); fi; \
@@ -1581,9 +1570,9 @@ LINT_ARGS_GOSEC_LOCAL := -log /dev/null -exclude G307 ./...
 LINT_ARGS_GOSEC_UPLOAD := -log /dev/null -exclude G307 -fmt json ./...
 LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
-LINT_ARGS_GOLANGCI_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
+LINT_ARGS_GOLANGCI-LINT_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY)))
-LINT_ARGS_GOLANGCI_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
+LINT_ARGS_GOLANGCI-LINT_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 	--show-stats=true --output.text.path=stdout --output.json.path=stderr \
 	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) 3>&1 1>&2 2>&3 3>&-
 
@@ -1595,7 +1584,7 @@ lint-codacy-echo = \
 	  cd $${DIR} && $(GOBIN)/$* $(LINT_ARGS_$(call upper,$*)_LOCAL);) \
 	)
 
-$(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code init-% install-%
+$(TARGETS_LINT_CODACY_BINARIES):: lint-%: init-code install-% install-codacy-%
 	@$(call emsg,info,linting [$*]); COMMIT=$$($(GITHASH)); \
 	VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
 	LARGS=("--silent" "--location" "--request" "POST" \
@@ -1854,9 +1843,6 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 install:: $(TARGETS_INSTALL)
 #@ install all software created and used by the project.
 install-all:: $(TARGETS_INSTALL_ALL)
-#@ install-*: install the matched software command or service.
-install-golangci:: update-golangci-lint
-	ln --symbolic --force "$(GOBIN)/golangci-lint" "$(GOBIN)/golangci";
 
 # install go tools used by the project.
 $(TARGETS_INSTALL_GO):: install-%: $(GOBIN)/%
@@ -1879,6 +1865,21 @@ $(addprefix $(GOBIN)/,$(TOOLS_NPM:-cli=)): $(GOBIN)/%:
 	  echo "npm install --global $${CMD}"; \
 	  npm install --global "$${CMD}"; \
 	fi;
+# install codacy tools used by the project.
+install-codacy:: $(TARGETS_INSTALL_CODACY)
+$(TARGETS_INSTALL_CODACY):: install-codacy-%:
+	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
+	EXTENSION="$(CODACY_$(call upper,$*)_EXTENSION)"; \
+	if [ -z "$${EXTENSION}" ]; then EXTENSION="$${VERSION}"; fi; \
+	FILE="$(GOBIN)/codacy-$*-$${VERSION}"; \
+	if [ ! -f $${FILE} ]; then \
+	  BASE="https://github.com/codacy/codacy-$*/releases/download"; \
+	  echo curl --silent --location --output $${FILE} \
+	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
+	  curl --silent --location --output $${FILE} \
+	    $${BASE}/$${VERSION}/codacy-$*-$${EXTENSION}; \
+	  chmod 700 $${FILE}; \
+	fi;
 
 #@ install software command or service created by the project.
 $(TARGETS_INSTALL):: install-%: $(GOBIN)/%
@@ -1889,9 +1890,6 @@ $(addprefix $(GOBIN)/,$(COMMANDS)): $(GOBIN)/%: build/$(GOOS)/$(GOARCH)/%
 uninstall:: $(TARGETS_UNINSTALL)
 #@ uninstall all software created and used by the projct.
 uninstall-all:: $(TARGETS_UNINSTALL_ALL)
-#@ uninstall-*: uninstall the matched software command or service.
-uninstall-golangci:: uninstall-golangci-lint
-	@rm --verbose --force "$(GOBIN)/golangci";
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
@@ -1907,12 +1905,17 @@ $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	  npm uninstall --global "$${CMD}"; \
 	fi;
 # uninstall codacy tools used by the project.
+uninstall-codacy:: $(TARGETS_UNINSTALL_CODACY)
 $(TARGETS_UNINSTALL_CODACY):: uninstall-codacy-%:
 	@VERSION="$(CODACY_$(call upper,$*)_VERSION)"; \
-	rm --verbose --force $(wildcard $(GOBIN)/codacy-$*-$${VERSION});
+	if [ -f "$(GOBIN)/codacy-$*-$${VERSION}" ]; then \
+	  rm --verbose --force "$(GOBIN)/codacy-$*-$${VERSION}"; \
+	fi;
 # uninstall software command or service created by the project.
 $(TARGETS_UNINSTALL):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@if [ -f "$(GOBIN)/$*" ]; then \
+	  rm --verbose --force "$(GOBIN)/$*"; \
+	fi;
 
 
 ## Release: targets to support release process.
@@ -2518,7 +2521,6 @@ debug-targets-init::
 	@echo 'TARGETS_INIT $(TARGETS_INIT)'; \
 	echo 'TARGETS_INIT_ALL $(TARGETS_INIT_ALL)'; \
 	echo 'TARGETS_INIT_MAKE $(TARGETS_INIT_MAKE)'; \
-	echo 'TARGETS_INIT_CODACY $(TARGETS_INIT_CODACY)';
 
 #@ debug the test target environment variables.
 debug-targets-test::
@@ -2550,6 +2552,7 @@ debug-targets-install::
 	echo 'TARGETS_INSTALL_GO $(TARGETS_INSTALL_GO)'; \
 	echo 'TARGETS_INSTALL_SH $(TARGETS_INSTALL_SH)'; \
 	echo 'TARGETS_INSTALL_NPM $(TARGETS_INSTALL_NPM)'; \
+	echo 'TARGETS_INSTALL_CODACY $(TARGETS_INSTALL_CODACY)'; \
 	echo 'TARGETS_INSTALL_ALL $(TARGETS_INSTALL_ALL)';
 
 #@ debug the uninstall target environment variables.
