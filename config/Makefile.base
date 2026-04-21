@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.0
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.1
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1584,8 +1584,8 @@ LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 LINT_ARGS_GOLANGCI_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY)))
 LINT_ARGS_GOLANGCI_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
-	--output.json.path stdout $(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) \
-	2>/dev/null
+	--show-stats=true --output.text.path=stdout --output.json.path=stderr \
+	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) 3>&1 1>&2 2>&3 3>&-
 
 lint-codacy-echo = \
 	$(if $(or $(CODACY_PROJECT_TOKEN), $(CODACY_API_TOKEN)),$(strip \
