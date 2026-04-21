@@ -65,6 +65,7 @@ debug-bash
 debug-commands
 debug-dirs
 debug-files
+debug-git
 debug-image
 debug-kube
 debug-make
@@ -123,6 +124,7 @@ git-reset
 git-verify
 go.mod
 go.sum
+go.work
 help
 image
 image-build
@@ -133,6 +135,7 @@ init-analysis-cli
 init-codacy
 init-code
 init-code!
+init-generate
 init-git
 init-go
 init-golangci
