@@ -371,7 +371,6 @@ make lint-max      # lints the go-code using an expert config (golangci-lint)
 make lint-all      # lints the go-code using an insane all-in config
 make lint-codacy   # lints the go-code using codacy client side tools
 make lint-revive   # lints the go-code using the revive standalone linter
-make lint-golangci # lints the go-code using the golangci linter (codacy upload)
 make lint-markdown # lints the documentation using markdownlint
 make lint-shell    # lints the sh-code using shellcheck to find issues
 make lint-leaks    # lints committed code using gitleaks for leaked secrets

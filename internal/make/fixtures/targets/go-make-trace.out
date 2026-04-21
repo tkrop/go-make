@@ -142,15 +142,12 @@ image-build
 image-push
 init
 init-agents
-init-analysis-cli
 init-codacy
 init-code
 init-code!
 init-generate
 init-git
 init-go
-init-golangci
-init-gosec
 init-hooks
 init-java
 init-jre
@@ -158,7 +155,6 @@ init-kube
 init-make
 init-make!
 init-mocks
-init-staticcheck
 init/.codacy.yaml
 init/.gitleaks.toml
 init/.golangci.yaml
@@ -169,6 +165,11 @@ init/revive.toml
 install
 install-all
 install-client-gen
+install-codacy
+install-codacy-analysis-cli
+install-codacy-golangci-lint
+install-codacy-gosec
+install-codacy-staticcheck
 install-controller-gen
 install-deepcopy-gen
 install-gitleaks
@@ -176,7 +177,6 @@ install-go-make
 install-gocognit
 install-gocyclo
 install-gojq
-install-golangci
 install-golangci-lint
 install-gomajor
 install-gosec
@@ -203,7 +203,7 @@ lint-code
 lint-config
 lint-gocognit
 lint-gocyclo
-lint-golangci
+lint-golangci-lint
 lint-gosec
 lint-leaks
 lint-leaks?
@@ -241,7 +241,9 @@ test-upload
 uninstall
 uninstall-all
 uninstall-client-gen
-uninstall-codacy-golangci
+uninstall-codacy
+uninstall-codacy-analysis-cli
+uninstall-codacy-golangci-lint
 uninstall-codacy-gosec
 uninstall-codacy-staticcheck
 uninstall-controller-gen
@@ -251,7 +253,6 @@ uninstall-go-make
 uninstall-gocognit
 uninstall-gocyclo
 uninstall-gojq
-uninstall-golangci
 uninstall-golangci-lint
 uninstall-gomajor
 uninstall-gosec
