@@ -21,7 +21,7 @@ issues:
   # Maximum count of issues with the same text.
   # Set to 0 to disable.
   # Default: 3 (we recommend 10-20)
-  max-same-issues: 10
+  max-same-issues: 0
 
 # This contains only configs which differ from defaults. For other configs see
 # https://golangci-lint.run/docs/formatters/configuration/.

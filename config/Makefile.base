@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.2
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.3
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -580,20 +580,20 @@ ifdef CODACY_JRE_HOME
   JRE_HOME := $(CODACY_JRE_HOME)
 endif
 # https://github.com/codacy/codacy-gosec/tags
-CODACY_GOSEC_VERSION ?= 1.0.2
+CODACY_GOSEC_VERSION ?= 1.0.3
 CODACY_GOSEC_EXTENSION ?= $(CODACY_GOSEC_VERSION)
 # https://github.com/codacy/codacy-staticcheck/tags
-CODACY_STATICCHECK_VERSION ?= 3.0.18
+CODACY_STATICCHECK_VERSION ?= 3.0.19
 CODACY_STATICCHECK_EXTENSION ?= $(CODACY_STATICCHECK_VERSION)
 # https://github.com/codacy/codacy-analysis-cli/tags
-CODACY_ANALYSIS-CLI_VERSION ?= 7.10.0
+CODACY_ANALYSIS-CLI_VERSION ?= 7.10.1
 CODACY_ANALYSIS-CLI_EXTENSION ?= assembly.jar
 # https://github.com/codacy/codacy-golangci-lint/tags
-CODACY_GOLANGCI-LINT_VERSION ?= 0.0.4
+CODACY_GOLANGCI-LINT_VERSION ?= 0.0.6
 CODACY_GOLANGCI-LINT_EXTENSION ?= $(CODACY_GOLANGCI-LINT_VERSION)
 # https://github.com/codacy/codacy-coverage-reporter/tags
 ifneq ($(CODACY_API_BASE_URL),https://api.codacy.com)
-	CODACY_REPORTER_VERSION ?= 14.1.0
+	CODACY_REPORTER_VERSION ?= 14.1.3
 else # always use latest version for codacy.com
 	CODACY_REPORTER_VERSION ?=
 endif
@@ -881,7 +881,7 @@ git-number = \
 	$$(if command -v gh >/dev/null 2>&1; then ( \
 	    gh pr list --state all --json "number" --limit 1 || exit 1; \
 	    gh issue list --state all --json "number" --limit 1 || exit 1; \
-	  ) | jq --slurp --raw-output '.[] | .[].number'; \
+	  ) | $(GOBIN)/gojq --slurp --raw-output '.[] | .[].number'; \
 	else \
 	  $(GITLOG):"%s" | grep -Eo "[(,]\#[0-9]+" | sed "s|.*[,(]\#||g"; \
 	fi | sort --numeric-sort --reverse | head --lines=1 | \
@@ -1362,7 +1362,7 @@ GOLANGCI_CONFIG ?= --config $(FILE_GOLANGCI)
 # Setup golangci-lint formatters (not yet supported).
 GOLANGCI_FORMATTERS ?= gofmt gofumpt goimports golines
 
-# discouraged (noisy): embeddedstructfieldcheck tagalign testifylint wsl wsl_v5
+# discouraged (noisy): embeddedstructfieldcheck tagalign testifylint wsl_v5
 # discouraged (destructive): exhaustruct gochecknoglobals gochecknoinits
 #   noinlineerr nonamedreturns varnamelen
 # discouraged (conflicting): godox gci paralleltest(go-testing)
@@ -1376,7 +1376,7 @@ LINTERS_FILTERED ?=
 LINTERS_DISCOURAGED ?= \
 	exhaustruct embeddedstructfieldcheck gochecknoglobals gochecknoinits godox \
 	noinlineerr nonamedreturns paralleltest rowserrcheck tagalign testifylint \
-	tagliatelle varnamelen wsl wsl_v5
+	tagliatelle varnamelen wsl_v5
 LINTERS_MINIMUM ?= \
 	asasalint asciicheck bidichk bodyclose dogsled dupl dupword durationcheck \
 	errchkjson funlen gocognit goconst gocyclo godot govet importas ineffassign \
@@ -1572,8 +1572,11 @@ LINT_ARGS_STATICCHECK_LOCAL := -tests ./...
 LINT_ARGS_STATICCHECK_UPLOAD := -tests -f json ./...
 LINT_ARGS_GOLANGCI-LINT_LOCAL := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
 	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY)))
+# This command uses a small hack to enable printing of stats created on stdout
+# on stderr. The hack rotates the file descriptors in a circle using a file
+# descriptor with id 3 and closing it.
 LINT_ARGS_GOLANGCI-LINT_UPLOAD := run $(GOLANGCI_CONFIG) $(LINT_FLAGS) \
-	--show-stats=true --output.text.path=stdout --output.json.path=stderr \
+	--show-stats=true --output.text.path=/dev/null --output.json.path=stderr \
 	$(LINT_ARGS_$(call upper,$(CODACY_QUALITY))) 3>&1 1>&2 2>&3 3>&-
 
 lint-codacy-echo = \
@@ -2427,7 +2430,7 @@ debug-make::
 	echo 'MAKEFILE_EXTS $(MAKEFILE_EXTS)'; \
 	echo 'MAKEFILE_VARS $(MAKEFILE_VARS)'; \
 
-#@ deubg the bash environment variables.
+#@ debug the bash environment variables.
 debug-bash::
 	@echo "PATH $${PATH}"; \
 	echo "SHELL $${SHELL}"; \
