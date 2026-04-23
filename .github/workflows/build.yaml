@@ -1,5 +1,7 @@
 name: Go Build
 on: [push]
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -118,6 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
     - name: Set up Go
       uses: actions/setup-go@v5
