@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.4
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.5
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1549,10 +1549,8 @@ $(TARGETS_LINT_CODACY_CLIENTS):: lint-%: init-code init-jre install-codacy-analy
 	if [ "$(ARGS)" == "verbose" ]; then LARGS+=("--verbose"); fi; \
 	LARGS+=("--codacy-api-base-url" "$(CODACY_API_BASE_URL)"); \
 	if [ -n "$(CODACY_PROJECT_TOKEN)" ]; then \
-	  LARGS+=("--upload" "--verbose"); \
 	  LARGS+=("--project-token=$(CODACY_PROJECT_TOKEN)"); \
 	elif [ -n "$(CODACY_API_TOKEN)" ]; then \
-	  LARGS+=("--upload" "--verbose"); \
 	  LARGS+=("--provider=$(CODACY_PROVIDER)"); \
 	  LARGS+=("--username=$(CODACY_USER)"); \
 	  LARGS+=("--project=$(CODACY_PROJECT)"); \
