@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.5
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.6
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -408,9 +408,9 @@ gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
 K8S_CODEGEN_VERSION ?= v0.35.2
 # https://github.com/golangci/golangci-lint/tags
 GOLANGCI_VERSION ?= v2.11.2
-# https://github.com/mgechev/revive/tags
+# https://github.com/mgechev/revive/tags # intentionally updated.
 # https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
-REVIVE_VERSION ?= v1.12.0
+REVIVE_VERSION ?= v1.15.0
 
 # Setup default variables for kubernetes code generation.
 KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
@@ -1012,7 +1012,7 @@ git-verify:: # TODO: check why it is taking off-line so long!
 #@ <branch> <message> # creates a branch with the current change set using next issue.
 git-create:: git-create-feat
 # TODO: check whether I'm on the default branch and on remote HEAD.
-$(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
+$(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%: update-gojq
 	@BRANCH="$(firstword $(ARGS))"; ARGS=""; \
 	if [ -z "$${BRANCH}" ]; then BRANCH="update-deps"; fi; \
 	MESSAGE="$(wordlist 2,$(words $(ARGS)),$(ARGS))"; ISSUE=$(git-number); \
@@ -1033,7 +1033,7 @@ $(addprefix git-create-,$(COMMIT_CONVENTION)):: git-create-%:
 	fi || $(GIT) checkout "$${BRANCH}"; $(abort);
 #@ <message> # commits the current change set using the given message with current issue.
 git-commit:: git-commit-feat
-$(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%:
+$(addprefix git-commit-,$(COMMIT_CONVENTION)):: git-commit-%: update-gojq
 	@BRANCH="$$($(GITBRANCH))"; ARGS=""; \
 	NUMBER="$$($(GITLOG):"%s" $(git-branch-main)..HEAD | \
 	grep -Eo "[(,]#[0-9]+" | sed "s|.*[,(]#||g" | grep -v "^$$" | head --lines=1)"; \
