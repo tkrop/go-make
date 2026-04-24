@@ -173,6 +173,10 @@ linters:
         # Rule prevents from having a central package documentation in `doc.go`.
         - name: package-comments
           disabled: true
+        # Reports on package names that use core library names.
+        # Rule prevents users from intentional creating drop in replacements.
+        - name: package-naming
+          disabled: true
         # Reports on mismatches between directory names and package names.
         # Rule prevents having a clearer hyphen readable directory name.
         - name: package-directory-mismatch
