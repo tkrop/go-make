@@ -4,8 +4,8 @@ go 1.26.2
 
 require (
 	github.com/stretchr/testify v1.11.1
-	github.com/tkrop/go-config v0.0.21
-	github.com/tkrop/go-testing v0.0.44
+	github.com/tkrop/go-config v0.0.22
+	github.com/tkrop/go-testing v0.0.45
 	go.uber.org/mock v0.6.0
 )
 
