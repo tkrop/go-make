@@ -14,10 +14,10 @@ github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/tkrop/go-config v0.0.21 h1:wp6ucwa9W7sggvZizu8LpnrdW3kaP+hph1PSSetcF1Y=
-github.com/tkrop/go-config v0.0.21/go.mod h1:S1yHSdS7Mb5lF112yI/K1AUfzOFlSVcF1caxUdbIsB0=
-github.com/tkrop/go-testing v0.0.44 h1:axBm94gQ7d0EzuyT/ik/nNrs+fUQZVL9+VzeKkrtDtQ=
-github.com/tkrop/go-testing v0.0.44/go.mod h1:rBKZGfm4PpsQl2R/XVcDZFpnS6uGaNMVvOIwCoOn9YQ=
+github.com/tkrop/go-config v0.0.22 h1:6s/5jAhp6wsnLXVGBHZPWq/JMie5OJZ+TJeAxujyYsA=
+github.com/tkrop/go-config v0.0.22/go.mod h1:0vTuOwqJjvs0sSvtFuEiEGPGSyMr5e3SGMe0CMpLcFQ=
+github.com/tkrop/go-testing v0.0.45 h1:Dolyg+5P8WsaGDfncufIYoN7ACxuB9r4rwKE1td35rg=
+github.com/tkrop/go-testing v0.0.45/go.mod h1:rBKZGfm4PpsQl2R/XVcDZFpnS6uGaNMVvOIwCoOn9YQ=
 go.uber.org/mock v0.6.0 h1:hyF9dfmbgIX5EfOdasqLsWD6xqpNZlXblLB/Dbnwv3Y=
 go.uber.org/mock v0.6.0/go.mod h1:KiVJ4BqZJaMj4svdfmHM0AUx4NJYO8ZNpPnZn1Z+BBU=
 golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=

@@ -186,7 +186,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.6
+GOMAKE_DEP := github.com/tkrop/go-make@v0.2.7
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1655,7 +1655,7 @@ lint-shell:: init-code
 	  elif [ -n "$(IMAGE_CMD)" ]; then \
 	    $(IMAGE_CMD) run --rm --volume="$${PWD}:/mnt" --network host \
 	      koalaman/shellcheck:stable "$${ARGS[@]}" "$${FILES[@]}"; \
-	  else $(call emsg,warning, linting [shell => command not found]!); fi; \
+	  else $(call emsg,warning,linting [shell => command not found]!); fi; \
 	fi;
 
 #@ execute gitleaks to check committed code for leaking secrets (all files).
@@ -1835,8 +1835,9 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	  aborting - we never push pull request images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
-	elif docker buildx imagetools inspect $${IMAGE}; then $(call emsg, \
-	  warning,skipping - image already exists [$${IMAGE}]); exit 0; \
+	elif docker buildx imagetools inspect $${IMAGE}; then \
+	  $(call emsg,warning,skipping - image already exists [$${IMAGE}]); \
+	  exit 0; \
 	fi; \
 	$(call emsg,info,pushing [$${IMAGE} => $${FILE}]); \
 	$(call image-build,$@); echo "$${BUILD[@]}" >&2; "$${BUILD[@]}";
