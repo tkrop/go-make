@@ -71,8 +71,10 @@ LDFLAGS ?=
 LD_FLAGS ?= $(strip $(LDFLAGS))
 LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
 LD_FLAGS_DARWIN ?= $(strip $(LDFLAGS))
-TESTFLAGS ?=
+TESTFLAGS ?= $(if $(findstring --trace,$(MAKEFLAGS)),-v,)
 TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
+BENCHFLAGS ?= $(if $(findstring --trace,$(MAKEFLAGS)),-v,)
+BENCH_FLAGS ?= $(strip $(mod-readonly) -count=9 -benchmem $(BENCHFLAGS))
 BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
 BUILD_FLAGS ?=  $(strip $(mod-readonly) -trimpath $(BUILDFLAGS))
 INSTALLFLAGS ?=
@@ -186,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.2.7
+GOMAKE_DEP := github.com/tkrop/go-make@v0.3.0
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -433,25 +435,26 @@ TOOL_MOCKGEN ?= $(or $(if $(GOMODS),$(shell \
 	head --line=1)),go.uber.org/mock)/mockgen
 
 TOOLS_GO += $(TOOL_MOCKGEN) \
-	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
-	github.com/zalando/zally/cli/zally \
-	golang.org/x/vuln/cmd/govulncheck \
-	github.com/uudashr/gocognit/cmd/gocognit \
-	github.com/fzipp/gocyclo/cmd/gocyclo \
-	github.com/mgechev/revive@$(REVIVE_VERSION) \
-	github.com/securego/gosec/v2/cmd/gosec \
-	honnef.co/go/tools/cmd/staticcheck \
-	github.com/zricethezav/gitleaks/v8 \
-	github.com/icholy/gomajor \
 	github.com/tkrop/go-testing/cmd/mock \
 	github.com/itchyny/gojq/cmd/gojq \
 	github.com/mikefarah/yq/v4 \
+	github.com/icholy/gomajor \
+	golang.org/x/perf/cmd/benchstat \
 	k8s.io/code-generator/cmd/deepcopy-gen@$(K8S_CODEGEN_VERSION) \
 	k8s.io/code-generator/cmd/client-gen@$(K8S_CODEGEN_VERSION) \
 	k8s.io/code-generator/cmd/lister-gen@$(K8S_CODEGEN_VERSION) \
 	k8s.io/code-generator/cmd/informer-gen@$(K8S_CODEGEN_VERSION) \
 	sigs.k8s.io/controller-tools/cmd/controller-gen \
 	sigs.k8s.io/kind \
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) \
+	github.com/zalando/zally/cli/zally \
+	github.com/zricethezav/gitleaks/v8 \
+	golang.org/x/vuln/cmd/govulncheck \
+	github.com/uudashr/gocognit/cmd/gocognit \
+	github.com/fzipp/gocyclo/cmd/gocyclo \
+	github.com/mgechev/revive@$(REVIVE_VERSION) \
+	github.com/securego/gosec/v2/cmd/gosec \
+	honnef.co/go/tools/cmd/staticcheck \
 	$(GOMAKE_DEP)
 TOOLS_SH += \
 	github.com/anchore/syft \
@@ -470,7 +473,7 @@ $(if $(wildcard $(GOBIN)/go-make),$(shell $(call go-update,go-make,)))
 IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
 TEST_TIMEOUT ?= 10s
-TEST_BENCHTIME ?= 10s
+TEST_BENCHTIME ?= 3s
 
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
@@ -519,18 +522,20 @@ image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 #
 # Legacy (Zalando-specific) team and image setup.
 #
-export IMAGE_REGISTRY ?= pierone.stups.zalan.do
 export ZALLY_URL ?= https://infrastructure-api-linter.zalandoapis.com
 export ZALLY_TOKEN ?=  $$(ztoken)
-export TEAM ?= $(shell \
-	if [ -f ".zappr.yaml" ]; then \
+export IMAGE_REGISTRY ?= pierone.stups.zalan.do
+export IMAGE_ORG ?= $(shell if [ -f ".zappr.yaml" ]; then \
 	  grep "X-Zalando-Team:" .zappr.yaml | \
-	  sed "s/.*:[[:space:]]*\([a-z-]*\).*/\1/"; \
-	else echo "${GITOWNER}"; fi)
-export IMAGE_NAME ?= $(call lower,$(IMAGE_REGISTRY)/$(TEAM)/$(GITREPO))
+	  sed --regexp-extended 's|.*:[[:space:]]*["'"'"']?([a-z-]*).*|\1|'; \
+	else echo "$(GITOWNER)"; fi)
+
+# Setup default image name.
+export IMAGE_REPO ?= $(GITREPO)
+export IMAGE_NAME ?= $(call lower,$(IMAGE_REGISTRY)/$(IMAGE_ORG)/$(IMAGE_REPO))
 ifneq ($(words $(subst :, ,$(subst /, ,$(IMAGE_NAME)))),3)
   $(call cerror,invalid base image name [$(IMAGE_NAME)] \
-    - image name format [repo/team/name]!)
+    - image name format [registry/org/repo]!)
 endif
 
 # Setup default container image.
@@ -1183,29 +1188,89 @@ init-agents::
 
 
 ## Test: targets to test the source code (and compiler environment).
-TEST_ALL := $(DIR_BUILD)/test-all.cover
-TEST_UNIT := $(DIR_BUILD)/test-unit.cover
-TEST_BENCH := $(DIR_BUILD)/test-bench.cover
+TEST_COVER := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.cover)
+TEST_BENCH := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.bench)
 TEST_DEPS ?=
 TEST_ARGS ?=
+
+# process test arguments.
+test-args = ARGS=($(ARGS)); \
+	if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
+	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
+	  else echo "-coverpkg=./..."; fi; \
+	  ARGS=($${ARGS[@]:1}); \
+	fi; \
+    if [ -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ] && \
+	    [ "$${ARGS[0]}" == *_test.go ]; then \
+	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
+		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
+		-o -name "common_test.go" -o -name "mock_*_test.go" | \
+		sed "s|^|./|"; \
+	  echo $${ARGS[@]/\#/./}; \
+	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ]; then \
+	  for ARG in $(PACKAGES); do \
+	    [[ "$${ARG}" == $${ARGS[@]}* ]] && echo "./$${ARG}"; \
+	  done; \
+	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
+	  for ARG in $${ARGS[0]}; do \
+		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
+		else PACKAGES="$${PACKAGES}\n$${ARG%/*}"; fi; \
+		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="$(1)=$${ARG\#\#*/}"; \
+		else TEST_CASES="$${TEST_CASES} $(1)=$${ARG\#\#*/}"; fi; \
+	  done; \
+	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
+	  echo "$${TEST_CASES}"; \
+	else \
+	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
+	fi
+#test-args::
+#	$(call test-args,-run)
+
+# filter to exclude deep-copy generated files from test coverage (disabled).
+#
+# TODO: unclear whether this is necessary and helpful, since `go test` would
+# still show incomplete coverage in the output. Besides, the solution is not
+# general enough to cover other generated file scenarios.
+test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
+	  if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi
+
 
 #@ execute default test set.
 test:: $(TARGETS_TEST)
 #@ <pkg>[/<test>] # execute all tests.
-test-all:: $(TARGETS_TEST_INIT) $(TEST_ALL)
-#@ <pkg>[/<test>] # execute only unit tests.
-test-unit:: $(TARGETS_TEST_INIT) $(TEST_UNIT)
-#@ <pkg>[/<test>] # execute benchmarks.
-test-bench:: $(TARGETS_TEST_INIT) $(TEST_BENCH)
+test-all:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
+	$(GO) test $(TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -cover \
+	  -coverprofile=$(TEST_COVER) $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS),$(shell $(call test-args,-run)), \
+	    $(addprefix ./,$(PACKAGES))));)
 
-# remove all coverage files of test and benchmarks.
+#@ <pkg>[/<test>] # execute only unit tests.
+test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
+	$(GO) test $(TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -cover \
+	  -coverprofile=$(TEST_COVER) -short $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS),$(shell $(call test-args,-run)), \
+	    $(addprefix ./,$(PACKAGES))));)
+	@$(abort);
+
+#@ <pkg>[/<test>] # execute benchmarks.
+test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
+	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
+	$(GO) test $(BENCH_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
+	  -coverprofile=$(TEST_COVER) -run="^$$" $(if $(TEST_ARGS),$(TEST_ARGS), \
+	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
+	    $(addprefix ./,$(PACKAGES)))) tee -a $(TEST_BENCH);)
+	@$(abort);
+
+#@ remove all coverage files of test and benchmarks.
 test-clean::
-	@rm --verbose --force $(TEST_ALL) $(TEST_UNIT) $(TEST_BENCH);
+	@rm --verbose --force $(DIR_BUILD)/*.{cover,bench,html};
 
 #@ start the test coverage report.
 test-cover::
-	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
-	  "$(TEST_BENCH)" 2>/dev/null); \
+	@FILE="$(TEST_COVER)"; \
 	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
 	if [ "$(ARGS)" != "dark" ]; then \
 	  sed --in-place --expression='s/black/whitesmoke/g' "$${FILE}.html"; \
@@ -1217,8 +1282,7 @@ test-cover::
 
 #@ upload the test coverage report to codacy.
 test-upload::
-	@FILE=$$(ls -Art "$(TEST_ALL)" "$(TEST_UNIT)" \
-	  "$(TEST_BENCH)" 2>/dev/null); COMMIT="$$($(GITHASH))"; \
+	@FILE="$(TEST_COVER)"; COMMIT="$$($(GITHASH))"; \
 	SCRIPT="https://coverage.codacy.com/get.sh"; \
 	LARGS=("--language=go" "--force-coverage-parser=go"); \
 	LARGS+=("--codacy-api-base-url=$(CODACY_API_BASE_URL)"); \
@@ -1276,70 +1340,6 @@ test-go::
 		$(call test-go,$${FILE},"$${VERSION[@]}"); \
 	  fi; \
 	done;
-
-# process test arguments.
-test-args = ARGS=($(ARGS)); \
-	if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
-	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
-	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
-	  else echo "-coverpkg=./..."; fi; \
-	  ARGS=($${ARGS[@]:1}); \
-	fi; \
-    if [ -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ] && \
-	    [ "$${ARGS[0]}" == *_test.go ]; then \
-	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
-		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-		-o -name "common_test.go" -o -name "mock_*_test.go" | \
-		sed "s|^|./|"; \
-	  echo $${ARGS[@]/\#/./}; \
-	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ]; then \
-	  for ARG in $(PACKAGES); do \
-	    [[ "$${ARG}" == $${ARGS[@]}* ]] && echo "./$${ARG}"; \
-	  done; \
-	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
-	  for ARG in $${ARGS[0]}; do \
-		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
-		else PACKAGES="$${PACKAGES}\n$${ARG%/*}"; fi; \
-		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="$(1)=$${ARG\#\#*/}"; \
-		else TEST_CASES="$${TEST_CASES} $(1)=$${ARG\#\#*/}"; fi; \
-	  done; \
-	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
-	  echo "$${TEST_CASES}"; \
-	else \
-	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
-	fi
-#test-args::
-#	$(call test-args,-run)
-
-# filter to exclude deep-copy generated files from test coverage (disabled).
-#
-# TODO: unclear whether this is necessary and helpful, since `go test` would
-# still show incomplete coverage in the output. Besides, the solution is not
-# general enough to cover other generated file scenarios.
-test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
-	  if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi
-
-# actuall targets for testing.
-$(TEST_ALL):: $(SOURCES) init-code $(TEST_DEPS) $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
-	  -coverprofile $@ $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(PACKAGES))));)
-$(TEST_UNIT):: $(SOURCES) init-code $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout $(TEST_TIMEOUT) -cover \
-	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(PACKAGES))));)
-	@$(abort);
-$(TEST_BENCH):: $(SOURCES) init-code $(DIR_BUILD)
-	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
-	  -coverprofile $@ -short $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
-	    $(addprefix ./,$(PACKAGES))));)
-	@$(abort);
 
 #@ execute a kind of self-test running the main targets.
 test-self::  clean-all all-clean clean-all install-all update-all? update-all
@@ -1799,14 +1799,14 @@ image-build = \
 	if [ "$${BUILD[1]}" != "push" ]; then \
 	  REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
 	  BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
-	  BUILD+=(--tag="$${IMAGE}" --file="$${FILE}" . \
+	  BUILD+=(--label=org.opencontainers.image.ref.name="$${IMAGE}" \
+	    --label=org.opencontainers.image.base.name="$${BASE}" \
 	    --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
-	    --label=org.opencontainers.image.vendor="zalando/$(TEAM)" \
+	    --label=org.opencontainers.image.vendor="zalando/$(IMAGE_ORG)" \
 	    --label=org.opencontainers.image.source="$(GITURL)" \
 	    --label=org.opencontainers.image.version="$${IMAGE\#\#*:}" \
 	    --label=org.opencontainers.image.revision="$${REVISION}" \
-	    --label=org.opencontainers.image.base.name="$${BASE}" \
-	    --label=org.opencontainers.image.ref.name="$${IMAGE}"); \
+	    --tag="$${IMAGE}" --file="$${FILE}" .); \
 	fi
 
 # Setup custom image build target dependencies.
@@ -2114,6 +2114,12 @@ clean-hooks::
 #@ clean up all temp files created during building and testing.
 clean-cache::
 	@rm --verbose --force --recursive $(DIR_CACHE);
+#@ clean up all go resources created by building and testing.
+clean-go::
+	$(GO) clean -cache -testcache -fuzzcache;
+#	find "$(GOPATH)/pkg/mod/cache/download" -type f -atime +90 -delete;
+clean-go!::
+	$(GO) clean -cache -testcache -fuzzcache -modcache;
 #@ clean up all resources created by building and testing.
 clean-build::
 	@rm --verbose --force --recursive $(DIR_BUILD) $(DIR_RUN) $(KUBE_DIRS); \
@@ -2507,6 +2513,9 @@ debug-commands::
 debug-image::
 	@echo 'IMAGE $(IMAGE)'; \
 	echo 'IMAGE_CMD $(IMAGE_CMD)'; \
+	echo 'IMAGE_REGISTRY $(IMAGE_REGISTRY)'; \
+	echo 'IMAGE_ORG $(IMAGE_ORG)'; \
+	echo 'IMAGE_REPO $(IMAGE_REPO)'; \
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
 	echo 'IMAGE_NAMES $(IMAGE_NAMES)'; \

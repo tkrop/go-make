@@ -268,4 +268,4 @@ patterns:
 * When investigating test coverage please use the following stub commands:
   * `go test -coverprofile=build/test-agent.cover ...` for generating, and
   * `go tools -func=build/test-agent.cover` for accessing the coverage results.
-  * Similar use `build/test-agent.cover.html` for accessing the html page.
+  * Similar use `build/test-agent.html` for accessing the html page.
