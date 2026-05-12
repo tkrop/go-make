@@ -55,6 +55,8 @@ clean-all
 clean-build
 clean-cache
 clean-deps
+clean-go
+clean-go!
 clean-hooks
 clean-init
 clean-run
@@ -153,6 +155,7 @@ init/Makefile.vars
 init/revive.toml
 install
 install-all
+install-benchstat
 install-client-gen
 install-codacy
 install-codacy-analysis-cli
@@ -229,6 +232,7 @@ test-unit
 test-upload
 uninstall
 uninstall-all
+uninstall-benchstat
 uninstall-client-gen
 uninstall-codacy
 uninstall-codacy-analysis-cli
@@ -261,6 +265,7 @@ uninstall-zally
 update
 update-all
 update-all?
+update-benchstat
 update-client-gen
 update-controller-gen
 update-deepcopy-gen

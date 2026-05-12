@@ -347,3 +347,11 @@ project has more than 25 Stars, I will introduce semantic versions `v1`.
 If you like to contribute, please create an issue and/or pull request with a
 proper description of your proposal or contribution. I will review it and
 provide feedback on it as fast as possible.
+
+
+## Disclaimer
+
+This software is `100%` written by humans. AI is only used to review code,
+search for bugs, improve test coverage, and analyse performance issues. All
+actions executed with the help of AI are carefully reviewed, checked, and
+modified with the human standards and quality goals in mind.

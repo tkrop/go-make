@@ -7,13 +7,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    - name: Checkout code
-      uses: actions/checkout@v4
 
     - name: Test and lint
       env:
@@ -23,24 +23,19 @@ jobs:
     - name: Send coverage report
       uses: shogo82148/actions-goveralls@v1
       with:
-        path-to-profile: ./build/test-all.cover
+        path-to-profile: ./build/test.cover
 
 
   bash:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    # - name: Setup Npm
-    #   uses: pnpm/action-setup@v4
-    #   with:
-    #     version: 9
-
-    - name: Checkout code
-      uses: actions/checkout@v4
 
     - name: Run Bash compatibility tests
       env:
@@ -51,18 +46,13 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    # - name: Setup Npm
-    #   uses: pnpm/action-setup@v4
-    #   with:
-    #     version: 9
 
     - name: Run Bash compatibility tests
       run: |-
@@ -73,16 +63,13 @@ jobs:
   brew:
     runs-on: macos-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    # - name: Set up Docker
-    #   uses: crazy-max/ghaction-setup-docker@v3
 
     - name: Run MacOS compatibility tests
       env:
@@ -95,16 +82,13 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    # - name: Set up Docker
-    #   uses: crazy-max/ghaction-setup-docker@v3
 
     - name: Run MacOS compatibility tests
       env:
@@ -122,13 +106,13 @@ jobs:
       contents: write
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.26
-
-    - name: Checkout code
-      uses: actions/checkout@v4
 
     - name: Release new version
       env:
