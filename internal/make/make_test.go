@@ -552,12 +552,14 @@ var (
 	// regexBuildOs is used to match the build OS-specific target output.
 	regexBuildOs = regexp.MustCompile(`(?m)^build-` + runtime.GOOS + `\n`)
 
-	// phFixtures replaces the placeholders in the test fixture with the
-	// values provided to the replacer.
-	phFixtures = strings.NewReplacer(
+	// placeholderFixtures replaces the placeholders in the test fixture with
+	// the values provided to the replacer.
+	placeholderFixtures = strings.NewReplacer(
+		"{{TARGETS}}", ReadFile(fixtures, "fixtures/targets.out"),
 		"{{GOVERSION}}", runtime.Version()[2:],
 		"{{PLATFORM}}", runtime.GOOS+"/"+runtime.GOARCH,
-		"{{COMPILER}}", runtime.Compiler)
+		"{{COMPILER}}", runtime.Compiler,
+	)
 )
 
 // EnvPrepare copies the environment variables and replaces the variable
@@ -734,7 +736,7 @@ func TestMakeExec(t *testing.T) {
 	// Filter that also match the temporary test directory path (`/private` is
 	// prefix visible in MacOS builds).
 	filter := CreateFilter(regexp.MustCompile(`(?m)(/private)?` + dirTest))
-	replace := phFixtures.Replace
+	replace := placeholderFixtures.Replace
 
 	// Cleanup cache directory entries.
 	dirCache := AbsPath(filepath.Join(dirCache, dirTest, ".."))
@@ -745,11 +747,11 @@ func TestMakeExec(t *testing.T) {
 	assert.NoError(t, cmd.Run())
 
 	WriteFile(filepath.Join(dirTest, "targets~"), os.FileMode(0o644),
-		ReadFile(fixtures, "fixtures/targets/std.out"))
+		replace(ReadFile(fixtures, "fixtures/targets/std.out")))
 	WriteFile(filepath.Join(dirTest, "targets.make~"), os.FileMode(0o644),
-		ReadFile(fixtures, "fixtures/targets/make-std.out"))
+		replace(ReadFile(fixtures, "fixtures/targets/make-std.out")))
 	WriteFile(filepath.Join(dirTest, "targets.go-make~"), os.FileMode(0o644),
-		ReadFile(fixtures, "fixtures/targets/go-make-std.out"))
+		replace(ReadFile(fixtures, "fixtures/targets/go-make-std.out")))
 
 	test.Map(t, makeExecTestCases).
 		Run(func(t test.Test, param MakeExecParams) {
