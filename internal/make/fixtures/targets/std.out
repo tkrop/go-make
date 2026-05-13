@@ -130,6 +130,7 @@ go.work
 help
 image
 image-build
+image-names
 image-push
 init
 init-agents
