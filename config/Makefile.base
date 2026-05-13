@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.3
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.4
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -538,7 +538,6 @@ image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	      image = gensub("\\$${ORG}", "$(IMAGE_ORG)", "g", image); \
 	      image = gensub("\\$${REPO}", "$(IMAGE_REPO)", "g", image); \
 	      image = gensub("\\$${VERSION}", "$(IMAGE_VERSION)", "g", image); \
-		  print "IMAGE:" image " => " file > "/dev/stderr"; \
 	      if (image in files) { \
 	        print "image-build/" file "::image-build/" files[image] ";"; \
 		  }; \
