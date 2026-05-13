@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.0
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.1
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -495,7 +495,7 @@ $(call cdebug,using GITURL [$(GITURL)])
 
 
 # Function to determine the image name from the image file name.
-image-name = echo -e "$(1)" | awk '$(awk-gensub) \
+image-setup = echo -e "$(1)" | awk '$(awk-gensub) \
 	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") }; \
 	($$0) { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
@@ -544,7 +544,7 @@ $(call cdebug,using IMAGE [$(IMAGE)])
 
 # Setup default image variables.
 IMAGE_FILES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
-IMAGE_NAMES := $(shell $(call image-name,$(IMAGE_FILES)))
+IMAGE_SETUPS := $(shell $(call image-setup,$(IMAGE_FILES)))
 
 
 # Setup default database connection.
@@ -1310,7 +1310,7 @@ test-build::
 
 #@ test whether project creates conflicting container image names.
 test-image::
-	@echo -e "$(IMAGE_NAMES)" | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
+	@echo -e "$(IMAGE_SETUPS)" | awk 'BEGIN{ RS="[[:space:]]"; FS="="; \
 	  fmt = $(call amsg,error,image conflict [%s && %s => %s]\n) \
 	} { if ($$1 in imgs) { failures++; \
 	  printf(fmt, imgs[$$1], $$2, $$1) \
@@ -1813,10 +1813,10 @@ image-build = \
 	fi
 
 # Setup custom image build target dependencies.
-$(foreach line,$(shell $(call image-build-deps,$(IMAGE_NAMES))),$(eval $(line)))
+$(foreach line,$(shell $(call image-build-deps,$(IMAGE_SETUPS))),$(eval $(line)))
 # Setup custom image build targets.
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-all
-	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
+	@FILE="$*"; IMAGE="$$($(call image-setup,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never build images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
@@ -1828,7 +1828,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-all
 #@ push contianer images - if setup and allowed.
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@FILE="$*"; IMAGE="$$($(call image-name,$*))"; VERSION="$${IMAGE##*:}"; \
+	@FILE="$*"; IMAGE="$$($(call image-setup,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never push images [$${IMAGE}]); exit 0; \
 	elif [ "$${VERSION}" == "latest" ]; then $(call emsg,info, \
@@ -2521,8 +2521,8 @@ debug-image::
 	echo 'IMAGE_REPO $(IMAGE_REPO)'; \
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
-	echo 'IMAGE_NAMES $(IMAGE_NAMES)'; \
-	echo 'IMAGE_DEPS $(shell $(call image-build-deps,$(IMAGE_NAMES)))'; \
+	echo 'IMAGE_SETUPS $(IMAGE_SETUPS)'; \
+	echo 'IMAGE_DEPS $(shell $(call image-build-deps,$(IMAGE_SETUPS)))'; \
 
 #@ debug the target environment variables.
 debug-targets::
