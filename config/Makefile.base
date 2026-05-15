@@ -72,9 +72,9 @@ LD_FLAGS ?= $(strip $(LDFLAGS))
 LD_FLAGS_LINUX ?= $(strip -s -w $(LDFLAGS))
 LD_FLAGS_DARWIN ?= $(strip $(LDFLAGS))
 TESTFLAGS ?= $(if $(findstring --trace,$(MAKEFLAGS)),-v,)
-TEST_FLAGS ?= $(strip $(mod-readonly) -count=1 -race $(TESTFLAGS))
+TEST_FLAGS ?= $(strip $(mod-readonly) -race $(TESTFLAGS))
 BENCHFLAGS ?= $(if $(findstring --trace,$(MAKEFLAGS)),-v,)
-BENCH_FLAGS ?= $(strip $(mod-readonly) -count=9 -benchmem $(BENCHFLAGS))
+BENCH_FLAGS ?= $(strip $(mod-readonly) -benchmem $(BENCHFLAGS))
 BUILDFLAGS ?= # -linkmode 'external' -extldflags '-static'
 BUILD_FLAGS ?=  $(strip $(mod-readonly) -trimpath $(BUILDFLAGS))
 INSTALLFLAGS ?=
@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.4
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.5
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -472,8 +472,9 @@ $(if $(wildcard $(GOBIN)/go-make),$(shell $(call go-update,go-make,)))
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
 CODE_QUALITY ?= base
+TEST_COUNT ?= 1
 TEST_TIMEOUT ?= 10s
-TEST_BENCHTIME ?= 3s
+TEST_BENCHTIME ?= 1s
 
 # Setup custom delivery files to be scanned for updating go versions.
 DELIVERY := $(strip $(wildcard delivery*.yaml) $(wildcard .github/workflows/*.yaml))
@@ -540,6 +541,7 @@ image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	      image = gensub("\\$${VERSION}", "$(IMAGE_VERSION)", "g", image); \
 	      if (image in files) { \
 	        print "image-build/" file "::image-build/" files[image] ";"; \
+	        print "image-push/" file "::image-push/" files[image] ";"; \
 		  }; \
 	    }; }; close(cmd); \
 	  }; \
@@ -1244,16 +1246,16 @@ test:: $(TARGETS_TEST)
 #@ <pkg>[/<test>] # execute all tests.
 test-all:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -cover \
-	  -coverprofile=$(TEST_COVER) $(if $(TEST_ARGS),$(TEST_ARGS), \
+	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
+	  -cover -coverprofile=$(TEST_COVER) $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-run)), \
 	    $(addprefix ./,$(PACKAGES))));)
 
 #@ <pkg>[/<test>] # execute only unit tests.
 test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -cover \
-	  -coverprofile=$(TEST_COVER) -short $(if $(TEST_ARGS),$(TEST_ARGS), \
+	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
+	  -cover -coverprofile=$(TEST_COVER) -short $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-run)), \
 	    $(addprefix ./,$(PACKAGES))));)
 	@$(abort);
@@ -1261,8 +1263,8 @@ test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 #@ <pkg>[/<test>] # execute benchmarks.
 test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(BENCH_FLAGS) -benchtime=$(TEST_BENCHTIME) -cover \
-	  -coverprofile=$(TEST_COVER) -run="^$$" $(if $(TEST_ARGS),$(TEST_ARGS), \
+	$(GO) test $(BENCH_FLAGS) -count=$(TEST_COUNT) -benchtime=$(TEST_BENCHTIME) \
+	  -cover -coverprofile=$(TEST_COVER) -run="^$$" $(if $(TEST_ARGS),$(TEST_ARGS), \
 	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
 	    $(addprefix ./,$(PACKAGES)))) tee -a $(TEST_BENCH);)
 	@$(abort);
