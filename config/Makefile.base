@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.5
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.6
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -297,9 +297,9 @@ endif
 PLATFORM ?= $(GOOS)/$(GOARCH)
 # Setup go to use desired and consistent go versions.
 GOVERSION ?= $(shell $(GO) version | \
-	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
+	sed --regexp-extended "s|.*go([0-9.]+).*|\1|")
 # GOVERSION ?= $(shell $(GO) version $$(which $(GO)) | \
-# 	sed --regexp-extended "s/.*go([0-9.]+).*/\1/")
+# 	sed --regexp-extended "s|.*go([0-9.]+).*|\1|")
 $(call cdebug,using GOVERSION [$(GOVERSION)])
 # Function to extract the go package path from a go package spec.
 go-path = $(word 1,$(subst @,$(SPACE),$(1)))
@@ -700,7 +700,7 @@ $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS
 TARGETS_PUBLISH := $(addprefix version-publish-,all $(COMMANDS))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
-TARGETS_TEST_INIT := test-clean init-code
+TARGETS_TEST_INIT := init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-,$(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-,$(CODACY_BINARIES))
 TARGETS_LINT_CODACY :=  lint-revive $(TARGETS_LINT_CODACY_CLIENTS) \
@@ -1198,39 +1198,76 @@ TEST_BENCH := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.bench)
 TEST_DEPS ?=
 TEST_ARGS ?=
 
-# process test arguments.
-test-args = ARGS=($(ARGS)); \
-	if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
-	  if  [ "$${BASH_REMATCH[1]}" != "all" ]; then \
-	    echo "-coverpgk=./$${ARGS[0]\#*:}"; \
-	  else echo "-coverpkg=./..."; fi; \
-	  ARGS=($${ARGS[@]:1}); \
+# split the unified benchmark output into separate files for each discovered
+# benchmark. the file name is derived from the benchmark name by converting
+# camel-case to kebab-case and prefixing it with "test-". the output is stored
+# in the build directory with the extension ".bench". the header and footer of
+# the original output are preserved in each split.
+test-split-bench = \
+	awk -F '[[:space:]:/]' ' \
+	  function toname(str) { \
+	    return tolower(gensub(/([A-Z])/, "-\\1", "g", str)) \
+	  } \
+	  BEGIN { split("", data); header = ""; footer = "" } \
+	  /^Benchmark/ { \
+	    match($$1, /^Benchmark[^/-]*/); \
+	    prefix = substr($$1, 10, RLENGTH - 9); \
+	    data[prefix] = data[prefix] $$0 "\n"; \
+	    next \
+	  } \
+	  { \
+	    if (length(data) == 0) { \
+	      header = header $$0 "\n" \
+	    } else { \
+	      footer = footer $$0 "\n" \
+		} next \
+	  } \
+	  END { \
+	    for (prefix in data) { \
+	      file = "$(DIR_BUILD)/test" toname(prefix) ".bench"; \
+	      print "creating " file > "/dev/stderr"; \
+	      printf "%s", header > file; \
+	      printf "%s", data[prefix] >> file; \
+	      printf "%s", footer >> file; \
+	    } \
+	  }'
+
+# process unified test arguments that allows to define multiple test goals.
+# the syntax of the arguments is as follows:
+# 1. scope:<pkg> - defines the package or test scope
+# 2. <file>_test.go - defines a test file with its dependencies
+# 3. <dir> - defines a directory with all its test files and dependencies
+# 4. <regex> - defines a regex to filter test functions (e.g., -run or -bench)
+test-args = COVER=(); FILES=(); REGEX=(); \
+	for ARG in $(ARGS); do \
+	  if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	    if  [ "$${BASH_REMATCH[1]}" == "." ]; then COVER+=("./..."); \
+	    elif [ -d "$${BASH_REMATCH[1]}" ]; then \
+	      COVER+=("$${BASH_REMATCH[1]}"); \
+	    fi; \
+	  elif [ -f "$${ARG}" ] && [[ "$${ARG}" == *_test.go ]]; then \
+	    FILES+=("$${ARG}" $$(find $$(dirname "$${ARG}" | sort --unique) \
+	      -maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
+	      -o -name "common_test.go" -o -name "mock_*_test.go")); \
+	  elif [ -d "$${ARG}" ]; then FILES+=("$${ARG}"); \
+	  elif [ ! -f "$${ARG}" ] && [ ! -d "$${ARG}" ]; then \
+	    REGEX+=("$${ARG}"); \
+	  else $(call emsg,warning,invalid test args [$${ARGS[@]}]); fi; \
+	done; \
+	if [ "$${\#COVER[@]}" != "0" ]; then \
+	  echo -n "-coverpkg=$$(echo "$${COVER[*]}" | \
+	    sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g; s| |,|g')"; \
 	fi; \
-    if [ -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ] && \
-	    [ "$${ARGS[0]}" == *_test.go ]; then \
-	  find $$(dirname "$${ARGS[@]}" | sort --unique) \
-		-maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-		-o -name "common_test.go" -o -name "mock_*_test.go" | \
-		sed "s|^|./|"; \
-	  echo $${ARGS[@]/\#/./}; \
-	elif [ -d "$${ARGS[0]}" ] && ! [ -f "$${ARGS[0]}" ]; then \
-	  for ARG in $(PACKAGES); do \
-	    [[ "$${ARG}" == $${ARGS[@]}* ]] && echo "./$${ARG}"; \
-	  done; \
-	elif [ ! -f "$${ARGS[0]}" ] && ! [ -d "$${ARGS[0]}" ]; then \
-	  for ARG in $${ARGS[0]}; do \
-		if [ -z "$${PACKAGES}" ]; then PACKAGES="$${ARG%/*}"; \
-		else PACKAGES="$${PACKAGES}\n$${ARG%/*}"; fi; \
-		if [ -z "$${TEST_CASE}" ]; then TEST_CASES="$(1)=$${ARG\#\#*/}"; \
-		else TEST_CASES="$${TEST_CASES} $(1)=$${ARG\#\#*/}"; fi; \
-	  done; \
-	  echo -en "$${PACKAGES}" | sort --unique | sed "s|^|./|"; \
-	  echo "$${TEST_CASES}"; \
-	else \
-	  $(call emsg,warning,invalid test parameters [$${ARGS[@]}]); \
-	fi
-#test-args::
-#	$(call test-args,-run)
+	if [ "$${\#REGEX[@]}" != "0" ]; then \
+	  echo "$(1)="$$(echo "$${REGEX[*]}" | sed 's| |\||g')""; \
+	elif [ "$(1)" == "-bench" ]; then echo "$(1)=\"^Benchmark\""; \
+	elif [ "$(1)" == "-run" ]; then echo "$(1)=\"^Test\""; fi; \
+	if [ "$${\#FILES[@]}" != "0" ]; then echo "$$(echo "$${FILES[*]}" | \
+	  sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g')"; \
+	else echo "$(addprefix ./,$(PACKAGES))"; fi;
+
+# test-args::
+# 	$(call test-args,-run)
 
 # filter to exclude deep-copy generated files from test coverage (disabled).
 #
@@ -1243,31 +1280,38 @@ test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
 
 #@ execute default test set.
 test:: $(TARGETS_TEST)
-#@ <pkg>[/<test>] # execute all tests.
+#@ execute all tests in the project.
 test-all:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
-	  -cover -coverprofile=$(TEST_COVER) $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(PACKAGES))));)
+	  -cover -coverprofile=$(TEST_COVER) $(strip $(if \
+	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
 
-#@ <pkg>[/<test>] # execute only unit tests.
+#@ [<pkg>|<test>] # execute only unit tests.
 test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
-	  -cover -coverprofile=$(TEST_COVER) -short $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-run)), \
-	    $(addprefix ./,$(PACKAGES))));)
+	  -cover -coverprofile=$(TEST_COVER) -short $(strip $(if \
+	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
 	@$(abort);
 
-#@ <pkg>[/<test>] # execute benchmarks.
+#@ [<pkg>|<test>] # execute benchmarks.
 test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
-	$(GO) test $(BENCH_FLAGS) -count=$(TEST_COUNT) -benchtime=$(TEST_BENCHTIME) \
-	  -cover -coverprofile=$(TEST_COVER) -run="^$$" $(if $(TEST_ARGS),$(TEST_ARGS), \
-	  $(if $(ARGS),$(shell $(call test-args,-bench)), \
-	    $(addprefix ./,$(PACKAGES)))) tee -a $(TEST_BENCH);)
+	$(GO) test $(BENCH_FLAGS) -count=$(TEST_COUNT) \
+	  -benchtime=$(TEST_BENCHTIME) -run="^$$" $(strip $(if \
+	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-bench)))) | \
+	  tee $(TEST_BENCH);)
+	@$(test-split-bench) $(TEST_BENCH);
 	@$(abort);
+
+# #@ split the unified benchmark output by discovered benchmarks.
+# test-split::
+# 	@$(test-split-bench) $(TEST_BENCH);
+
+# #@ shows test benchmark and coverage statistics.
+# test-stats:: $(GOBIN)/benchstat
+
 
 #@ remove all coverage files of test and benchmarks.
 test-clean::
