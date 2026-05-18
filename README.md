@@ -351,7 +351,9 @@ provide feedback on it as fast as possible.
 
 ## Disclaimer
 
-This software is `100%` written by humans. AI is only used to review code,
-search for bugs, improve test coverage, and analyse performance issues. All
-actions executed with the help of AI are carefully reviewed, checked, and
-modified with the human standards and quality goals in mind.
+This software is developed with the help of AI following the highest human
+standards. All actions executed by AI are carefully reviewed, counter-checked,
+and corrected with the highest human standards and quality goals in mind. No
+AI generate code is allowed to be merged or released without a careful human
+reviews to prevent systematic degeneration of coding standards and code
+quality.
