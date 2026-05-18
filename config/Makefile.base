@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.6
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.7
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1840,7 +1840,7 @@ image-build = \
 	  if [[ "$(1)" =~ ^"image-push/" ]]; then BUILD+=("--push"); fi; \
 	elif [[ "$(1)" =~ ^"image-build/" ]]; then \
 	  BUILD=("$(IMAGE_CMD)" "build" \
-	    --build-arg="TARGETOS=$(word 1,$(subst /, ,$(PLATFORM)))" \
+	    --build-arg="TARGETOS=$(word 1,$(subst /, ,$(PLATF!=ORM)))" \
 	    --build-arg="TARGETARCH=$(word 2,$(subst /, ,$(PLATFORM)))" \
 	    --build-arg="REGISTRY=$(IMAGE_REGISTRY)" --build-arg="ORG=$(IMAGE_ORG)" \
 	    --build-arg="REPO=$(IMAGE_REPO)" --build-arg="VERSION=$(IMAGE_VERSION)" \
@@ -1858,9 +1858,10 @@ image-build = \
 	    --label=org.opencontainers.image.source="$(GITURL)" \
 	    --label=org.opencontainers.image.version="$${IMAGE\#\#*:}" \
 	    --label=org.opencontainers.image.revision="$${REVISION}"); \
-		if [ "$${IMAGE\#\#*:}" != "latest" ]; then \
-		  BUILD+=(--tag="$${IMAGE%%:*}:latest"); \
-		fi; BUILD+=(--tag="$${IMAGE}" --file="$${FILE}" .); \
+	  if [ "$${BUILD[1]}" != "build" ] && [ "$${IMAGE\#\#*:}" != "latest" ]; then \
+		BUILD+=(--tag="$${IMAGE%%:*}:latest"); \
+	  fi; \
+	  BUILD+=(--tag="$${IMAGE}" --file="$${FILE}" .); \
 	fi
 
 # Setup custom image build target dependencies.
