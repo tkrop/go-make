@@ -18,7 +18,7 @@
 [build-badge]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml/badge.svg>
 [build-link]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml>
 
-[codeql-badge]: <https://github.com/tkrop/go-make/actions/workflows/codeql-analysis.yml/badge.svg>
+[codeql-badge]: <https://github.com/tkrop/go-make/actions/workflows/github-code-scanning/codeql/badge.svg?branch=main>
 [codeql-link]: <https://github.com/tkrop/go-make/actions/workflows/github-code-scanning/codeql>
 
 [coveralls-badge]: <https://coveralls.io/repos/github/tkrop/go-make/badge.svg?branch=main>
