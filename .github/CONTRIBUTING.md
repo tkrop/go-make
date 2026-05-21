@@ -30,9 +30,9 @@ pull request body.
 
 ## Suggesting features
 
-To request a new feature you should open an [issue](../../issues/new) and summarize
-the desired functionality and its use case with an example. Set the issue label
-to "enhancement".
+To request a new feature you should open an [issue](../../issues/new) and
+summarize the desired functionality and its use case with an example. Set the
+issue label to "enhancement".
 
 
 ## Contributing code
