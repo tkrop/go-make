@@ -1,12 +1,11 @@
 # Make framework
 
 [![Build][build-badge]][build-link]
+[![Quality][codeql-badge]][codeql-link]
 [![Coverage][coveralls-badge]][coveralls-link]
 [![Coverage][coverage-badge]][coverage-link]
 [![Quality][quality-badge]][quality-link]
-![Quality][code-ql]
 [![Report][report-badge]][report-link]
-[![FOSSA][fossa-badge]][fossa-link]
 [![License][license-badge]][license-link]
 [![Docs][docs-badge]][docs-link]
 
@@ -18,6 +17,9 @@
 
 [build-badge]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml/badge.svg>
 [build-link]: <https://github.com/tkrop/go-make/actions/workflows/build.yaml>
+
+[codeql-badge]: <https://github.com/tkrop/go-make/actions/workflows/codeql-analysis.yml/badge.svg>
+[codeql-link]: <https://github.com/tkrop/go-make/actions/workflows/github-code-scanning/codeql>
 
 [coveralls-badge]: <https://coveralls.io/repos/github/tkrop/go-make/badge.svg?branch=main>
 [coveralls-link]: <https://coveralls.io/github/tkrop/go-make?branch=main>
@@ -31,16 +33,11 @@
 [report-badge]: <https://goreportcard.com/badge/github.com/tkrop/go-make>
 [report-link]: <https://goreportcard.com/report/github.com/tkrop/go-make>
 
-[fossa-badge]: <https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make.svg?type=shield&issueType=license>
-[fossa-link]: <https://app.fossa.com/projects/git%2Bgithub.com%2Ftkrop%2Fgo-make?ref=badge_shield&issueType=license>
-
-[license-badge]: <https://img.shields.io/badge/License-MIT-yellow.svg>
+[license-badge]: <https://img.shields.io/badge/License-MIT-green.svg>
 [license-link]: <https://opensource.org/licenses/MIT>
 
 [docs-badge]: <https://pkg.go.dev/badge/github.com/tkrop/go-make.svg>
 [docs-link]: <https://pkg.go.dev/github.com/tkrop/go-make>
-
-[code-ql]: <https://github.com/zalando/skipper/actions/workflows/codeql-analysis.yml/badge.svg>
 
 <!--
 [release-badge]: <https://img.shields.io/github/release/tkrop/go-make.svg>
@@ -340,13 +337,6 @@ config in other project before releasing it.
 This software is open source under the MIT license. You can use it without
 restrictions and liabilities. Please give it a star, so that I know. If the
 project has more than 25 Stars, I will introduce semantic versions `v1`.
-
-
-## Contributing
-
-If you like to contribute, please create an issue and/or pull request with a
-proper description of your proposal or contribution. I will review it and
-provide feedback on it as fast as possible.
 
 
 ## Disclaimer
