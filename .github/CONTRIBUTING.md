@@ -24,7 +24,7 @@ the label to "bug". If you want to provide a fix along with your bug report:
 That is great!
 
 In this case please create a pull request as described in section
-[Contribute Code](#contributing-code) and report the bug directly in the
+[Contributing code](#contributing-code) and report the bug directly in the
 pull request body.
 
 
