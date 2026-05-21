@@ -15,7 +15,7 @@ reach via issue.
 ## Reporting bugs
 
 Reporting bugs is one of the best ways to contribute. Before creating a bug
-report, please check whether an [issue](issues) reporting the same problem
+report, please check whether an [issue](../../issues) reporting the same problem
 already exist. If there is such an issue, please add your information as a
 comment.
 
@@ -30,7 +30,7 @@ pull request body.
 
 ## Suggesting features
 
-To request a new feature you should open an [issue](../issues/new) and summarize
+To request a new feature you should open an [issue](../../issues/new) and summarize
 the desired functionality and its use case with an example. Set the issue label
 to "enhancement".
 
