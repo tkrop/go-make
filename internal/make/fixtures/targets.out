@@ -227,6 +227,9 @@ test-clean
 test-cover
 test-go
 test-image
+test-prof-block
+test-prof-cpu
+test-prof-mem
 test-self
 test-unit
 test-upload
