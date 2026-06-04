@@ -148,8 +148,8 @@ $(call cdebug,using BASH [$${0} - $${BASH_VERSION}])
 $(call cdebug,using AWK [$(shell echo | awk -W version 2>/dev/null)])
 
 # Helper function to find and remove source files.
-find-all = find $(1) ! -path "./.git/*" ! -path "./.github/*" \
-	! -path "*/vendor/*" ! -path "./run/*" ! -path "./build/*" \
+find-all = find $(1) ! -path "./.git/*" ! -path "*/vendor/*" \
+	! -path "./run/*" ! -path "./build/*" \
 	\( $(2) \) 2>/dev/null | sed "s/^.\///g"
 find-go = $(call find-all,$(1),-type f -regex "^[a-z0-9/_.-]*\.go$$" $(2))
 clean-file = $(call find-all,$(1),-type f \( $(2) \) \
@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.8
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.9
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1195,6 +1195,11 @@ init-agents::
 ## Test: targets to test the source code (and compiler environment).
 TEST_COVER := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.cover)
 TEST_BENCH := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.bench)
+TEST_CPU := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test-cpu.prof)
+TEST_MEM := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test-mem.prof)
+TEST_BLOCK := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test-block.prof)
+TEST_BINARY := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.binary)
+TEST_TRACE := $(patsubst $(CURDIR)/%,%,$(DIR_BUILD)/test.trace)
 TEST_DEPS ?=
 TEST_ARGS ?=
 
@@ -1299,7 +1304,9 @@ test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(BENCH_FLAGS) -count=$(TEST_COUNT) \
-	  -benchtime=$(TEST_BENCHTIME) -run="^$$" $(strip $(if \
+	  -benchtime=$(TEST_BENCHTIME) -cpuprofile=$(TEST_CPU) \
+	  -memprofile=$(TEST_MEM) -blockprofile=$(TEST_BLOCK) \
+	  -trace=$(TEST_TRACE) -run="^$$" $(strip $(if \
 	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-bench)))) | \
 	  tee $(TEST_BENCH);)
 	@$(test-split-bench) $(TEST_BENCH);
@@ -1317,17 +1324,20 @@ test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 test-clean::
 	@rm --verbose --force $(DIR_BUILD)/*.{cover,bench,html};
 
+# TODO: test sensible-browser on MacOS and Linux systems.
+
 #@ start the test coverage report.
 test-cover::
-	@FILE="$(TEST_COVER)"; \
-	$(GO) tool cover -o "$${FILE}.html" -html="$${FILE}"; \
+	@$(GO) tool cover -o "$(TEST_COVER).html" -html="$(TEST_COVER)"; \
 	if [ "$(ARGS)" != "dark" ]; then \
-	  sed --in-place --expression='s/black/whitesmoke/g' "$${FILE}.html"; \
-	fi; \
-	sensible-browser "$${FILE}.html";
+	  sed --in-place --expression='s/black/whitesmoke/g' "$(TEST_COVER).html"; \
+	fi; sensible-browser "$(TEST_COVER).html";
 
-# TODO: test sensible-browser on MacOS and Linux systems.
-#	$(GO) tool cover -html="$${FILE}";
+#@ test-prof-* # start the test benchmark report.
+$(addprefix test-prof-,cpu mem block):: test-prof-%:
+	@go test -c -o "$(TEST_BINARY)" $(addprefix ./,$(PACKAGES)); \
+	$(GO) tool pprof -symbolize=none -nodefraction=0.01 -nodecount=10 \
+	  -nodeunit=percent -web "$(TEST_BINARY)" "$(TEST_$(call upper,$*))";
 
 #@ upload the test coverage report to codacy.
 test-upload::
@@ -1840,7 +1850,7 @@ image-build = \
 	  if [[ "$(1)" =~ ^"image-push/" ]]; then BUILD+=("--push"); fi; \
 	elif [[ "$(1)" =~ ^"image-build/" ]]; then \
 	  BUILD=("$(IMAGE_CMD)" "build" \
-	    --build-arg="TARGETOS=$(word 1,$(subst /, ,$(PLATF!=ORM)))" \
+	    --build-arg="TARGETOS=$(word 1,$(subst /, ,$(PLATFORM)))" \
 	    --build-arg="TARGETARCH=$(word 2,$(subst /, ,$(PLATFORM)))" \
 	    --build-arg="REGISTRY=$(IMAGE_REGISTRY)" --build-arg="ORG=$(IMAGE_ORG)" \
 	    --build-arg="REPO=$(IMAGE_REPO)" --build-arg="VERSION=$(IMAGE_VERSION)" \
@@ -1890,7 +1900,7 @@ $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
 	  aborting - we never push pull request images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [$${IMAGE}]!); exit 0; \
-	elif docker buildx imagetools inspect $${IMAGE}; then \
+	elif $(IMAGE_CMD) buildx imagetools inspect $${IMAGE}; then \
 	  $(call emsg,warning,skipping - image already exists [$${IMAGE}]); \
 	  exit 0; \
 	fi; \
