@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.10
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.11
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -518,18 +518,24 @@ IMAGE := $(IMAGE_NAME):$(IMAGE_VERSION)
 $(call cdebug,using IMAGE [$(IMAGE)])
 
 # Function to determine the image name from the image file name.
-image-setup = echo -e "$(1)" | awk '$(awk-gensub) \
-	BEGIN{ RS="[[:space:]]"; FS="/"; file=("$(1)" ~ "[[:space:]]") }; \
+image = echo -e "$(2)" | awk --assign mode="$(1)" ' \
+	BEGIN{ RS="[[:space:]]"; FS="/"; } $(awk-gensub) \
 	($$0) { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-	    infix = "-" substr($$(NF), length("$(FILE_IMAGE)")+2); \
-	  } else if ($$0 ~ "/$(FILE_IMAGE)$$") { infix = "-" $$(NF-1); \
-	  } else { infix = ""; }; \
-	  infix = gensub("[^[:alnum:]_.-]", "", "g", infix); \
-	  add = (file != 0) ? "=" $$0: ""; \
-	  print gensub(":", infix ":", "1", "$(IMAGE)" add); \
+	    cmd = substr($$(NF), length("$(FILE_IMAGE)")+2) \
+	  } else if ($$0 ~ "/$(FILE_IMAGE)$$") { \
+	    cmd = $$(NF-1) \
+	  } else { cmd = "" } \
+	  infix = "-" gensub("[^[:alnum:]_.-]", "", "g", cmd); \
+	  if (mode == "image") { \
+	    print gensub(":", infix ":", "1", "$(IMAGE)") \
+	  } else if (mode == "setup") { \
+	    print gensub(":", infix ":", "1", "$(IMAGE)" "=" $$0) \
+	  } else if (mode == "deps") { \
+	    print "image-build-" cmd "::image-build/" $$0 ";" \
+	  } else { print $$0 } \
 	}'
-image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
+image-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
 	  while (idx <= len) { files[a[idx]] = a[idx+2]; idx = idx+3; }; \
 	  for (image in files) { file = files[image]; cmd = "cat " file; \
@@ -549,7 +555,7 @@ image-build-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 
 # Setup default image variables.
 IMAGE_FILES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
-IMAGE_SETUPS := $(shell $(call image-setup,$(IMAGE_FILES)))
+IMAGE_SETUPS := $(shell $(call image,setup,$(IMAGE_FILES)))
 
 
 # Setup default database connection.
@@ -747,7 +753,7 @@ TARGETS_UPDATE? := $(filter $(addsuffix ?,$(TARGETS_UPDATE)), \
 
 ## Standard: default targets to test, lint, and build.
 .DEFAULT:
-	@if ! [[ "$(ARGS)" =~ *"$@"* ]]; then \
+	@if ! [[ "$(ARGS)" =~ .*"$@".* ]]; then \
 	  $(call emsg,error,unknown target [$@]); exit 1; \
 	fi;
 
@@ -1873,11 +1879,13 @@ image-build = \
 	  BUILD+=(--tag="$${IMAGE}" --file="$${FILE}" .); \
 	fi
 
+# Setup custom image build target commands.
+$(foreach line,$(shell $(call image,deps,$(IMAGE_FILES))),$(eval $(line)))
 # Setup custom image build target dependencies.
-$(foreach line,$(shell $(call image-build-deps,$(IMAGE_SETUPS))),$(eval $(line)))
+$(foreach line,$(shell $(call image-deps,$(IMAGE_SETUPS))),$(eval $(line)))
 # Setup custom image build targets.
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-all
-	@FILE="$*"; IMAGE="$$($(call image-setup,$*))"; VERSION="$${IMAGE##*:}"; \
+	@FILE="$*"; IMAGE="$$($(call image,image,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never build images [$${IMAGE}]); exit 0; \
 	elif [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
@@ -1889,7 +1897,7 @@ $(TARGETS_IMAGE_BUILD):: image-build/%: build-all
 #@ push contianer images - if setup and allowed.
 image-push:: test-image $(TARGETS_IMAGE_PUSH)
 $(TARGETS_IMAGE_PUSH):: image-push/%: image-build/%
-	@FILE="$*"; IMAGE="$$($(call image-setup,$*))"; VERSION="$${IMAGE##*:}"; \
+	@FILE="$*"; IMAGE="$$($(call image,image,$*))"; VERSION="$${IMAGE##*:}"; \
 	if [ "$(IMAGE_PUSH)" == "never" ]; then $(call emsg,info, \
 	  aborting - we never push images [$${IMAGE}]); exit 0; \
 	elif [ "$${VERSION}" == "latest" ]; then $(call emsg,info, \
@@ -2115,19 +2123,20 @@ run-aws:: $(DIR_RUN)
 	$(call run-setup-aws) || exit 1) | tee -a $(DIR_RUN)/$(GITNAME)-aws.log;
 
 #@ run-*: start the matched command using the native binary.
-$(TARGETS_RUN):: run-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN):: run-%: build-% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(DIR_BUILD)/$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
+	$(DIR_BUILD)/$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
 	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ run-go-*: start the matched command using go run.
-$(TARGETS_RUN_GO):: run-go-%: $(DIR_BUILD)/% $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN_GO):: run-go-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@$(call run-setup) && $(call run-vars,) $(call run-vars-local,) \
-	  $(GO) run cmd/$*/main.go $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
+	$(GO) run "$(call main-pkg,$*)/main.go" $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$(GITNAME)-$*.log; \
 	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ run-image-*: start the matched command via the container images.
-$(TARGETS_RUN_IMAGE):: run-image-%: $(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
+$(TARGETS_RUN_IMAGE):: run-image-%: $(if $(filter %,$(IMAGE_FILES)),image-build-%) \
+		$(RUN_DEPS) $(DIR_RUN) $(DIR_CRED)
 	@NAME="$(GITNAME)-$*"; \
 	$(call emsg,info,running [$${NAME}]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,error, \
@@ -2581,7 +2590,7 @@ debug-image::
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
 	echo 'IMAGE_SETUPS $(IMAGE_SETUPS)'; \
-	echo 'IMAGE_DEPS $(shell $(call image-build-deps,$(IMAGE_SETUPS)))'; \
+	echo 'IMAGE_DEPS $(shell $(call image-deps,$(IMAGE_SETUPS)))'; \
 
 #@ debug the target environment variables.
 debug-targets::
@@ -2616,7 +2625,6 @@ debug-targets-build::
 debug-targets-image::
 	@echo 'TARGETS_IMAGE_BUILD $(TARGETS_IMAGE_BUILD)'; \
 	echo 'TARGETS_IMAGE_PUSH $(TARGETS_IMAGE_PUSH)'; \
-	echo 'TARGETS_IMAGE_PUSH_DEPS $(TARGETS_IMAGE_PUSH_DEPS)'; \
 
 #@ debug the install target environment variables.
 debug-targets-install::
