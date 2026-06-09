@@ -188,7 +188,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.9
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.10
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -700,7 +700,6 @@ $(call cinfo,executing [make $(filter-out $(ARGS),$(MAKECMDGOALS)) ARGS=\"$(ARGS
 TARGETS_PUBLISH := $(addprefix version-publish-,all $(COMMANDS))
 TARGETS_INIT_ALL := $(addprefix init/,$(sort $(INIT_MAKE) $(UPDATE_MAKE)))
 TARGETS_INIT_MAKE := $(addprefix init/,$(INIT_MAKE))
-TARGETS_TEST_INIT := init-code
 TARGETS_LINT_CODACY_CLIENTS := $(addprefix lint-,$(CODACY_CLIENTS))
 TARGETS_LINT_CODACY_BINARIES := $(addprefix lint-,$(CODACY_BINARIES))
 TARGETS_LINT_CODACY :=  lint-revive $(TARGETS_LINT_CODACY_CLIENTS) \
@@ -1286,14 +1285,14 @@ test-filter = | grep -v "$(FILE_DEEPCOPY)"; \
 #@ execute default test set.
 test:: $(TARGETS_TEST)
 #@ execute all tests in the project.
-test-all:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
+test-all:: $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
 	  -cover -coverprofile=$(TEST_COVER) $(strip $(if \
 	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
 
 #@ [<pkg>|<test>] # execute only unit tests.
-test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
+test-unit:: $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
 	  -cover -coverprofile=$(TEST_COVER) -short $(strip $(if \
@@ -1301,7 +1300,7 @@ test-unit:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
 	@$(abort);
 
 #@ [<pkg>|<test>] # execute benchmarks.
-test-bench:: $(TARGETS_TEST_INIT) $(DIR_BUILD) $(SOURCES) init-code
+test-bench:: $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(BENCH_FLAGS) -count=$(TEST_COUNT) \
 	  -benchtime=$(TEST_BENCHTIME) -cpuprofile=$(TEST_CPU) \
@@ -2067,8 +2066,7 @@ RUN_DEPS ?=
 
 #@ start a postgres database instance for testing.
 run-db:: $(DIR_RUN)
-	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-db " ]]; then exit 0; fi; \
-	$(call emsg,info,ensuring [$(DB_IMAGE) => $(HOST):$(DB_PORT)]); \
+	@$(call emsg,info,ensuring [$(DB_IMAGE) => $(HOST):$(DB_PORT)]); \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [postgres]!); exit 0; fi; \
 	if [ -n "$$($(IMAGE_CMD) ps | grep "$(DB_IMAGE).*$(HOST):$(DB_PORT)")" ]; then \
@@ -2095,8 +2093,7 @@ run-db:: $(DIR_RUN)
 
 #@ start an AWS localstack instance for testing.
 run-aws:: $(DIR_RUN)
-	@if ! [[ " $(TEST_DEPS) $(RUN_DEPS) " =~ " run-aws " ]]; then exit 0; fi; \
-	$(call emsg,info,ensuring [$(AWS_IMAGE) => $(HOST):4566/4571]) && \
+	@$(call emsg,info,ensuring [$(AWS_IMAGE) => $(HOST):4566/4571]) && \
 	if [ -z "$(IMAGE_CMD)" ]; then $(call emsg,warning, \
 	  continuing - no docker command [aws/localstack]!); exit 0; \
 	elif [ -n "$$($(IMAGE_CMD) ps | \
@@ -2601,11 +2598,6 @@ debug-targets-init::
 	@echo 'TARGETS_INIT $(TARGETS_INIT)'; \
 	echo 'TARGETS_INIT_ALL $(TARGETS_INIT_ALL)'; \
 	echo 'TARGETS_INIT_MAKE $(TARGETS_INIT_MAKE)'; \
-
-#@ debug the test target environment variables.
-debug-targets-test::
-	@echo 'TARGETS_TEST $(TARGETS_TEST)'; \
-	echo 'TARGETS_TEST_INIT $(TARGETS_TEST_INIT)';
 
 #@ debug the lint target environment variables.
 debug-targets-lint::

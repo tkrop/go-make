@@ -80,7 +80,6 @@ debug-targets-init
 debug-targets-install
 debug-targets-lint
 debug-targets-run
-debug-targets-test
 debug-targets-uninstall
 debug-targets-update
 debug-tools
