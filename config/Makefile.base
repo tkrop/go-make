@@ -29,6 +29,8 @@ COLOR-target := 1;96
 
 # Finding: \$\(call *[ce]*msg
 ts = $$(date '+%F %T.%3N')
+xget = $(foreach msg,$(1),$(word $(2),$(if \
+	$(filter $(SPACE),$(3)),$(msg),$(subst $(3),$(SPACE),$(msg)))))
 xifeq = $(if $(and $(findstring x$(1),x$(2)),$(findstring x$(2),x$(1))),$(3),$(4))
 msg = $(strip \033[$(COLOR-$(1))m$(2)\033[0m $(3))
 amsg = (("date '"'"'+%F %T.%3N'"'"'" | getline _msg_) > 0 ? \
@@ -188,7 +190,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.11
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.12
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -533,7 +535,7 @@ image = echo -e "$(2)" | awk --assign mode="$(1)" ' \
 	    print gensub(":", infix ":", "1", "$(IMAGE)" "=" $$0) \
 	  } else if (mode == "deps") { \
 	    print "image-build-" cmd "::image-build/" $$0 ";" \
-	  } else { print $$0 } \
+	  } else if (mode == "cmd") { print cmd } else { print $$0 } \
 	}'
 image-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
@@ -556,6 +558,7 @@ image-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 # Setup default image variables.
 IMAGE_FILES := $(shell $(call find-all,.,-type f -name "$(FILE_IMAGE)*"))
 IMAGE_SETUPS := $(shell $(call image,setup,$(IMAGE_FILES)))
+IMAGE_COMMANDS := $(shell $(call image,cmd,$(IMAGE_FILES)))
 
 
 # Setup default database connection.
@@ -736,10 +739,10 @@ TARGETS_UNINSTALL_ALL := \
 	$(TARGETS_UNINSTALL_NPM) $(TARGETS_UNINSTALL_CODACY))
 TARGETS_RUN := $(addprefix run-, $(COMMANDS))
 TARGETS_RUN_GO := $(addprefix run-go-, $(COMMANDS))
-TARGETS_RUN_IMAGE := $(addprefix run-image-,$(if $(IMAGE_FILES),$(COMMANDS)))
-TARGETS_RUN_CLEAN := $(addprefix run-clean-,$(if $(IMAGE_FILES),$(COMMANDS)) db aws)
+TARGETS_RUN_IMAGE := $(addprefix run-image-,$(IMAGE_COMMANDS) $(COMMANDS))
+TARGETS_RUN_CLEAN := $(addprefix run-clean-,$(IMAGE_COMMANDS) db aws)
 TARGETS_CLEAN_ALL := clean-init $(TARGETS_CLEAN) clean-run $(TARGETS_UNINSTALL_ALL)
-TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(if $(IMAGE_FILES),$(COMMANDS)) db aws)
+TARGETS_CLEAN_RUN := $(addprefix clean-run-,$(IMAGE_COMMANDS) db aws)
 TARGETS_UPDATE_GO := $(addprefix update-,$(COMMANDS_GO))
 TARGETS_UPDATE_SH := $(addprefix update-,$(COMMANDS_SH))
 TARGETS_UPDATE_NPM := $(addprefix update-,$(TOOLS_NPM:-cli=))
@@ -2590,6 +2593,7 @@ debug-image::
 	echo 'IMAGE_PUSH $(IMAGE_PUSH)'; \
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
 	echo 'IMAGE_SETUPS $(IMAGE_SETUPS)'; \
+	echo 'IMAGE_COMMANDS $(IMAGE_COMMANDS)'; \
 	echo 'IMAGE_DEPS $(shell $(call image-deps,$(IMAGE_SETUPS)))'; \
 
 #@ debug the target environment variables.
