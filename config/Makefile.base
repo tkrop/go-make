@@ -190,7 +190,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.12
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.13
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -520,7 +520,7 @@ IMAGE := $(IMAGE_NAME):$(IMAGE_VERSION)
 $(call cdebug,using IMAGE [$(IMAGE)])
 
 # Function to determine the image name from the image file name.
-image = echo -e "$(2)" | awk --assign mode="$(1)" ' \
+image = echo -e "$(2)" | awk -v mode="$(1)" ' \
 	BEGIN{ RS="[[:space:]]"; FS="/"; } $(awk-gensub) \
 	($$0) { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
