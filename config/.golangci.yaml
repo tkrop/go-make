@@ -209,6 +209,9 @@ linters:
         # Rule prevents intentional usage of similar variable names.
         - name: flag-parameter
           disabled: true
+        # Rule prevents intentional usage of similar variable names.
+        - name: var-naming
+          disabled: true
         # Rule prevents intentional usage of similar private method names.
         - name: confusing-naming
           disabled: true

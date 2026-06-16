@@ -19,7 +19,7 @@ generic Go conventions when different.
   clarity.
 * Use `github.com/tkrop/go-make format` for consistent formatting:
   * Use `goimports` to manage import order automatically.
-  * Always use `gofmt` to format code.
+  * Use `golangci-lint fmt` to format code after changes.
 * Add blank lines to separate logical groups of code.
 * Add short, concise doc comments for all exported functions, types, and
   constants.
@@ -269,3 +269,5 @@ patterns:
   * `go test -coverprofile=build/test-agent.cover ...` for generating, and
   * `go tools -func=build/test-agent.cover` for accessing the coverage results.
   * Similar use `build/test-agent.html` for accessing the html page.
+  * Always check whether uncovered code may be too defensive and can be
+    removed or simplified.
