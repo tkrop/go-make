@@ -190,7 +190,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.13
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.14
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -2084,7 +2084,7 @@ run-db:: $(DIR_RUN)
 	  $(call emsg,info,port allocated - using existing [postgres]); exit 0; fi; \
 	$(IMAGE_CMD) start $(GITNAME)-db 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name $(GITNAME)-db \
-	  --network host --publish $(HOST):$(DB_PORT):5432 \
+	  --publish $(HOST):$(DB_PORT):5432 \
 	  --env POSTGRES_USER="$(DB_USER)" \
 	  --env POSTGRES_PASSWORD="$(DB_PASSWORD)" \
 	  --env POSTGRES_DB="$(DB_NAME)" $(DB_IMAGE) \
@@ -2114,7 +2114,7 @@ run-aws:: $(DIR_RUN)
 	fi; \
 	$(IMAGE_CMD) start $(GITNAME)-aws 2>/dev/null || ( \
 	$(IMAGE_CMD) run --detach --tty --name $(GITNAME)-aws \
-	  --network host --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
+	  --publish $(HOST):4566:4566 --publish $(HOST):4571:4571 \
 	  --env SERVICES="$(AWS_SERVICES)" $(AWS_IMAGE) $(ARGS) 2>&1 && \
 	until [ "$$($(IMAGE_CMD) inspect --format {{.State.Running}} \
 	  $(GITNAME)-aws 2>/dev/null)" == "true" ]; \
@@ -2228,35 +2228,34 @@ $(UPDATE_KUBE_APIS):: update-kube/%: $(UPDATE_KUBE_TARGETS)
 	   [ -z "$$(find $${BPKG}/{apis,clients,manifests} -type f \
 	    ! -name "$(FILE_DEEPCOPY)" -printf '%T@ %p\n' 2>/dev/null | \
 	    sort -rn | head -1 | grep "$${BPKG}/apis/")" ]; then \
-	  $(call emsg,info,updating [kube-apis => $${BPKG}]); exit 0; \
+	  $(call emsg,info,skipping [kube-apis => $${BPKG}]); exit 0; \
 	else $(call emsg,info,updating [kube-apis => $${BPKG}]); fi; \
 	\
 	$(GO) get k8s.io/api/core/v1; \
-	for APKG in $$(find $${BPKG} -path "*/apis/*/*" -type d); do \
-	  MANDIR="$${BPKG}/manifests"; \
-	  APIPKG="$(GITURL)/$${APKG}"; APIBPKG="$${APIPKG%/*/*}"; \
-	  CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
-	  CMD=($(GOBIN)/controller-gen crd:crdVersions=v1 \
-	    paths=./$${BPKG}/apis/... "output:crd:dir=$${MANDIR}"); \
-	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
-	  CMD=($(GOBIN)/deepcopy-gen --go-header-file="$${HEADER}" \
-	    --output-file="$(FILE_DEEPCOPY)" --bounding-dirs="$${APIBPKG}" \
-	    "$${APIPKG}"); \
-	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
-	  CMD=($(GOBIN)/client-gen --go-header-file="$${HEADER}" \
-	    --clientset-name=versioned --input-base="" --input="$${APIPKG}" \
-	    --output-pkg="$${CLIPKG}/clientset" --output-dir="$${CLIDIR}/clientset"); \
-	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
-	  CMD=($(GOBIN)/lister-gen --go-header-file="$${HEADER}" \
-	    --output-pkg="$${CLIPKG}/listers" --output-dir="$${CLIDIR}/listers" \
-	    "$${APIPKG}"); \
-	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
-	  CMD=($(GOBIN)/informer-gen --go-header-file="$${HEADER}" \
-	    --versioned-clientset-package="$${CLIPKG}/clientset/versioned" \
-	    --output-pkg="$${CLIPKG}/informers" --output-dir="$${CLIDIR}/informers" \
-	    --listers-package="$${CLIPKG}/listers" "$${APIPKG}"); \
-	  echo "$${CMD[@]}" >&2; $${CMD[@]}; \
-	done; \
+	MANDIR="$${BPKG}/manifests"; \
+	APKGS=($$(find $${BPKG} -path "*/apis/*/*" -type d | sed 's|^|$(GITURL)/|')); \
+	CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
+	CMD=($(GOBIN)/controller-gen \
+	  crd:crdVersions=v1,allowDangerousTypes=true \
+	  paths=./$${BPKG}/apis/... "output:crd:dir=$${MANDIR}"); \
+	echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	CMD=($(GOBIN)/deepcopy-gen --go-header-file="$${HEADER}" \
+	  --output-file="$(FILE_DEEPCOPY)" --bounding-dirs="$${BPKG}/apis" \
+	  "$${APKGS[@]}"); \
+	echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	CMD=($(GOBIN)/client-gen --go-header-file="$${HEADER}" \
+	  --output-pkg="$${CLIPKG}/clientset" --output-dir="$${CLIDIR}/clientset" \
+	  --clientset-name=versioned --input-base="" "$${APKGS[@]/#/--input=}"); \
+	echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	CMD=($(GOBIN)/lister-gen --go-header-file="$${HEADER}" \
+	  --output-pkg="$${CLIPKG}/listers" --output-dir="$${CLIDIR}/listers" \
+	  "$${APKGS[@]}"); \
+	echo "$${CMD[@]}" >&2; $${CMD[@]}; \
+	CMD=($(GOBIN)/informer-gen --go-header-file="$${HEADER}" \
+	  --versioned-clientset-package="$${CLIPKG}/clientset/versioned" \
+	  --output-pkg="$${CLIPKG}/informers" --output-dir="$${CLIDIR}/informers" \
+	  --listers-package="$${CLIPKG}/listers" "$${APKGS[@]}"); \
+	echo "$${CMD[@]}" >&2; $${CMD[@]}; \
 	$(call emsg,info,updating [kube-packages => $${BPKG}]); \
 	$(GO) get ./$${BPKG}/clients/...;
 
