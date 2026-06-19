@@ -190,7 +190,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.14
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.15
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -524,11 +524,12 @@ image = echo -e "$(2)" | awk -v mode="$(1)" ' \
 	BEGIN{ RS="[[:space:]]"; FS="/"; } $(awk-gensub) \
 	($$0) { \
 	  if ($$(NF) ~ "^$(FILE_IMAGE).+") { \
-	    cmd = substr($$(NF), length("$(FILE_IMAGE)")+2) \
+	    cmd = substr($$(NF), length("$(FILE_IMAGE)")+2); \
+	    infix = gensub("[^[:alnum:]_.-]", "", "g", cmd); \
 	  } else if ($$0 ~ "/$(FILE_IMAGE)$$") { \
-	    cmd = $$(NF-1) \
-	  } else { cmd = "" } \
-	  infix = "-" gensub("[^[:alnum:]_.-]", "", "g", cmd); \
+	    cmd = $$(NF-1); \
+	    infix = gensub("[^[:alnum:]_.-]", "", "g", cmd); \
+	  } else { cmd = ""; infix = ""; } \
 	  if (mode == "image") { \
 	    print gensub(":", infix ":", "1", "$(IMAGE)") \
 	  } else if (mode == "setup") { \
