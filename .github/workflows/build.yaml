@@ -71,6 +71,11 @@ jobs:
       with:
         go-version: 1.26
 
+    - name: Set up npm tooling
+      run: |-
+        npm config set prefix "${RUNNER_TEMP}/npm-global";
+        echo "${RUNNER_TEMP}/npm/bin" >> "${GITHUB_PATH}";
+
     - name: Run MacOS compatibility tests
       env:
         BASH_COMPAT: 3.2
@@ -89,6 +94,11 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: 1.26
+
+    - name: Set up npm tooling
+      run: |-
+        npm config set prefix "${RUNNER_TEMP}/npm-global";
+        echo "${RUNNER_TEMP}/npm/bin" >> "${GITHUB_PATH}";
 
     - name: Run MacOS compatibility tests
       env:

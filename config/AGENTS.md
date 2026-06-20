@@ -17,6 +17,7 @@ generic Go conventions when different.
   * Keep directly succeeding brackets / parentheses always on the same line.
 * Split long function calls, declarations, composite literals across lines for
   clarity.
+* Always use "${VAR}" for environment variables when writing shell scripts.
 * Use `github.com/tkrop/go-make format` for consistent formatting:
   * Use `goimports` to manage import order automatically.
   * Use `golangci-lint fmt` to format code after changes.
