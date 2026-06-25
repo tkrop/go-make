@@ -32,6 +32,22 @@ function _go-make-show-targets() {
     else go-make show-targets-${CMD}; fi 2>/dev/null |
         _go-make-filter "${WORD}";
 };
+function _go-make-show-tests() {
+    local PREFIX="${1}"; local WORD="${2}"; {
+      grep --no-filename --dereference-recursive --only-matching \
+        --extended-regexp --include='*_test.go' \
+        "^[[:space:]]*func[[:space:]]+${PREFIX}[[:alnum:]_]+" . 2>/dev/null | \
+      sed --quiet --regexp-extended \
+        --expression='s/^.*[[:space:]]+//; p; s/^/^/; p';
+      local BASE="${WORD#scope:}";
+      if [[ "${WORD}" =~ ^scope: ]]; then
+        if [[ "${WORD}" =~ /$ ]]; then BASE="./${WORD//scope:/}";
+        else BASE="$(dirname "./${WORD//scope:/}")"; fi;
+        find "${BASE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | \
+          sed --quiet --expression='s|^\./||; s|^|scope:|; p; s|$|/|; p';
+      else echo -e "scope:\nscope:."; fi;
+    } | grep "^${WORD}" | sort -u;
+};
 function _go-make-cpu-count() {
     case "$(uname -s)" in
         ( Linux* ) nproc;;
@@ -47,6 +63,13 @@ function __complete_go-make() {
         WORD="${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}";
         COMP_WORDS=("${COMP_WORDS[@]:0:COMP_CWORD-2}" "${WORD}");
     else local WORD="${COMP_WORDS[COMP_CWORD]}"; fi;
+    local PREFIX=""; local ARG="";
+    for ARG in "${COMP_WORDS[@]:1:$((COMP_CWORD-1))}"; do
+        case "${ARG}" in
+        ( test-unit ) PREFIX="Test";;
+        ( test-bench ) PREFIX="Benchmark";;
+        esac;
+    done;
     case "${WORD}" in
     ( --directory=* | --include-dir=* )
         COMPREPLY=($(compgen -d -- "${WORD#*=}"));;
@@ -61,7 +84,11 @@ function __complete_go-make() {
     ( --jobs=* )
         COMPREPLY=($(compgen -W "$(_go-make-cpu-count)" -- "${WORD#*=}"));;
     ( * )
-        local WORDS="$(_go-make-show-targets "${COMP_WORDS[0]}" "${WORD}")";
+        if [ "${PREFIX}" != "" ]; then
+            local WORDS="$(_go-make-show-tests "${PREFIX}" "${WORD}")";
+        else
+            local WORDS="$(_go-make-show-targets "${COMP_WORDS[0]}" "${WORD}")";
+        fi;
         COMPREPLY=($(compgen -W "${WORDS}" -- "${WORD}"));;
     esac;
      if [ "${#COMPREPLY[@]}" == "1" ] &&

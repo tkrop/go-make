@@ -190,7 +190,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.16
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.17
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1254,30 +1254,35 @@ test-split-bench = \
 # 4. <regex> - defines a regex to filter test functions (e.g., -run or -bench)
 test-args = COVER=(); FILES=(); REGEX=(); \
 	for ARG in $(ARGS); do \
-	  if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	  if [[ "$${ARG}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	    $(call emsg,info,test scope [$${ARG}]); \
 	    if  [ "$${BASH_REMATCH[1]}" == "." ]; then COVER+=("./..."); \
 	    elif [ -d "$${BASH_REMATCH[1]}" ]; then \
 	      COVER+=("$${BASH_REMATCH[1]}"); \
 	    fi; \
-	  elif [ -f "$${ARG}" ] && [[ "$${ARG}" == *_test.go ]]; then \
-	    FILES+=("$${ARG}" $$(find $$(dirname "$${ARG}" | sort --unique) \
-	      -maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-	      -o -name "common_test.go" -o -name "mock_*_test.go")); \
+	  elif [ -f "$${ARG}" ] && [[ "$${ARG}" == *.go ]]; then \
+	    BASE="$${ARG%.go}"; BASE="$${BASE%_test}"; \
+	    FILES+=("$$(dirname "$${ARG}")"); \
+	    REGEX+=("^Test($$( \
+		  grep --extended-regexp '^func Test' "$${BASE}_test.go" | \
+	      sed --regexp-extended 's|^func Test([^ (]*).*$$|\1|' | \
+		  paste --serial --delimiters='|' -))"); \
 	  elif [ -d "$${ARG}" ]; then FILES+=("$${ARG}"); \
 	  elif [ ! -f "$${ARG}" ] && [ ! -d "$${ARG}" ]; then \
 	    REGEX+=("$${ARG}"); \
 	  else $(call emsg,warning,invalid test args [$${ARGS[@]}]); fi; \
 	done; \
 	if [ "$${\#COVER[@]}" != "0" ]; then \
-	  echo -n "-coverpkg=$$(echo "$${COVER[*]}" | \
-	    sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g; s| |,|g')"; \
+	  echo -n "-coverpkg=$$(echo "$${COVER[*]}" | sed --regexp-extended \
+		's|(^\| )([^./]\|\.[^/])|\1./\2|g; s| |,|g')"; echo -n " "; \
 	fi; \
 	if [ "$${\#REGEX[@]}" != "0" ]; then \
-	  echo "$(1)="$$(echo "$${REGEX[*]}" | sed 's| |\||g')""; \
+	  echo "$(1)=\"$$(echo "$${REGEX[*]}" | sed 's| |\||g')\""; \
 	elif [ "$(1)" == "-bench" ]; then echo "$(1)=\"^Benchmark\""; \
 	elif [ "$(1)" == "-run" ]; then echo "$(1)=\"^Test\""; fi; \
-	if [ "$${\#FILES[@]}" != "0" ]; then echo "$$(echo "$${FILES[*]}" | \
-	  sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g')"; \
+	if [ "$${\#FILES[@]}" != "0" ]; then \
+	  echo "$$(echo "$$(printf '%s\n' "$${FILES[@]}" | sort -u)" | \
+	    sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g')"; \
 	else echo "$(addprefix ./,$(PACKAGES))"; fi;
 
 # test-args::
@@ -1403,8 +1408,10 @@ test-go::
 	$(call test-go,go.mod,"$${VERSION}"); \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
-	    VERSION=($$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
-	      grep -Eo "[0-9.]*" | sort --unique)); \
+	    VERSION=($$(cat "$${FILE}" | \
+		  grep --extended-regexp --only-matching "$(DELIVERY_REGEX)" | \
+		  grep --extended-regexp --only-matching "[0-9.]*" | \
+		  sort --unique)); \
 		$(call test-go,$${FILE},"$${VERSION[@]}"); \
 	  fi; \
 	done;
