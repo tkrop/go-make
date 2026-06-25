@@ -32,9 +32,41 @@ _go-make-show-targets() {
     else go-make show-targets-${CMD}; fi 2>/dev/null |
         _go-make-filter "${WORD}";
 };
+_go-make-show-tests() {
+    local PREFIX="${1}"; local WORD="${2}"; {
+      grep --no-filename --dereference-recursive --only-matching \
+        --extended-regexp --include='*_test.go' \
+        "^[[:space:]]*func[[:space:]]+${PREFIX}[[:alnum:]_]+" . 2>/dev/null | \
+      sed --quiet --regexp-extended \
+        --expression='s/^.*[[:space:]]+//; p; s/^/^/; p';
+      local BASE="${WORD#scope:}";
+      if [[ "${WORD}" =~ ^scope: ]]; then
+        if [[ "${WORD}" =~ /$ ]]; then BASE="./${WORD//scope:/}";
+        else BASE="$(dirname "./${WORD//scope:/}")"; fi;
+        find "${BASE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | \
+          sed --quiet --expression='s|^\./||; s|^|scope:|; p; s|$|/|; p';
+      else echo -e "scope:\nscope:."; fi;
+    } | grep "^${WORD}" | sort -u;
+};
 __complete_go-make() {
-    local targets=($(_go-make-show-targets "${words[1]}" "${words[-1]}"));
-    _describe 'go-make' targets;
+    local prefix=""; local arg="";
+    for arg in ${words[2,$((CURRENT-1))]}; do
+        case "${arg}" in
+        ( test-unit ) prefix="Test";;
+        ( test-bench ) prefix="Benchmark";;
+        esac;
+    done;
+    local word="${words[-1]}";
+    if [ "${word}" = ":" ]; then
+        word="${words[-2]}:";
+    elif [ "${words[-2]}" = ":" ]; then
+        word="${words[-3]}:${word}";
+    fi;
+    if [[ "${prefix}" != "" ]]; then
+        compadd - $(_go-make-show-tests "${prefix}" "${word}");
+    else
+        compadd - $(_go-make-show-targets "${words[1]}" "${word}");
+    fi;
 };
 compdef __complete_go-make go-make;
 compdef __complete_go-make make;
