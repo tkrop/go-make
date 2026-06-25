@@ -18,7 +18,7 @@ jobs:
     - name: Test and lint
       env:
         CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-      run: make --file=config/Makefile.base --trace test lint;
+      run: make --trace --file=config/Makefile.base test lint;
 
     - name: Send coverage report
       uses: shogo82148/actions-goveralls@v1
@@ -40,7 +40,7 @@ jobs:
     - name: Run Bash compatibility tests
       env:
         BASH_COMPAT: 3.2
-      run: make --file=config/Makefile.base --trace test-self;
+      run: make --trace --file=config/Makefile.base test-self;
 
 
   linux:
@@ -57,7 +57,7 @@ jobs:
     - name: Run Bash compatibility tests
       run: |-
         make --version;
-        make --file=config/Makefile.base --trace test-self;
+        make --trace --file=config/Makefile.base test-self;
 
 
   brew:
@@ -80,12 +80,13 @@ jobs:
       env:
         BASH_COMPAT: 3.2
       run: |-
+        brew trust aws/tap; # fixes GitHub actions runner issue!
         make --version;
         make --file=config/Makefile.base test-self;
 
 
-  macos:
-    runs-on: macos-latest
+  macos-15:
+    runs-on: macos-15
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
@@ -104,11 +105,37 @@ jobs:
       env:
         BASH_COMPAT: 3.2
       run: |-
+        brew trust aws/tap; # fixes GitHub actions runner issue!
         brew install make;
         export PATH="/opt/homebrew/opt/make/libexec/gnubin:${PATH}";
         make --version;
-        make --file=config/Makefile.base --trace test-self;
+        make --trace --file=config/Makefile.base test-self;
 
+  macos-26:
+    runs-on: macos-26
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.26
+
+    - name: Set up npm tooling
+      run: |-
+        npm config set prefix "${RUNNER_TEMP}/npm-global";
+        echo "${RUNNER_TEMP}/npm/bin" >> "${GITHUB_PATH}";
+
+    - name: Run MacOS compatibility tests
+      env:
+        BASH_COMPAT: 3.2
+      run: |-
+        brew trust aws/tap; # fixes GitHub actions runner issue!
+        brew install make;
+        export PATH="/opt/homebrew/opt/make/libexec/gnubin:${PATH}";
+        make --version;
+        make --file=config/Makefile.base test-self;
 
   release:
     runs-on: ubuntu-latest

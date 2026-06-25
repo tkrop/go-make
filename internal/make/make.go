@@ -74,6 +74,20 @@ const (
 		"    else go-make show-targets-${CMD}; fi 2>/dev/null |\n" +
 		"        _go-make-filter \"${WORD}\";\n" +
 		"};\n"
+	// CompleteShowTestsFunc provides the common target function to create
+	// go-make test completions by searching for go test functions in
+	// *_test.go files by prefix (e.g. Test, Benchmark). It also includes
+	// scope argument suggestions for test targets.
+	CompleteShowTestsFunc = "_go-make-show-tests() {\n" +
+		"    local PREFIX=\"${1}\"; local WORD=\"${2}\";\n" +
+		"    local MATCH=\"[[:space:]]*func[[:space:]]+(${PREFIX}[[:alnum:]_]+)\";\n" +
+		"    local SEARCH=\"\\./(.+)/[^/:]+:${MATCH}\";\n" +
+		"    local REPLACE=\"\\2\\n^\\2\\n\\1\\nscope:\\1\\nscope:.\";\n" +
+		"    grep --no-messages --only-matching --dereference-recursive \\\n" +
+		"      --with-filename --extended-regexp --include='*_test.go' \"^${MATCH}\" . | \\\n" +
+		"    sed --quiet --regexp-extended --expression=\"s|^${SEARCH}.*|${REPLACE}|p\" | \\\n" +
+		"    grep \"^${WORD}\" | sort -u;\n" +
+		"};\n"
 	// CompleteCPUCountFunc provides the common function to get the number of
 	// CPUs available on the system used for parallel execution of `--jobs`.
 	CompleteCPUCountFunc = "_go-make-cpu-count() {\n" +
@@ -87,6 +101,7 @@ const (
 	CompleteBash = "### bash completion for go-make\n" +
 		"function " + CompleteFilterFunc +
 		"function " + CompleteShowTargetsFunc +
+		"function " + CompleteShowTestsFunc +
 		"function " + CompleteCPUCountFunc +
 		"function __complete_go-make() {\n" +
 		"    if [ \"${COMP_WORDS[COMP_CWORD]}\" == \"=\" ]; then\n" +
@@ -96,6 +111,13 @@ const (
 		"        WORD=\"${COMP_WORDS[COMP_CWORD-2]}=${COMP_WORDS[COMP_CWORD]}\";\n" +
 		"        COMP_WORDS=(\"${COMP_WORDS[@]:0:COMP_CWORD-2}\" \"${WORD}\");\n" +
 		"    else local WORD=\"${COMP_WORDS[COMP_CWORD]}\"; fi;\n" +
+		"    local PREFIX=\"\"; local ARG=\"\";\n" +
+		"    for ARG in \"${COMP_WORDS[@]:1:$((COMP_CWORD-1))}\"; do\n" +
+		"        case \"${ARG}\" in\n" +
+		"        ( test-unit ) PREFIX=\"Test\";;\n" +
+		"        ( test-bench ) PREFIX=\"Benchmark\";;\n" +
+		"        esac;\n" +
+		"    done;\n" +
 		"    case \"${WORD}\" in\n" +
 		"    ( --directory=* | --include-dir=* )\n" +
 		"        COMPREPLY=($(compgen -d -- \"${WORD#*=}\"));;\n" +
@@ -110,7 +132,11 @@ const (
 		"    ( --jobs=* )\n" +
 		"        COMPREPLY=($(compgen -W \"$(_go-make-cpu-count)\" -- \"${WORD#*=}\"));;\n" +
 		"    ( * )\n" +
-		"        local WORDS=\"$(_go-make-show-targets \"${COMP_WORDS[0]}\" \"${WORD}\")\";\n" +
+		"        if [ \"${PREFIX}\" != \"\" ]; then\n" +
+		"            local WORDS=\"$(_go-make-show-tests \"${PREFIX}\" \"${WORD}\")\";\n" +
+		"        else\n" +
+		"            local WORDS=\"$(_go-make-show-targets \"${COMP_WORDS[0]}\" \"${WORD}\")\";\n" +
+		"        fi;\n" +
 		"        COMPREPLY=($(compgen -W \"${WORDS}\" -- \"${WORD}\"));;\n" +
 		"    esac;\n " +
 		"    if [ \"${#COMPREPLY[@]}\" == \"1\" ] &&\n" +
@@ -121,10 +147,26 @@ const (
 		"complete -F __complete_go-make go-make;\n\n"
 	// CompleteZsh provides the zsh completion setup for go-make.
 	CompleteZsh = "### zsh completion for make/go-make\n" +
-		CompleteFilterFunc + CompleteShowTargetsFunc +
+		CompleteFilterFunc + CompleteShowTargetsFunc + CompleteShowTestsFunc +
 		"__complete_go-make() {\n" +
-		"    local targets=($(_go-make-show-targets \"${words[1]}\" \"${words[-1]}\"));\n" +
-		"    _describe 'go-make' targets;\n" +
+		"    local prefix=\"\"; local arg=\"\";\n" +
+		"    for arg in ${words[2,$((CURRENT-1))]}; do\n" +
+		"        case \"${arg}\" in\n" +
+		"        ( test-unit ) prefix=\"Test\";;\n" +
+		"        ( test-bench ) prefix=\"Benchmark\";;\n" +
+		"        esac;\n" +
+		"    done;\n" +
+		"    local word=\"${words[-1]}\";\n" +
+		"    if [ \"${word}\" = \":\" ]; then\n" +
+		"        word=\"${words[-2]}:\";\n" +
+		"    elif [ \"${words[-2]}\" = \":\" ]; then\n" +
+		"        word=\"${words[-3]}:${word}\";\n" +
+		"    fi;\n" +
+		"    if [[ \"${prefix}\" != \"\" ]]; then\n" +
+		"        compadd - $(_go-make-show-tests \"${prefix}\" \"${word}\");\n" +
+		"    else\n" +
+		"        compadd - $(_go-make-show-targets \"${words[1]}\" \"${word}\");\n" +
+		"    fi;\n" +
 		"};\n" +
 		"compdef __complete_go-make go-make;\n" +
 		"compdef __complete_go-make make;\n\n"

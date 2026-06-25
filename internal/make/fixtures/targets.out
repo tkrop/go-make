@@ -68,6 +68,7 @@ debug-commands
 debug-dirs
 debug-files
 debug-git
+debug-go
 debug-image
 debug-kube
 debug-make

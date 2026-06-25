@@ -90,11 +90,19 @@ IMAGE_CMD ?= $(call find-cmd-image)
 # Setup system default variables.
 TMPDIR ?= /tmp
 # Setup default go compiler environment.
-export GO ?= go
-export GOPATH ?= $(shell $(GO) env GOPATH)
-export GOBIN ?= $(GOPATH)/bin
+ifndef GO
+  export GO := go
+endif
+ifndef GOPATH
+  export GOPATH := $(shell $(GO) env GOPATH)
+endif
+ifndef GOBIN
+  export GOBIN := $(GOPATH)/bin
+endif
 # Export private repositories that do not need to be downloaded.
-export GOPRIVATE ?=
+ifndef GOPRIVATE
+  export GOPRIVATE :=
+endif
 
 # Setup System dependent default variables.
 export PATH := $(GOBIN):$(PATH)
@@ -190,7 +198,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.16
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.17
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -499,13 +507,21 @@ $(call cdebug,using GITURL [$(GITURL)])
 #
 # Legacy (Zalando-specific) team and image setup.
 #
-export ZALLY_URL ?= https://infrastructure-api-linter.zalandoapis.com
-export ZALLY_TOKEN ?=  $$(ztoken)
-export IMAGE_REGISTRY ?= pierone.stups.zalan.do
-export IMAGE_ORG ?= $(shell if [ -f ".zappr.yaml" ]; then \
+ifndef ZALLY_URL
+	export ZALLY_URL := https://infrastructure-api-linter.zalandoapis.com
+endif
+ifndef ZALLY_TOKEN
+	export ZALLY_TOKEN := $$(ztoken)
+endif
+ifndef IMAGE_REGISTRY
+	export IMAGE_REGISTRY := pierone.stups.zalan.do
+endif
+ifndef IMAGE_ORG
+	export IMAGE_ORG := $(shell if [ -f ".zappr.yaml" ]; then \
 	  grep "X-Zalando-Team:" .zappr.yaml | \
 	  sed --regexp-extended 's|.*:[[:space:]]*["'"'"']?([a-z-]*).*|\1|'; \
 	else echo "$(GITOWNER)"; fi)
+endif
 
 # Setup default image name.
 export IMAGE_REPO ?= $(GITREPO)
@@ -1254,30 +1270,35 @@ test-split-bench = \
 # 4. <regex> - defines a regex to filter test functions (e.g., -run or -bench)
 test-args = COVER=(); FILES=(); REGEX=(); \
 	for ARG in $(ARGS); do \
-	  if [[ "$${ARGS[0]}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	  if [[ "$${ARG}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
+	    $(call emsg,info,test scope [$${ARG}]); \
 	    if  [ "$${BASH_REMATCH[1]}" == "." ]; then COVER+=("./..."); \
 	    elif [ -d "$${BASH_REMATCH[1]}" ]; then \
 	      COVER+=("$${BASH_REMATCH[1]}"); \
 	    fi; \
-	  elif [ -f "$${ARG}" ] && [[ "$${ARG}" == *_test.go ]]; then \
-	    FILES+=("$${ARG}" $$(find $$(dirname "$${ARG}" | sort --unique) \
-	      -maxdepth 1 -a -name "*.go" -a ! -name "*_test.go" \
-	      -o -name "common_test.go" -o -name "mock_*_test.go")); \
+	  elif [ -f "$${ARG}" ] && [[ "$${ARG}" == *.go ]]; then \
+	    BASE="$${ARG%.go}"; BASE="$${BASE%_test}"; \
+	    FILES+=("$$(dirname "$${ARG}")"); \
+	    REGEX+=("^Test($$( \
+		  grep --extended-regexp '^func Test' "$${BASE}_test.go" | \
+	      sed --regexp-extended 's|^func Test([^ (]*).*$$|\1|' | \
+		  paste --serial --delimiters='|' -))"); \
 	  elif [ -d "$${ARG}" ]; then FILES+=("$${ARG}"); \
 	  elif [ ! -f "$${ARG}" ] && [ ! -d "$${ARG}" ]; then \
 	    REGEX+=("$${ARG}"); \
 	  else $(call emsg,warning,invalid test args [$${ARGS[@]}]); fi; \
 	done; \
 	if [ "$${\#COVER[@]}" != "0" ]; then \
-	  echo -n "-coverpkg=$$(echo "$${COVER[*]}" | \
-	    sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g; s| |,|g')"; \
+	  echo -n "-coverpkg=$$(echo "$${COVER[*]}" | sed --regexp-extended \
+		's|(^\| )([^./]\|\.[^/])|\1./\2|g; s| |,|g')"; echo -n " "; \
 	fi; \
 	if [ "$${\#REGEX[@]}" != "0" ]; then \
-	  echo "$(1)="$$(echo "$${REGEX[*]}" | sed 's| |\||g')""; \
+	  echo "$(1)=\"$$(echo "$${REGEX[*]}" | sed 's| |\||g')\""; \
 	elif [ "$(1)" == "-bench" ]; then echo "$(1)=\"^Benchmark\""; \
 	elif [ "$(1)" == "-run" ]; then echo "$(1)=\"^Test\""; fi; \
-	if [ "$${\#FILES[@]}" != "0" ]; then echo "$$(echo "$${FILES[*]}" | \
-	  sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g')"; \
+	if [ "$${\#FILES[@]}" != "0" ]; then \
+	  echo "$$(echo "$$(printf '%s\n' "$${FILES[@]}" | sort -u)" | \
+	    sed --regexp-extended 's|(^\| )([^./]\|\.[^/])|\1./\2|g')"; \
 	else echo "$(addprefix ./,$(PACKAGES))"; fi;
 
 # test-args::
@@ -1403,8 +1424,10 @@ test-go::
 	$(call test-go,go.mod,"$${VERSION}"); \
 	for FILE in $(DELIVERY); do \
 	  if [ -f "$${FILE}" ]; then \
-	    VERSION=($$(grep -Eo "$(DELIVERY_REGEX)" "$${FILE}" | \
-	      grep -Eo "[0-9.]*" | sort --unique)); \
+	    VERSION=($$(cat "$${FILE}" | \
+		  grep --extended-regexp --only-matching "$(DELIVERY_REGEX)" | \
+		  grep --extended-regexp --only-matching "[0-9.]*" | \
+		  sort --unique)); \
 		$(call test-go,$${FILE},"$${VERSION[@]}"); \
 	  fi; \
 	done;
@@ -1975,10 +1998,14 @@ uninstall-all:: $(TARGETS_UNINSTALL_ALL)
 
 # uninstall go tools used by the project.
 $(TARGETS_UNINSTALL_GO):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@if [ -f "$(GOBIN)/$*" ]; then \
+	  rm --verbose --force $(wildcard $(GOBIN)/$*); \
+	fi;
 # uninstall tools providing an install.sh tool.
 $(TARGETS_UNINSTALL_SH):: uninstall-%:
-	@rm --verbose --force $(wildcard $(GOBIN)/$*);
+	@if [ -f "$(GOBIN)/$*" ]; then \
+	  rm --verbose --force $(wildcard $(GOBIN)/$*); \
+	fi;
 # uninstall npm based tools used by the project.
 $(TARGETS_UNINSTALL_NPM):: uninstall-%:
 	@CMD="$(filter $*-cli,$(TOOLS_NPM))"; \
@@ -2147,13 +2174,13 @@ $(TARGETS_RUN_IMAGE):: run-image-%: $(if $(filter %,$(IMAGE_FILES)),image-build-
 		aborting - no docker command [$${NAME}]!); exit 1; fi; \
 	trap "$(IMAGE_CMD) rm $${NAME} >/dev/null" EXIT; \
 	trap "$(IMAGE_CMD) kill $${NAME} >/dev/null" INT TERM; \
-	if [ -n "$(filter %$*,$(IMAGE_FILES))" ]; then \
+	if [ -n "$(findstring -$*:,$(IMAGE_SETUPS))" ]; then \
 	  IMAGE="$$(echo "$(IMAGE)" | sed "s/:/-$*:/")"; \
 	else IMAGE="$(IMAGE)"; fi && if tty -s; then TTY=" --tty"; fi && \
 	$(call run-setup) && $(IMAGE_CMD) run$${TTY} --name $${NAME} \
 	  --volume $(DIR_CRED):/meta/credentials --volume $(DIR_RUN)/temp:/tmp \
 	  --network=host $(call run-vars,--env) $(call run-vars-image,--env) \
-	  ${IMAGE} /$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$${NAME}.log; \
+	  $${IMAGE} /$* $(ARGS) 2>&1 | tee -a $(DIR_RUN)/$${NAME}.log; \
 	if [ $${PIPESTATUS[0]} != 0 ]; then exit 1; fi;
 
 #@ clean up all running container images.
@@ -2563,6 +2590,13 @@ debug-git::
 	echo 'GITREPO $(GITREPO)'; \
 	echo 'GITNAME $(GITNAME)';
 
+debug-go::
+	@echo 'GOPATH $(GOPATH)'; \
+	echo 'GOBIN $(GOBIN)'; \
+	echo 'GOOS $(GOOS)'; \
+	echo 'GOARCH $(GOARCH)'; \
+	echo 'GOVERSION $(GOVERSION)'; \
+
 #@ debug then generated directories, sources, and targets.
 debug-kube::
 	@echo 'KUBE_DIRS $(KUBE_DIRS)'; \
@@ -2647,7 +2681,6 @@ debug-targets-uninstall::
 	echo 'TARGETS_UNINSTALL_NPM $(TARGETS_UNINSTALL_NPM)'; \
 	echo 'TARGETS_UNINSTALL_CODACY $(TARGETS_UNINSTALL_CODACY)'; \
 	echo 'TARGETS_UNINSTALL_ALL $(TARGETS_UNINSTALL_ALL)'; \
-	echo 'GOMAKE_VERSION $(gomake-version)';
 
 #@ debug the run target environment variables.
 debug-targets-run::
