@@ -198,7 +198,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.17
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.18
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -496,13 +496,13 @@ GIT ?= git
 GITHOOKS ?= pre-commit # commit-msg
 GITAUTHOR ?= $$(echo -n "$$(git config --get user.name) <$$(git config --get user.email)>")
 GITROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $(CURDIR))
-GITURL := $(shell $(GIT) config --get remote.origin.url 2>/dev/null | \
+GITBASE := $(shell $(GIT) config --get remote.origin.url 2>/dev/null | \
 	sed "s/^https:\/\///; s/^git@//; s/.git$$//; s/^x-access-token:[^@]*@//; s/:/\//;")
-GITHOST := $(word 1,$(subst /, ,$(GITURL)))
-GITOWNER := $(or $(word 2,$(subst /, ,$(GITURL))),$(USER))
-GITREPO := $(or $(word 3,$(subst /, ,$(GITURL))),$(notdir $(GITROOT)))
+GITHOST := $(word 1,$(subst /, ,$(GITBASE)))
+GITOWNER := $(or $(word 2,$(subst /, ,$(GITBASE))),$(USER))
+GITREPO := $(or $(word 3,$(subst /, ,$(GITBASE))),$(notdir $(GITROOT)))
 GITNAME := $(GITOWNER)-$(GITREPO)
-$(call cdebug,using GITURL [$(GITURL)])
+$(call cdebug,using GITBASE [$(GITBASE)])
 
 #
 # Legacy (Zalando-specific) team and image setup.
@@ -1143,7 +1143,7 @@ go.sum go.mod go.work&: $(SOURCES)
 	@if [ "$(MODULES)" == "." ]; then \
 	  $(call emsg,info,updating [go.mod&go.sum]); \
 	  if [ ! -f go.mod ]; then \
-	    echo "$(GO) mod init $(GITURL)"; $(GO) mod init "$(GITURL)"; \
+	    echo "$(GO) mod init $(GITBASE)"; $(GO) mod init "$(GITBASE)"; \
 	  fi; \
 	else \
 	  $(call emsg,info,updating [go.mod&go.sum&go.work]); \
@@ -1824,7 +1824,7 @@ ld-flags = $(call ld-flag,Version=$(BUILD_VERSION)) \
 	$(call ld-flag,Build=$(shell date --iso-8601=seconds)) \
 	$(call ld-flag,Commit=$(shell $(GIT) log -1 --date=iso8601-strict --format=%cd)) \
 	$(call ld-flag,Dirty=$(shell $(GIT) diff --quiet && echo false || echo true)) \
-	$(call ld-flag,Path=$(GITURL)$(patsubst .%,%,$(1))) \
+	$(call ld-flag,Path=$(GITBASE)$(patsubst .%,%,$(1))) \
 	$(call ld-flag,GitHash=$(shell $(GIT) rev-parse --short HEAD)) \
 	$(LD_FLAGS_$(call upper,$(2)))
 
@@ -1892,12 +1892,13 @@ image-build = \
 	fi; \
 	if [ "$${BUILD[1]}" != "push" ]; then VERSION="$${IMAGE\#\#*:}"; \
 	  REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
-	  BASE="$$(grep "^FROM[[:space:]]" "$${FILE}" | tail -n1 | cut -d" " -f2)"; \
+	  GITURL="$$(git config --get remote.origin.url | sed --regexp-extended \
+	    's\#^(https://([^@]+@)?|ssh://git@)([^/]+)/\#git@\3:\#; s/(\.git)?$/.git/')"; \
 	  BUILD+=(--label=org.opencontainers.image.ref.name="$${IMAGE}" \
-	    --label=org.opencontainers.image.base.name="$${BASE}" \
 	    --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
-	    --label=org.opencontainers.image.vendor="zalando/$(IMAGE_ORG)" \
-	    --label=org.opencontainers.image.source="$(GITURL)" \
+	    --label=org.opencontainers.image.url="https://$(GITBASE)/tree/$${REVISION}" \
+	    --label=org.opencontainers.image.vendor="$(IMAGE_ORG)" \
+	    --label=org.opencontainers.image.source="$${GITURL}" \
 	    --label=org.opencontainers.image.version="$${IMAGE\#\#*:}" \
 	    --label=org.opencontainers.image.revision="$${REVISION}"); \
 	  if [ "$${BUILD[1]}" == "build" ] && [ "$${IMAGE\#\#*:}" != "latest" ]; then \
@@ -2081,7 +2082,7 @@ $(TARGETS_PUBLISH): version-publish-%:
 	  VERSION="$$(TZ=UTC0 $(GIT) show --quiet --date='format-local:%Y%m%d%H%M%S' \
 	    --format="0.0.0-%cd-%H" | cut -c -33)"; \
 	fi; \
-	TARGET="$(GITURL)$${CMD}@v$${VERSION}"; \
+	TARGET="$(GITBASE)$${CMD}@v$${VERSION}"; \
 	if [ "$(GITHOST)" == "github.com" ]; then \
 	  if [ -z "$${CMD}" ]; then \
 	    $(call emsg,info,publishing - curl [$${TARGET}]); \
@@ -2261,8 +2262,8 @@ $(UPDATE_KUBE_APIS):: update-kube/%: $(UPDATE_KUBE_TARGETS)
 	\
 	$(GO) get k8s.io/api/core/v1; \
 	MANDIR="$${BPKG}/manifests"; \
-	APKGS=($$(find $${BPKG} -path "*/apis/*/*" -type d | sed 's|^|$(GITURL)/|')); \
-	CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITURL)/$${CLIDIR}"; \
+	APKGS=($$(find $${BPKG} -path "*/apis/*/*" -type d | sed 's|^|$(GITBASE)/|')); \
+	CLIDIR="$${BPKG}/clients"; CLIPKG="$(GITBASE)/$${CLIDIR}"; \
 	CMD=($(GOBIN)/controller-gen \
 	  crd:crdVersions=v1,allowDangerousTypes=true \
 	  paths=./$${BPKG}/apis/... "output:crd:dir=$${MANDIR}"); \
@@ -2409,9 +2410,30 @@ update-args = \
 	elif [[ " $(1) " =~ " pre " ]]; then ARGS="-cached=false -pre"; \
 	else ARGS="-cached=false"; fi
 update-list = \
-	( gomajor list $(1) 2>/dev/null | sed "s/://1; s/\[latest /\[/g"; \
-	  $(GO) list -m -u -mod=mod $(2) | grep "\[.*\]$$" \
-	) | sort --unique | sed "s/\]//g; s/\[/=> /"
+	CUTOFF=$$(( $$(date +%s) - (7 * 86400) )); \
+	( gomajor list $(1) 2>/dev/null | awk -F': | \\[latest |\\]' ' \
+        NF >= 3 { \
+          mod = $$1; current = $$2; target = $$3; split(target, parts, "."); \
+		  major = parts[1]; gsub("^v", "", major); tmod = mod; \
+          if (major > 1) { sub("\\/[vV][0-9]+$$", "/v" major, tmod); } \
+          print mod "@" current " " tmod "@" target \
+        }'; \
+	  GOPROXY="https://proxy.golang.org" $(GO) list -m -mod=mod -json -versions $(2) | \
+	  jq --raw-output 'def semvers: sub("^v"; "") | split("-") as $$parts | \
+	      ($$parts[0] | split(".") | map(tonumber? // 0)) as $$nums | \
+	      $$nums + [if ($$parts | length) > 1 then 0 else 1 end] + $$parts[1:]; \
+	    select(.Versions and (.Main | not)) | .Path as $$path | \
+	    .Version as $$version | ($$version | semvers) as $$semver | \
+	    [.Versions[] | select((. | semvers) > $$semver)] | reverse | .[] | \
+		"\($$path)@\($$version) \($$path)@\(.)"' \
+	) | while read -r CURRENT TARGET; do MODULE="$${CURRENT%%@*}"; \
+	  if [ "$${MODULE}" == "$${LAST}" ]; then continue; fi; \
+	  TIME="$$($(GO) list -m -json "$${TARGET}" | \
+	    jq --raw-output '.Time | fromdateiso8601')"; \
+	  if [ -n "$${TIME}" ] && [ "$${TIME}" -le "$${CUTOFF}" ]; then \
+	    echo "$${CURRENT} => $${TARGET}"; LAST="$${MODULE}"; \
+	  fi; \
+	done | sort --unique
 update-config = \
 	if [ "$(gomake-version)" != "(devel)" ] && [ "$(1)" != "current" ]; then \
 	  GOMAKE="github.com/tkrop/go-make"; \
@@ -2421,38 +2443,29 @@ update-config = \
 	  $(call go-install-module,go-make,$${GOMAKE}); \
 	else CONFIG="$(GOMAKE_CONFIG)"; fi
 
-# TODO: check how to utilize: 'go list -m -u -mod=mod all' in 'update-deps'.
-
 #@ [current|major|pre|minor] # update minor (and major) dependencies to latest versions.
 update-deps:: test-go update/go.mod
 update/go.mod:: update-gomajor
-	@if [ ! -f "go.mod" ]; then exit 0; fi; \
-	if [ -n "$(ARGS)" ] && [[ " $(ARGS) " =~ " current " ]]; then \
-	  if [[ " $(ARGS) " =~ " minor " ]]; then PACKAGES="all"; fi; \
-	  $(call update-args,$(ARGS)); readarray -t UPDATES \
-	    < <($(call update-list,$${ARGS},$${PACKAGES})); \
+	@if [ ! -f "go.mod" ]; then exit 0; elif [ -n "$(ARGS)" ]; then \
+	  $(call update-args,$(ARGS)); \
+	  readarray -t UPDATES < <($(call update-list,$${ARGS},all)); \
 	  for UPDATE in "$${UPDATES[@]}"; do ARGS=($${UPDATE}); \
-	    SMAJOR="$${ARGS[1]%%.*}"; TMAJOR="$${ARGS[3]%%.*}"; \
-	    if [ "$${SMAJOR}" != "$${TMAJOR}" ]; then \
-	      if [[ "$${ARGS[0]}" == *$${SMAJOR}* ]]; then \
-	        TARGET="$${ARGS[0]/$${SMAJOR}/$${TMAJOR}}"; \
-	      else TARGET="$${ARGS[0]}/$${TMAJOR}"; fi; $(call dmsg,debug, \
-	      updating [$${ARGS[0]}@$${ARGS[2]} => $${TARGET}@$${ARGS[3]}]); \
-	      sed --in-place --expression="s#$${ARGS[0]}#$${TARGET}#g" $(SOURCES); \
-	    else \
-	      $(call dmsg,debug,updating [$${ARGS[0]}@$${ARGS[1]} => $${ARGS[3]}]); \
-	      $(GO) get "$${ARGS[0]}@$${ARGS[3]}"; \
-	    fi; \
+		$(call dmsg,debug,updating [$${ARGS[0]} => $${ARGS[2]}]); \
+	    SMAJOR="$${ARGS[0]##*@}"; SMAJOR="$${SMAJOR%%.*}"; \
+	    TMAJOR="$${ARGS[2]##*@}"; TMAJOR="$${TMAJOR%%.*}"; \
+	    if [ "$${SMAJOR}" != "$${TMAJOR}" ]; then sed --in-place \
+		  --expression="s#$${ARGS[0]%%@*}#$${ARGS[2]%%@*}#g" $(SOURCES); \
+	    else $(GO) get "$${ARGS[2]}"; fi; \
 	  done; \
-	else $(GO) get -u ./...; fi; \
+	else $(GO) get -t -u ./...; fi; \
 	$(GO) mod tidy -x -v -e -compat=$(GOVERSION) || exit 1;
 
 #@ check for major and minor updates to latest versions.
 update-deps?:: test-go update/go.mod?
 update/go.mod?:: update-gomajor
 	@if [ ! -f "go.mod" ]; then exit 0; fi; \
-	$(call update-args,$(ARGS)); cp go.sum go.sum.~save~; \
-	$(call update-list,$${ARGS},all); mv go.sum.~save~ go.sum;
+	cp go.sum go.sum.~save~; trap 'mv go.sum.~save~ go.sum' INT TERM EXIT; \
+	$(call update-args,$(ARGS)); $(call update-list,$${ARGS},all);
 
 update/go-make::
 	@GOMAKE="github.com/tkrop/go-make"; \
@@ -2584,7 +2597,7 @@ debug-git::
 	@echo 'GITHOOKS $(GITHOOKS)'; \
 	echo 'GITAUTHOR $(GITAUTHOR)'; \
 	echo 'GITROOT $(GITROOT)'; \
-	echo 'GITURL $(GITURL)'; \
+	echo 'GITBASE $(GITBASE)'; \
 	echo 'GITHOST $(GITHOST)'; \
 	echo 'GITOWNER $(GITOWNER)'; \
 	echo 'GITREPO $(GITREPO)'; \
