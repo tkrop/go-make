@@ -163,10 +163,14 @@ patterns:
     `mock.Setup` and `AnyTimes` to validate the correct order of calls.
     * If mock calls happen from different go routines, use `mock.Parallel` to
       coordinate the different `mock.Chain`s.
-  * Mocks should avoid `gomock.Any` and instead validate the actual values.
+  * Mocks must avoid `gomock.Any` and instead validate the actual values.
 * In test always prefer using `github.com/tkrop/go-testing` methods and modules
   over custom implementations. Imporant examples are: `test.Must`, `test.Cast`,
   `test.Ptr`, `test.First`, `test.Main`, `test.Recover`, and `test.DeepCopy`.
+* When testing gateway components, use `github.com/tkrop/go-testing/gock`
+  for validating http requests and providing responses.
+  * Prefer the integration with `github.com/tkrop/go-testing/mock` to setup
+    the mocks and mock calls.
 
 
 ### Parameter type definition
@@ -221,6 +225,8 @@ patterns:
   separated by empty lines and comments.
   * Simple tests cases with less setup should be ordered before test cases
     with extensive setup.
+  * Helper functions needed by multiple tests should be defined at the top
+    of the file.
 * The test cases are supposed to aim for 100% code coverage:
   * Test cases should always cover happy paths as well as error paths.
   * Test cases for `any` should include following test cases in order:
@@ -235,6 +241,7 @@ patterns:
 * If test cases are to long they should also be separated by empty lines.
 * Construct the actual expected objects and errors instead of aiming to
   split them up and compare them by properties.
+
 
 
 ### Test function
@@ -255,8 +262,11 @@ patterns:
 * Use `github.com/stretchr/testify/require` to validate setup values.
 * Use `github.com/stretchr/testify/{assert,require}` to validate setup values.
 * Use minimal assertions needed to validate expected values and errors.
-  * Always test against the actual instances using `assert.Equal` - espacially
-    errors must be tested this way.
+  * Always test the actual instances using `assert.Equal` - especially in
+    case of errors.
+  * You must never split up the expected values and errors into multiple
+    assertions, even if construction is complex - there is always a way to do
+    it using `github.com/tkrop/go-testing/reflect.NewAccessor`.
   * Prefer exact matches in assertions above partial or type validation.
 * Use `assert.AnError` for generic error scenarios.
 * Do never comments on assertions; testify is providing meaningful context
