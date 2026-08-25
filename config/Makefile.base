@@ -198,7 +198,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.18
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.19
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1319,15 +1319,15 @@ test:: $(TARGETS_TEST)
 test-all:: $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
-	  -cover -coverprofile=$(TEST_COVER) $(strip $(if \
-	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
+	  -cover -covermode=atomic -coverprofile=$(TEST_COVER) $(strip \
+	  $(if $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
 
 #@ [<pkg>|<test>] # execute only unit tests.
 test-unit:: $(DIR_BUILD) $(SOURCES) init-code $(TEST_DEPS)
 	$(if $(filter %_test.go,$(SOURCES)), CGO_ENABLED=1 \
 	$(GO) test $(TEST_FLAGS) -count=$(TEST_COUNT) -timeout=$(TEST_TIMEOUT) \
-	  -cover -coverprofile=$(TEST_COVER) -short $(strip $(if \
-	  $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
+	  -cover -covermode=atomic -coverprofile=$(TEST_COVER) -short $(strip \
+	  $(if $(TEST_ARGS),$(TEST_ARGS),$(shell $(call test-args,-run))));)
 	@$(abort);
 
 #@ [<pkg>|<test>] # execute benchmarks.
@@ -1893,7 +1893,7 @@ image-build = \
 	if [ "$${BUILD[1]}" != "push" ]; then VERSION="$${IMAGE\#\#*:}"; \
 	  REVISION="$$($(GIT) rev-parse HEAD 2>/dev/null)"; \
 	  GITURL="$$(git config --get remote.origin.url | sed --regexp-extended \
-	    's\#^(https://([^@]+@)?|ssh://git@)([^/]+)/\#git@\3:\#; s/(\.git)?$/.git/')"; \
+	    's\#^(https://([^@]+@)?|ssh://git@)([^/]+)/\#git@\3:\#; s/(\.git)?$$/.git/')"; \
 	  BUILD+=(--label=org.opencontainers.image.ref.name="$${IMAGE}" \
 	    --label=org.opencontainers.image.created="$$(date --rfc-3339=seconds)" \
 	    --label=org.opencontainers.image.url="https://$(GITBASE)/tree/$${REVISION}" \
