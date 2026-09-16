@@ -13,7 +13,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Test and lint
       env:
@@ -35,7 +35,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Run Bash compatibility tests
       env:
@@ -52,7 +52,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Run Bash compatibility tests
       run: |-
@@ -69,7 +69,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Set up npm tooling
       run: |-
@@ -94,7 +94,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Set up npm tooling
       run: |-
@@ -120,7 +120,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Set up npm tooling
       run: |-
@@ -149,7 +149,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 1.26
+        go-version: 1.27
 
     - name: Release new version
       env:
