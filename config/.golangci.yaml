@@ -98,6 +98,16 @@ linters:
       # Default: 30 (we recommend 10-20)
       min-complexity: 20
 
+
+    goconst:
+      # Minimum occurrences of the same constant to trigger the checker.
+      # Default: 3
+      min-occurrences: 4
+
+      # Ignore string literals used as map keys.
+      # Default: false
+      ignore-map-keys: true
+
     govet:
       # Enable all analyzers.
       # Default: false
