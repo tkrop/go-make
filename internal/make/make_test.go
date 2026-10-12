@@ -124,6 +124,7 @@ func NewReader(id string) io.Reader {
 func NewWriter(id string) io.Writer {
 	builder := &strings.Builder{}
 	builder.WriteString(id)
+
 	return builder
 }
 
@@ -162,6 +163,7 @@ func Cast[T any](value any) T {
 	if value == nil {
 		return *new(T)
 	}
+
 	return value.(T)
 }
 
@@ -176,6 +178,7 @@ func Exec( //revive:disable-line:argument-limit
 		c.WithStdin(Cast[io.Reader](mocks.GetArg(stdin))).
 			WithStdout(Cast[io.Writer](mocks.GetArg(stdout))).
 			WithStderr(Cast[io.Writer](mocks.GetArg(stderr)))
+
 		return mock.Get(mocks, NewMockExecutor).EXPECT().
 			Exec(gomock.AssignableToTypeOf(ctx), c).
 			DoAndReturn(mocks.Call(cmd.Executor.Exec,
@@ -187,6 +190,7 @@ func Exec( //revive:disable-line:argument-limit
 					if _, err := cmd.Stderr.Write([]byte(serr)); err != nil {
 						assert.Fail(mocks.Ctrl.T, "failed to write to stderr", err)
 					}
+
 					return []any{err}
 				}))
 	}
@@ -599,6 +603,7 @@ func CreateFilter(regexGoMakeTest *regexp.Regexp) func(string) string {
 		str = regexMakeUpdate.ReplaceAllString(str, "")
 		str = regexMakeOptions.ReplaceAllString(str, "")
 		str = regexBuildOs.ReplaceAllString(str, "")
+
 		return str
 	}
 }

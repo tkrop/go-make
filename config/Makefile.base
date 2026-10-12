@@ -198,7 +198,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.22
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.23
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -419,10 +419,13 @@ gomake-version = $(shell if [ -f "$(GOBIN)/go-make" ]; then \
 # https://github.com/kubernetes/code-generator/tags
 K8S_CODEGEN_VERSION ?= v0.37.0
 # https://github.com/golangci/golangci-lint/tags
-GOLANGCI_VERSION ?= v2.13.2
+GOLANGCI_VERSION ?= v2.14.0
 # https://github.com/mgechev/revive/tags # intentionally updated.
 # https://github.com/codacy/codacy-gorevive/blob/master/.tool_version
 REVIVE_VERSION ?= v1.15.0
+# TODO: temporary fixed version until the next proper release.
+# https://github.com/securego/gosec/commits/master
+GOSEC_VERSION ?= v2.29.1-0.20261012130337-71577268350e
 
 # Setup default variables for kubernetes code generation.
 KUBE_APIS ?= $(shell FILES=($$($(call find-go,.,-path "*/apis/*/*/*.go"))); \
@@ -463,7 +466,7 @@ TOOLS_GO += $(TOOL_MOCKGEN) \
 	github.com/uudashr/gocognit/cmd/gocognit \
 	github.com/fzipp/gocyclo/cmd/gocyclo \
 	github.com/mgechev/revive@$(REVIVE_VERSION) \
-	github.com/securego/gosec/v2/cmd/gosec \
+	github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION) \
 	honnef.co/go/tools/cmd/staticcheck \
 	$(GOMAKE_DEP)
 TOOLS_SH += \
