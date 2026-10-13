@@ -1,6 +1,6 @@
 module github.com/tkrop/go-make
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/stretchr/testify v1.12.1
@@ -15,6 +15,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

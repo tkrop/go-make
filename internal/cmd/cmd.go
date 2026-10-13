@@ -64,6 +64,7 @@ func (c *Cmd) IsMode(mode Mode) bool {
 	if c != nil {
 		return c.Mode&mode == mode
 	}
+
 	return false
 }
 
@@ -72,6 +73,7 @@ func (c *Cmd) WithMode(mode Mode) *Cmd {
 	if c != nil {
 		c.Mode = mode
 	}
+
 	return c
 }
 
@@ -80,6 +82,7 @@ func (c *Cmd) WithWorkDir(dir string) *Cmd {
 	if c != nil {
 		c.Dir = dir
 	}
+
 	return c
 }
 
@@ -88,6 +91,7 @@ func (c *Cmd) WithEnv(env ...string) *Cmd {
 	if c != nil {
 		c.Env = append(c.Env, env...)
 	}
+
 	return c
 }
 
@@ -96,6 +100,7 @@ func (c *Cmd) WithArgs(args ...string) *Cmd {
 	if c != nil {
 		c.Args = append(c.Args, args...)
 	}
+
 	return c
 }
 
@@ -106,6 +111,7 @@ func (c *Cmd) WithIO(stdin io.Reader, stdout, stderr io.Writer) *Cmd {
 		c.Stdout = stdout
 		c.Stderr = stderr
 	}
+
 	return c
 }
 
@@ -114,6 +120,7 @@ func (c *Cmd) WithStdin(stdin io.Reader) *Cmd {
 	if c != nil {
 		c.Stdin = stdin
 	}
+
 	return c
 }
 
@@ -122,6 +129,7 @@ func (c *Cmd) WithStdout(stdout io.Writer) *Cmd {
 	if c != nil {
 		c.Stdout = stdout
 	}
+
 	return c
 }
 
@@ -130,6 +138,7 @@ func (c *Cmd) WithStderr(stderr io.Writer) *Cmd {
 	if c != nil {
 		c.Stderr = stderr
 	}
+
 	return c
 }
 
@@ -138,6 +147,7 @@ func (c *Cmd) WithExecutor(exec Executor) *Cmd {
 	if c != nil {
 		c.exec = exec
 	}
+
 	return c
 }
 
@@ -165,6 +175,7 @@ func (c *Cmd) Executor() Executor {
 	if c == nil || c.exec == nil || reflect.ValueOf(c.exec).IsNil() {
 		return NewExecutor()
 	}
+
 	return c.exec
 }
 
@@ -184,6 +195,7 @@ func (c *Cmd) Error(msg string, cause error) error {
 			Cause:   cause,
 		}
 	}
+
 	return &CmdError{
 		Cmd: New(c.Args...).WithMode(c.Mode).
 			WithWorkDir(c.Dir).WithEnv(c.Env...),
@@ -220,6 +232,7 @@ func (e *CmdError) Error() string {
 	if e.Cmd == nil {
 		return fmt.Sprintf("%v - %s: %v", ErrCmd, e.Message, e.Cause)
 	}
+
 	return fmt.Sprintf("%v - %s [dir=%s, env=%v, call=%v]: %v",
 		ErrCmd, e.Message, e.Cmd.Dir, e.Cmd.Env, e.Cmd.Args, e.Cause)
 }
@@ -258,12 +271,14 @@ func NewExecutor() *CmdExecutor {
 			if mode&Background == Background {
 				cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			}
+
 			return cmd.Start()
 		},
 		finish: func(mode Mode, cmd *exec.Cmd) error {
 			if mode&Background != Background {
 				return cmd.Wait()
 			}
+
 			return cmd.Process.Release()
 		},
 	}
@@ -298,6 +313,7 @@ func (e *CmdExecutor) Exec(ctx context.Context, cmd *Cmd) error {
 	} else if err := e.finish(cmd.Mode, cc); err != nil {
 		return cmd.Error("releasing process", err)
 	}
+
 	return nil
 }
 

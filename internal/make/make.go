@@ -199,6 +199,7 @@ func ptr[T any](v T) *T {
 // AbsPath returns the absolute path of given directory.
 func AbsPath(path string) string {
 	path, _ = filepath.Abs(path)
+
 	return path
 }
 
@@ -240,6 +241,7 @@ func GetEnvDefault(key, value string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
+
 	return value
 }
 
@@ -327,8 +329,10 @@ func NewGoMake( //revive:disable-line:argument-limit // kiss.
 // executed.
 func (gm *GoMake) setupWorkDir(ctx context.Context) {
 	buffer := &strings.Builder{}
-	if err := gm.exec(ctx, CmdGitTop(gm.WorkDir, gm.Env...).
-		WithIO(nil, buffer, gm.Stderr)); err == nil {
+	cmd := CmdGitTop(gm.WorkDir, gm.Env...).
+		WithIO(nil, buffer, gm.Stderr)
+
+	if err := gm.exec(ctx, cmd); err == nil {
 		gm.WorkDir = strings.TrimSpace(buffer.String())
 	}
 }
@@ -344,11 +348,14 @@ func (gm *GoMake) setupConfig(ctx context.Context) error {
 	}
 
 	path := AbsPath(gm.Config)
-	if err := gm.exec(ctx, CmdTestDir(path, gm.WorkDir, gm.Env...).
-		WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
+	cmd := CmdTestDir(path, gm.WorkDir, gm.Env...).
+		WithIO(nil, gm.Stderr, gm.Stderr)
+
+	if err := gm.exec(ctx, cmd); err != nil {
 		return gm.ensureConfig(ctx, gm.Config,
 			GoMakePath(gm.Info.Path, gm.Config))
 	}
+
 	return gm.ensureConfig(ctx, "custom", path)
 }
 
@@ -363,15 +370,19 @@ func (gm *GoMake) ensureConfig(
 		return nil
 	}
 
-	if err := gm.exec(ctx,
-		CmdTestDir(gm.ConfigDir, gm.WorkDir, gm.Env...).
-			WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
-		if err := gm.exec(ctx,
-			CmdGoInstall(gm.Info.Path, gm.ConfigVersion, gm.WorkDir, gm.Env...).
-				WithIO(nil, gm.Stderr, gm.Stderr)); err != nil {
+	cmd := CmdTestDir(gm.ConfigDir, gm.WorkDir, gm.Env...).
+		WithIO(nil, gm.Stderr, gm.Stderr)
+
+	if err := gm.exec(ctx, cmd); err != nil {
+		cmd := CmdGoInstall(
+			gm.Info.Path, gm.ConfigVersion, gm.WorkDir, gm.Env...,
+		).WithIO(nil, gm.Stderr, gm.Stderr)
+
+		if err := gm.exec(ctx, cmd); err != nil {
 			return NewErrNotFound(gm.Info.Path, gm.ConfigVersion, err)
 		}
 	}
+
 	return nil
 }
 
@@ -385,6 +396,7 @@ func (gm *GoMake) exec(ctx context.Context, cmd *cmd.Cmd) error {
 	if err := gm.Executor.Exec(ctx, cmd); err != nil {
 		return NewErrCallFailed(cmd, errors.Unwrap(err))
 	}
+
 	return nil
 }
 
@@ -404,14 +416,17 @@ func (gm *GoMake) Make(args ...string) (int, error) {
 
 		case arg == "--version":
 			gm.Logger.Info(gm.Stdout, gm.Info, true)
+
 			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--completion=bash"):
 			gm.Logger.Message(gm.Stdout, CompleteBash)
+
 			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--completion=zsh"):
 			gm.Logger.Message(gm.Stdout, CompleteZsh)
+
 			return ExitSuccess, nil
 
 		case strings.HasPrefix(arg, "--config="):
@@ -482,8 +497,10 @@ func (gm *GoMake) showTargets(suffix *string) bool {
 	// #nosec G304 -- file is safe to dump.
 	if content, err := os.ReadFile(file); err == nil {
 		gm.Logger.Message(gm.Stdout, string(content))
+
 		return true
 	}
+
 	return false
 }
 
@@ -508,6 +525,7 @@ func (gm *GoMake) fileTargets(suffix string) string {
 			"go-make-"+gm.GetEnvDefault("USER", "unknown"),
 			AbsPath(gm.WorkDir), "targets."+suffix)
 	}
+
 	return filepath.Clean(file)
 }
 
@@ -522,6 +540,7 @@ func (gm *GoMake) GetEnvDefault(name, deflt string) string {
 			return env[len(name)+1:]
 		}
 	}
+
 	return GetEnvDefault(name, deflt)
 }
 
@@ -534,15 +553,21 @@ func (gm *GoMake) callTargets(
 	gm.setupWorkDir(ctx)
 	if err := gm.setupConfig(ctx); err != nil {
 		gm.Logger.Error(gm.Stderr, "ensure config", err)
+
 		return ExitConfigFailure, err
-	} else if err := gm.exec(ctx,
-		CmdMakeTargets(gm.Makefile, targets, gm.WorkDir, gm.Env...).
-			WithMode(mode).WithIO(gm.Stdin, gm.Stdout, gm.Stderr)); err != nil {
+	}
+
+	cmd := CmdMakeTargets(gm.Makefile, targets, gm.WorkDir, gm.Env...).
+		WithMode(mode).WithIO(gm.Stdin, gm.Stdout, gm.Stderr)
+
+	if err := gm.exec(ctx, cmd); err != nil {
 		if !gm.Aborted.Load() {
 			gm.Logger.Error(gm.Stderr, "execute make", err)
+
 			return ExitTargetFailure, err
 		}
 	}
+
 	return ExitSuccess, nil
 }
 

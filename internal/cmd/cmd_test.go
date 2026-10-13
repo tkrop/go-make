@@ -47,6 +47,7 @@ func (p ExecParams) setup(e *cmd.CmdExecutor) (
 	if p.cmd.IsMode(DevNullFileOpenFailure) {
 		e := cmd.NewExecutor()
 		reflect.NewAccessor(e).Set("devnull", "/dev/xxx")
+
 		return out, err, c, e
 	} else if p.cmd.IsMode(ProcessReleaseFailure) {
 		e := cmd.NewExecutor()
@@ -54,6 +55,7 @@ func (p ExecParams) setup(e *cmd.CmdExecutor) (
 			func(_ cmd.Mode, _ *exec.Cmd) error {
 				return assert.AnError
 			})
+
 		return out, err, c, e
 	}
 
