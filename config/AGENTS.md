@@ -148,9 +148,16 @@ patterns:
   `<file>.go`.
 * Test order should always follow the order of functions and types in
   `<file>.go`.
-* Test should prefer table-driven format, especially for variations of inputs.
+* Test should prefer table-driven format, especially for simple variations of
+  inputs and outputs.
   * Non-table-driven test should only be refactored into table-driven test
     when this allows to join multiple none-table-driven tests.
+  * Table-driven test should defining exactly one table or map of test cases for
+    testing one single function or method in its entirety with simple inputs and
+    expected outputs.
+  * Sharing of table-driven test cases is discouraged, unless the test setup is
+    very long and complex and a second test is sharing the same expectations and
+    can be based on the same table with minimal modifications.
 * Test should use external components, if the provided output reliably
   supports the test cases for 100% test coverage.
   * If external components are unreliable or do not provide the require output,
@@ -229,6 +236,8 @@ patterns:
     of the file.
 * The test cases are supposed to aim for 100% code coverage:
   * Test cases should always cover happy paths as well as error paths.
+  * Test cases should aim for condition coverage and not only statement
+    coverage, even though this cannot be proven to be complete by testing.
   * Test cases for `any` should include following test cases in order:
     => nil, primitive (bool, int), string, slice, map, empty struct,
     random structs, pointer to primitive, pointer to struct, function,
@@ -262,6 +271,8 @@ patterns:
 * Use `github.com/stretchr/testify/require` to validate setup values.
 * Use `github.com/stretchr/testify/{assert,require}` to validate setup values.
 * Use minimal assertions needed to validate expected values and errors.
+  * Always test all output values and errors of the function under test, even
+    if output values are not used or constant.
   * Always test the actual instances using `assert.Equal` - especially in
     case of errors.
   * You must never split up the expected values and errors into multiple
