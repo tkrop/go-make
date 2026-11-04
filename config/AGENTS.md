@@ -150,11 +150,20 @@ patterns:
   `<file>.go`.
 * Test should prefer table-driven format, especially for simple variations of
   inputs and outputs.
-  * Non-table-driven test should only be refactored into table-driven test
-    when this allows to join multiple none-table-driven tests.
   * Table-driven test should defining exactly one table or map of test cases for
     testing one single function or method in its entirety with simple inputs and
     expected outputs.
+  * Each test case should be a complete defined by input values and expected
+    outputs. Use existing or custom structs to bundle multiple input or output
+    values when or helpful.
+  * The test body should execute the case uniformly, without case-specific
+    defaults or branches. Adding a scenario or changing behavior should
+    normally require changes only to the case data, not the test body.
+  * When behavior is defined by a production-owned config, route, or other
+    asset, load that asset in the test instead of duplicating it in the test
+    setup. Replace only external boundaries needed to run the test.
+  * Non-table-driven test should only be refactored into table-driven test
+    when this allows to join multiple none-table-driven tests.
   * Sharing of table-driven test cases is discouraged, unless the test setup is
     very long and complex and a second test is sharing the same expectations and
     can be based on the same table with minimal modifications.
