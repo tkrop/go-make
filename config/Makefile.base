@@ -198,7 +198,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.26
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.27
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -484,6 +484,7 @@ $(if $(wildcard $(GOBIN)/go-make),$(shell $(call go-update,go-make,)))
 
 # Setup sensible defaults for workflow configuration variables.
 IMAGE_PUSH ?= pulls
+IMAGE_DEPS ?= image-build image-push
 CODE_QUALITY ?= base
 TEST_COUNT ?= 1
 TEST_TIMEOUT ?= 10s
@@ -557,8 +558,9 @@ image = echo -e "$(2)" | awk -v mode="$(1)" ' \
 	    print "image-build-" cmd "::image-build/" $$0 ";" \
 	  } else if (mode == "cmd") { print cmd } else { print $$0 } \
 	}'
-image-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
-	BEGIN { len = split(names, a, "[:= ]"); idx = 1; \
+image-deps = echo | awk -v names="$(1)" -v prefix="$(2)" '$(awk-gensub) \
+	BEGIN { split(prefix, pref, "[: ]"); \
+	  len = split(names, a, "[:= ]"); idx = 1; \
 	  while (idx <= len) { files[a[idx]] = a[idx+2]; idx = idx+3; }; \
 	  for (image in files) { file = files[image]; cmd = "cat " file; \
 	    while ((cmd | getline) > 0) { if ($$1 == "FROM") { \
@@ -567,10 +569,9 @@ image-deps = echo | awk -v names="$(1)" '$(awk-gensub) \
 	      image = gensub("\\$${ORG}", "$(IMAGE_ORG)", "g", image); \
 	      image = gensub("\\$${REPO}", "$(IMAGE_REPO)", "g", image); \
 	      image = gensub("\\$${VERSION}", "$(IMAGE_VERSION)", "g", image); \
-	      if (image in files) { \
-	        print "image-build/" file "::image-build/" files[image] ";"; \
-	        print "image-push/" file "::image-push/" files[image] ";"; \
-		  }; \
+	      if (image in files) { for (key in pref) { \
+	        print "" pref[key] "/" file "::" pref[key] "/" files[image] ";"; \
+	      }; }; \
 	    }; }; close(cmd); \
 	  }; \
 	};'
@@ -1881,7 +1882,10 @@ image-build = \
 	  elif [ -z "$$(echo "$${CONTAINERS[@]}" | grep "*$$")" ]; then \
 	    "$(IMAGE_CMD)" buildx use "$${CONTAINERS[1]}" >/dev/null 2>&1; \
 	  fi; \
-	  BUILD=("$(IMAGE_CMD)" "buildx" "build" "--platform=$(PLATFORM)"); \
+	  BUILD=("$(IMAGE_CMD)" "buildx" "build" "--platform=$(PLATFORM)" \
+	    --build-arg="REGISTRY=$(IMAGE_REGISTRY)" --build-arg="ORG=$(IMAGE_ORG)" \
+	    --build-arg="REPO=$(IMAGE_REPO)" --build-arg="VERSION=$(IMAGE_VERSION)" \
+	  ); \
 	  if [[ "$(1)" =~ ^"image-push/" ]]; then BUILD+=("--push"); fi; \
 	elif [[ "$(1)" =~ ^"image-build/" ]]; then \
 	  BUILD=("$(IMAGE_CMD)" "build" \
@@ -1913,7 +1917,7 @@ image-build = \
 # Setup custom image build target commands.
 $(foreach line,$(shell $(call image,deps,$(IMAGE_FILES))),$(eval $(line)))
 # Setup custom image build target dependencies.
-$(foreach line,$(shell $(call image-deps,$(IMAGE_SETUPS))),$(eval $(line)))
+$(foreach line,$(shell $(call image-deps,$(IMAGE_SETUPS),$(IMAGE_DEPS))),$(eval $(line)))
 # Setup custom image build targets.
 $(TARGETS_IMAGE_BUILD):: image-build/%: build-all
 	@FILE="$*"; IMAGE="$$($(call image,image,$*))"; VERSION="$${IMAGE##*:}"; \
@@ -2643,7 +2647,7 @@ debug-image::
 	echo 'IMAGE_FILES $(IMAGE_FILES)'; \
 	echo 'IMAGE_SETUPS $(IMAGE_SETUPS)'; \
 	echo 'IMAGE_COMMANDS $(IMAGE_COMMANDS)'; \
-	echo 'IMAGE_DEPS $(shell $(call image-deps,$(IMAGE_SETUPS)))'; \
+	echo 'IMAGE_DEPS $(shell $(call image-deps,$(IMAGE_SETUPS),$(IMAGE_DEPS)))'; \
 
 #@ debug the target environment variables.
 debug-targets::
