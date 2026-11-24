@@ -196,7 +196,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.28
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.29
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1287,7 +1287,9 @@ test-args = COVER=(); FILES=(); REGEX=(); \
 		  paste --serial --delimiters='|' -))"); \
 	  elif [ -d "$${ARG}" ]; then \
 	    if compgen -G "$${ARG%/}/*.go" >/dev/null; then FILES+=("$${ARG}"); \
-	    else FILES+=("$${ARG%/}/..."); fi; \
+	    else FILES+=($$(printf '%s\n' $(PACKAGES) | \
+	      awk -v arg="$${ARG}" '$$0 ~ "^" arg { print "./" $$0 }')); \
+		fi; \
 	  elif [ ! -f "$${ARG}" ] && [ ! -d "$${ARG}" ]; then \
 	    REGEX+=("$${ARG}"); \
 	  else $(call emsg,warning,invalid test args [$${ARGS[@]}]); fi; \
