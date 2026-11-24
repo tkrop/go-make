@@ -171,13 +171,11 @@ upper = $(shell echo "$(1)" | tr '[:lower:]' '[:upper:]')
 lower = $(shell echo "$(1)" | tr '[:upper:]' '[:lower:]')
 # Custom abort to stop parent make/go-make process.
 abort = \
-	$(if $(ARGS),CMD=($$(ps -p "$$$$" -o pid,ppid,args | tail -n +2)); \
-	while [ "$${CMD[0]}" != "1" ]; do \
-	  if [[ "$${CMD[2]}" =~ ^.*go-make$$ ]]; then \
-	    $(call dmsg,debug,aborting [$${CMD[0]}] => "$${CMD[@]:2}"); \
-	    kill -ABRT "$${CMD[0]}"; break; \
-	  fi; CMD=($$(ps -p "$${CMD[1]}" -o pid,ppid,args | tail -n +2)); \
-	done; exit 0,:)
+	$(if $(ARGS),if [[ "$${GOMAKE_PID:-}" =~ ^[1-9][0-9]*$$ ]] && \
+	  [ "$${GOMAKE_PID}" -gt 1 ]; then \
+	  $(call dmsg,debug,aborting [$${GOMAKE_PID}]); \
+	  kill -ABRT "$${GOMAKE_PID}"; \
+	fi; exit 0,:)
 
 
 # Setup default makeflags create consistent behavior.
@@ -198,7 +196,7 @@ DIR_CACHE := $(abspath $(TMPDIR))/go-make-$(USER)$(DIR_REAL)
 $(call cdebug,using DIR_CACHE [$(DIR_CACHE)])
 
 # Setup go-make to use desired build and config scripts.
-GOMAKE_DEP := github.com/tkrop/go-make@v0.4.27
+GOMAKE_DEP := github.com/tkrop/go-make@v0.4.28
 GOMAKE_PATH := $(GOPATH)/pkg/mod/$(GOMAKE_DEP)/config
 GOMAKE_MAKEFILE := $(realpath $(firstword $(MAKEFILE_LIST)))
 GOMAKE_CONFIG := $(patsubst %/,%,$(dir $(GOMAKE_MAKEFILE)))
@@ -1273,7 +1271,7 @@ test-split-bench = \
 # 3. <dir> - defines a directory with all its test files and dependencies
 # 4. <regex> - defines a regex to filter test functions (e.g., -run or -bench)
 test-args = COVER=(); FILES=(); REGEX=(); \
-	for ARG in $(ARGS); do \
+	for ARG in $(foreach arg,$(ARGS),"$(arg)"); do \
 	  if [[ "$${ARG}" =~ ^scope:([^[:space:]]*)$$ ]]; then \
 	    $(call emsg,info,test scope [$${ARG}]); \
 	    if  [ "$${BASH_REMATCH[1]}" == "." ]; then COVER+=("./..."); \
@@ -1287,7 +1285,9 @@ test-args = COVER=(); FILES=(); REGEX=(); \
 		  grep --extended-regexp '^func Test' "$${BASE}_test.go" | \
 	      sed --regexp-extended 's|^func Test([^ (]*).*$$|\1|' | \
 		  paste --serial --delimiters='|' -))"); \
-	  elif [ -d "$${ARG}" ]; then FILES+=("$${ARG}"); \
+	  elif [ -d "$${ARG}" ]; then \
+	    if compgen -G "$${ARG%/}/*.go" >/dev/null; then FILES+=("$${ARG}"); \
+	    else FILES+=("$${ARG%/}/..."); fi; \
 	  elif [ ! -f "$${ARG}" ] && [ ! -d "$${ARG}" ]; then \
 	    REGEX+=("$${ARG}"); \
 	  else $(call emsg,warning,invalid test args [$${ARGS[@]}]); fi; \
@@ -1512,7 +1512,9 @@ LINT_ARGS_PLUS := --enable $(LINT_PLUS) --disable $(LINT_DISABLED)
 LINT_ARGS_MAX := --enable $(LINT_MAX) --disable $(LINT_DISABLED)
 LINT_ARGS_ALL := --enable $(LINT_MAX),$(LINT_DISABLED)
 
-LINT_FLAGS ?= --allow-serial-runners --allow-parallel-runners --color=always
+LINT_FLAGS += --allow-serial-runners
+LINT_FLAGS += --allow-parallel-runners
+LINT_FLAGS += --color=always
 #  --formatters.enable=$(subst $(SPACE),$(COMMA),$(GOLANGCI_FORMATTERS))
 ifeq ($(ARGS),linters)
   LINT_CMD := $(GOBIN)/golangci-lint linters $(GOLANGCI_CONFIG)
@@ -2615,6 +2617,15 @@ debug-go::
 	echo 'GOOS $(GOOS)'; \
 	echo 'GOARCH $(GOARCH)'; \
 	echo 'GOVERSION $(GOVERSION)'; \
+
+debug-gomake:
+	@echo 'GOMAKE_PID $(GOMAKE_PID)'; \
+	echo 'GOMAKE_DEP $(GOMAKE_DEP)'; \
+	echo 'GOMAKE_PATH $(GOMAKE_PATH)'; \
+	echo 'GOMAKE_CONFIG $(GOMAKE_CONFIG)'; \
+	echo 'GOMAKE_MAKEFILE $(GOMAKE_MAKEFILE)'; \
+	echo 'GOMAKE_OPTIONS $(GOMAKE_OPTIONS)'; \
+	echo 'GOMAKE_MODE $(GOMAKE_MODE)'; \
 
 #@ debug then generated directories, sources, and targets.
 debug-kube::

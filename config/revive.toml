@@ -82,6 +82,10 @@ enableAllRules = true
 [rule.confusing-naming]
   disabled = true
 
+# Rule prevents intentional usage of meaningful names.
+[rule.redefines-builtin-id]
+  disabled = true
+
 # Rule prevents intentional usage of explicit exhaustive switches.
 [rule.useless-fallthrough]
   disabled = true

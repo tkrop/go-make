@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -225,7 +226,9 @@ func CmdMakeTargets(
 ) *cmd.Cmd {
 	return cmd.New(append([]string{
 		"make", "--file", file, "--no-print-directory",
-	}, targets...)...).WithEnv(env...).WithWorkDir(dir)
+	}, targets...)...).
+		WithEnv("GOMAKE_PID=" + strconv.Itoa(os.Getpid())).
+		WithEnv(env...).WithWorkDir(dir)
 }
 
 // CmdGitTop creates the argument array of a `git rev-parse` command to

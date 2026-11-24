@@ -1,0 +1,3 @@
+CGO_ENABLED=1 go test-unit -run="^TestSignalerDone$|^TestMissing$" ./internal/sys;
+ok  	github.com/tkrop/go-make/internal/sys	0.000s	coverage: 0.0% of statements
+make: 'internal/sys' is up to date.
