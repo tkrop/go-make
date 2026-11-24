@@ -148,6 +148,12 @@ patterns:
   `<file>.go`.
 * Test order should always follow the order of functions and types in
   `<file>.go`.
+* For each tested function or type, place its `Params` type, `TestCases` map,
+  and `Test` function in close vicinity and in this order.
+  * Also place functions and types used only by the test in close vicinity
+    before the test `Params`.
+  * Multiple test functions may share the same `Params` and `TestCases` map.
+    They should be placed directly after the test `Params` and `TestCases`.
 * Test should prefer table-driven format, especially for simple variations of
   inputs and outputs.
   * Table-driven test should defining exactly one table or map of test cases for
@@ -188,6 +194,10 @@ patterns:
   * Prefer the integration with `github.com/tkrop/go-testing/mock` to setup
     the mocks and mock calls.
 
+Please read the docs for `github.com/tkrop/go-testing/{,test,gock,mock}` to
+have a good understanding of the available helpers and best practices for
+writing tests.
+
 
 ### Parameter type definition
 
@@ -205,6 +215,7 @@ patterns:
       ordering conditions.
     * Also follow the before pattern when not setting up an explicit helper
       function.
+    * Use `test.Panic` in mock setups to assert expected panics.
   * Input values are in general defined by structs (preferred) and primitives.
   * `call` (test.SetupFunc,mock.SetupFunc) — optional dynamic execution
      function.
@@ -241,8 +252,12 @@ patterns:
   separated by empty lines and comments.
   * Simple tests cases with less setup should be ordered before test cases
     with extensive setup.
+  * Error paths should be ordered by the physical order of origin of the errors
+    in the tested function.
   * Helper functions needed by multiple tests should be defined at the top
     of the file.
+  * Helper functions needed by a single test should be defined directly above
+    `Params` declaration.
 * The test cases are supposed to aim for 100% code coverage:
   * Test cases should always cover happy paths as well as error paths.
   * Test cases should aim for condition coverage and not only statement
@@ -254,7 +269,8 @@ patterns:
   * If the tested function is based on reflect, also aliases and private
     fields in structs must be tested.
   * Use `test.Cast` to cast `any` to specific types.
-* Parameters setup of test cases should be supported by top level setup
+  * Use `test.Panic` in mock setups to assert expected panics.
+* Parameter setup of test cases should be supported by top level setup
   functions if the setup of a parameter gets to complicated.
 * If test cases are to long they should also be separated by empty lines.
 * Construct the actual expected objects and errors instead of aiming to

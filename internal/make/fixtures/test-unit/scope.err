@@ -1,0 +1,2 @@
+[1;96minfo:[0m executing [make test-unit ARGS="scope:internal/log internal/log ^TestInfo$"]
+[1;96minfo:[0m test scope [scope:internal/log]

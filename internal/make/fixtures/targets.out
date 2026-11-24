@@ -69,6 +69,7 @@ debug-dirs
 debug-files
 debug-git
 debug-go
+debug-gomake
 debug-image
 debug-kube
 debug-make
